@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prgramed.eprayer.domain.usecase.GetPrayerTimesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,13 +24,24 @@ class PrayerTimesViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(PrayerTimesUiState())
     val uiState: StateFlow<PrayerTimesUiState> = _uiState.asStateFlow()
 
+    private var observeJob: Job? = null
+
     init {
-        observePrayerTimes()
         startCountdown()
     }
 
-    private fun observePrayerTimes() {
-        viewModelScope.launch {
+    fun onPermissionResult(granted: Boolean) {
+        if (granted && observeJob == null) {
+            startObserving()
+        } else if (!granted) {
+            _uiState.update {
+                it.copy(isLoading = false, error = "Location permission required to show prayer times")
+            }
+        }
+    }
+
+    private fun startObserving() {
+        observeJob = viewModelScope.launch {
             val javaToday = java.time.LocalDate.now()
             val today = kotlinx.datetime.LocalDate(
                 javaToday.year, javaToday.monthValue, javaToday.dayOfMonth,
