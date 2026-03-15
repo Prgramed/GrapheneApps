@@ -1,11 +1,12 @@
 package com.prgramed.eprayer.feature.settings
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,8 +21,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.prgramed.eprayer.domain.model.MadhabType
 import com.prgramed.eprayer.feature.settings.components.CalculationMethodSection
+import com.prgramed.eprayer.feature.settings.components.CitySearchDialog
 import com.prgramed.eprayer.feature.settings.components.LocationSettingsSection
-import com.prgramed.eprayer.feature.settings.components.ManualCoordinatesDialog
 import com.prgramed.eprayer.feature.settings.components.NotificationSettingsSection
 
 @Composable
@@ -30,17 +31,18 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var showCoordinatesDialog by remember { mutableStateOf(false) }
+    var showCitySearch by remember { mutableStateOf(false) }
 
-    if (showCoordinatesDialog) {
-        ManualCoordinatesDialog(
-            initialLatitude = uiState.manualLatitude,
-            initialLongitude = uiState.manualLongitude,
-            initialCityName = uiState.manualCityName,
-            onDismiss = { showCoordinatesDialog = false },
-            onConfirm = { lat, lon, city ->
-                viewModel.updateManualLocation(lat, lon, city)
-                showCoordinatesDialog = false
+    if (showCitySearch) {
+        CitySearchDialog(
+            onDismiss = { showCitySearch = false },
+            onCitySelected = { city ->
+                viewModel.updateManualLocation(
+                    city.latitude.toString(),
+                    city.longitude.toString(),
+                    city.displayName,
+                )
+                showCitySearch = false
             },
         )
     }
@@ -49,9 +51,10 @@ fun SettingsScreen(
         item {
             LocationSettingsSection(
                 locationMode = uiState.locationMode,
+                selectedCity = uiState.manualCityName,
                 hasLocationPermission = uiState.hasLocationPermission,
                 onLocationModeChanged = viewModel::updateLocationMode,
-                onManualLocationClicked = { showCoordinatesDialog = true },
+                onManualLocationClicked = { showCitySearch = true },
                 onLocationPermissionResult = viewModel::updateLocationPermission,
             )
         }
@@ -68,10 +71,7 @@ fun SettingsScreen(
         item { HorizontalDivider() }
 
         item {
-            // Madhab section
-            androidx.compose.foundation.layout.Column(
-                modifier = Modifier.padding(16.dp),
-            ) {
+            Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = "Madhab (Asr Calculation)",
                     style = MaterialTheme.typography.titleMedium,

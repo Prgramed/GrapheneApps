@@ -20,6 +20,7 @@ import com.prgramed.eprayer.domain.model.LocationMode
 @Composable
 fun LocationSettingsSection(
     locationMode: LocationMode,
+    selectedCity: String,
     hasLocationPermission: Boolean,
     onLocationModeChanged: (LocationMode) -> Unit,
     onManualLocationClicked: () -> Unit,
@@ -65,15 +66,23 @@ fun LocationSettingsSection(
                 selected = locationMode == LocationMode.MANUAL,
                 onClick = { onLocationModeChanged(LocationMode.MANUAL) },
             )
-            Text("Manual", modifier = Modifier.padding(start = 8.dp))
+            Text("Select City", modifier = Modifier.padding(start = 8.dp))
         }
 
         if (locationMode == LocationMode.MANUAL) {
+            if (selectedCity.isNotBlank()) {
+                Text(
+                    text = selectedCity,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 40.dp, bottom = 8.dp),
+                )
+            }
             Button(
                 onClick = onManualLocationClicked,
-                modifier = Modifier.padding(top = 8.dp),
+                modifier = Modifier.padding(start = 40.dp),
             ) {
-                Text("Set Coordinates")
+                Text(if (selectedCity.isBlank()) "Choose City" else "Change City")
             }
         }
     }
