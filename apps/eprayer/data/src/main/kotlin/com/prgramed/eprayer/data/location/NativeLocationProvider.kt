@@ -25,6 +25,13 @@ class NativeLocationProvider @Inject constructor(
     fun locationUpdates(): Flow<LocationInfo> = callbackFlow {
         val manager = locationManager
 
+        // Emit last known location immediately so callers don't wait for a GPS fix
+        val lastKnown = manager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            ?: manager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+        if (lastKnown != null) {
+            trySend(lastKnown.toLocationInfo())
+        }
+
         val listener = LocationListener { location ->
             trySend(location.toLocationInfo())
         }
@@ -35,7 +42,8 @@ class NativeLocationProvider @Inject constructor(
             manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ->
                 LocationManager.NETWORK_PROVIDER
             else -> {
-                close()
+                if (lastKnown == null) close()
+                awaitClose {}
                 return@callbackFlow
             }
         }
