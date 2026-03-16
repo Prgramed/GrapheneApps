@@ -1,7 +1,9 @@
 package com.prgramed.eprayer.feature.widget
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.location.LocationManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,7 +33,6 @@ import com.batoulapps.adhan2.CalculationMethod
 import com.batoulapps.adhan2.Coordinates
 import com.batoulapps.adhan2.PrayerTimes
 import com.batoulapps.adhan2.data.DateComponents
-import com.prgramed.eprayer.data.widget.PrayerWidgetWorker
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
@@ -39,7 +40,7 @@ import java.util.Calendar
 class PrayerWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = loadWidgetData(context)
+        val data = computePrayerTimes(context)
         val launchIntent = context.packageManager
             .getLaunchIntentForPackage(context.packageName)
             ?: Intent()
@@ -54,7 +55,6 @@ class PrayerWidget : GlanceAppWidget() {
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Row 1: next prayer name + time
                 Row(
                     modifier = GlanceModifier.fillMaxWidth(),
                     verticalAlignment = Alignment.Bottom,
@@ -80,14 +80,12 @@ class PrayerWidget : GlanceAppWidget() {
 
                 Spacer(modifier = GlanceModifier.height(6.dp))
 
-                // Row 2: all 5 prayers
                 Row(
                     modifier = GlanceModifier.fillMaxWidth(),
                     verticalAlignment = Alignment.Top,
                 ) {
                     for (prayer in data.prayers) {
                         val isNext = prayer.name == data.nextName
-
                         Box(
                             modifier = GlanceModifier.defaultWeight(),
                             contentAlignment = Alignment.TopCenter,
@@ -135,55 +133,30 @@ class PrayerWidget : GlanceAppWidget() {
         }
     }
 
-    private fun loadWidgetData(context: Context): WidgetData {
-        val prefs = context.getSharedPreferences(
-            PrayerWidgetWorker.PREFS_NAME, Context.MODE_PRIVATE,
-        )
-
-        val nextName = prefs.getString(PrayerWidgetWorker.KEY_NEXT_NAME, null)
-        val nextTimeMillis = prefs.getLong(PrayerWidgetWorker.KEY_NEXT_TIME, 0L)
-
-        if (nextName != null && nextTimeMillis != 0L) {
-            return fromCache(prefs, nextName, nextTimeMillis)
+    @SuppressLint("MissingPermission")
+    private fun computePrayerTimes(context: Context): WidgetData {
+        val loc = try {
+            val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+        } catch (_: SecurityException) {
+            null
         }
 
-        // No cached data — compute directly with Mecca defaults
-        return computeFallback()
-    }
+        val coordinates = if (loc != null) {
+            Coordinates(loc.latitude, loc.longitude)
+        } else {
+            Coordinates(21.4225, 39.8262)
+        }
 
-    private fun fromCache(
-        prefs: android.content.SharedPreferences,
-        nextName: String,
-        nextTimeMillis: Long,
-    ): WidgetData {
-        val formatter = DateTimeFormatter.ofPattern("HH:mm")
-        val zone = ZoneId.systemDefault()
-
-        fun fmt(millis: Long): String =
-            java.time.Instant.ofEpochMilli(millis).atZone(zone).format(formatter)
-
-        return WidgetData(
-            nextName = nextName,
-            nextTime = fmt(nextTimeMillis),
-            prayers = listOf(
-                PrayerInfo("Fajr", fmt(prefs.getLong(PrayerWidgetWorker.KEY_FAJR, 0L))),
-                PrayerInfo("Dhuhr", fmt(prefs.getLong(PrayerWidgetWorker.KEY_DHUHR, 0L))),
-                PrayerInfo("Asr", fmt(prefs.getLong(PrayerWidgetWorker.KEY_ASR, 0L))),
-                PrayerInfo("Maghrib", fmt(prefs.getLong(PrayerWidgetWorker.KEY_MAGHRIB, 0L))),
-                PrayerInfo("Isha", fmt(prefs.getLong(PrayerWidgetWorker.KEY_ISHA, 0L))),
-            ),
-        )
-    }
-
-    private fun computeFallback(): WidgetData {
         val calendar = Calendar.getInstance()
         val dateComponents = DateComponents(
             calendar.get(Calendar.YEAR),
             calendar.get(Calendar.MONTH) + 1,
             calendar.get(Calendar.DAY_OF_MONTH),
         )
-        val coordinates = Coordinates(21.4225, 39.8262)
-        val params = CalculationMethod.UMM_AL_QURA.parameters
+
+        val params = CalculationMethod.MUSLIM_WORLD_LEAGUE.parameters
         val pt = PrayerTimes(coordinates, dateComponents, params)
 
         val nowMillis = System.currentTimeMillis()

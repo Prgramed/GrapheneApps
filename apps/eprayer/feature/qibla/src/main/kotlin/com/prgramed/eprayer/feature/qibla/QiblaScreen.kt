@@ -1,7 +1,7 @@
 package com.prgramed.eprayer.feature.qibla
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,12 +64,12 @@ fun QiblaScreen(
 
                 val animatedHeading by animateFloatAsState(
                     targetValue = direction.deviceHeading,
-                    animationSpec = tween(durationMillis = 300),
+                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
                     label = "heading",
                 )
                 val animatedRelative by animateFloatAsState(
                     targetValue = direction.relativeAngle.toFloat(),
-                    animationSpec = tween(durationMillis = 300),
+                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
                     label = "relative",
                 )
 

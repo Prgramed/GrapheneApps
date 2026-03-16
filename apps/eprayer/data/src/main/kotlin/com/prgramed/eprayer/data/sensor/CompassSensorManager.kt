@@ -99,7 +99,7 @@ class CompassSensorManager @Inject constructor(
     }
 
     companion object {
-        private const val SENSOR_ALPHA = 0.06f
-        private const val HEADING_ALPHA = 0.08f
+        private const val SENSOR_ALPHA = 0.1f
+        private const val HEADING_ALPHA = 0.15f
     }
 }
