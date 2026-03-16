@@ -29,7 +29,7 @@ class PrayerWidgetReceiver : GlanceAppWidgetReceiver() {
         super.onEnabled(context)
         // Schedule periodic refresh
         val workRequest = PeriodicWorkRequestBuilder<PrayerWidgetWorker>(
-            30, TimeUnit.MINUTES,
+            6, TimeUnit.HOURS,
         ).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PrayerWidgetWorker.WORK_NAME,

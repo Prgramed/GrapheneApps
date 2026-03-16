@@ -75,10 +75,10 @@ class CompassSensorManager @Inject constructor(
         }
 
         sensorManager.registerListener(
-            listener, accelerometer, SensorManager.SENSOR_DELAY_GAME,
+            listener, accelerometer, SensorManager.SENSOR_DELAY_UI,
         )
         sensorManager.registerListener(
-            listener, magnetometer, SensorManager.SENSOR_DELAY_GAME,
+            listener, magnetometer, SensorManager.SENSOR_DELAY_UI,
         )
 
         awaitClose { sensorManager.unregisterListener(listener) }

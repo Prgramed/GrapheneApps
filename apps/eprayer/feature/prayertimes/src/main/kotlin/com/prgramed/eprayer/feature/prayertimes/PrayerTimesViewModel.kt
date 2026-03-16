@@ -108,7 +108,7 @@ class PrayerTimesViewModel @Inject constructor(
                         it.copy(timeRemaining = if (remaining.isPositive()) remaining else null)
                     }
                 }
-                delay(1.seconds)
+                delay(10.seconds)
             }
         }
     }

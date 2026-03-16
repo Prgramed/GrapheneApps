@@ -70,9 +70,25 @@ class NativeLocationProvider @Inject constructor(
         return location?.toLocationInfo()
     }
 
+    private var cachedCityName: String? = null
+    private var cachedCityLat: Double = Double.NaN
+    private var cachedCityLon: Double = Double.NaN
+
     private fun Location.toLocationInfo(): LocationInfo {
-        val cityName = resolveCity(latitude, longitude)
+        val cityName = getCachedOrResolveCity(latitude, longitude)
         return LocationInfo(latitude = latitude, longitude = longitude, cityName = cityName)
+    }
+
+    private fun getCachedOrResolveCity(lat: Double, lon: Double): String? {
+        if (cachedCityName != null && !cachedCityLat.isNaN()) {
+            val dist = approxDistance(lat, lon, cachedCityLat, cachedCityLon)
+            if (dist < 0.1) return cachedCityName // ~10km — skip re-resolve
+        }
+        val name = resolveCity(lat, lon)
+        cachedCityName = name
+        cachedCityLat = lat
+        cachedCityLon = lon
+        return name
     }
 
     private fun resolveCity(lat: Double, lon: Double): String? {

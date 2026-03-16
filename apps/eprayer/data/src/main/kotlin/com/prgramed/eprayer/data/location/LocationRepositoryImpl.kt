@@ -4,10 +4,15 @@ import com.prgramed.eprayer.domain.model.LocationInfo
 import com.prgramed.eprayer.domain.model.LocationMode
 import com.prgramed.eprayer.domain.repository.LocationRepository
 import com.prgramed.eprayer.domain.repository.UserPreferencesRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.shareIn
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,7 +23,10 @@ class LocationRepositoryImpl @Inject constructor(
     private val userPreferencesRepository: UserPreferencesRepository,
 ) : LocationRepository {
 
-    override fun getCurrentLocation(): Flow<LocationInfo> =
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    // Single shared GPS flow — stops 5s after last subscriber disconnects
+    private val sharedLocation: Flow<LocationInfo> =
         userPreferencesRepository.getUserPreferences().flatMapLatest { prefs ->
             when (prefs.locationMode) {
                 LocationMode.GPS -> nativeLocationProvider.locationUpdates()
@@ -28,7 +36,9 @@ class LocationRepositoryImpl @Inject constructor(
                     flowOf(LocationInfo(lat, lon, prefs.manualCityName))
                 }
             }
-        }
+        }.shareIn(scope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
+    override fun getCurrentLocation(): Flow<LocationInfo> = sharedLocation
 
     override suspend fun getLastKnownLocation(): LocationInfo? =
         nativeLocationProvider.getLastKnown()
