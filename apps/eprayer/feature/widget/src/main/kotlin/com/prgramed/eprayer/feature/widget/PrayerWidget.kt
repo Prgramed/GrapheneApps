@@ -45,88 +45,94 @@ class PrayerWidget : GlanceAppWidget() {
             ?: Intent()
 
         provideContent {
-            Column(
+            Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
                     .cornerRadius(20.dp)
                     .background(BgDark)
-                    .padding(16.dp)
                     .clickable(actionStartActivity(launchIntent)),
+                contentAlignment = Alignment.Center,
             ) {
-                // Row 1: next prayer name (left) + time (right)
-                Row(
-                    modifier = GlanceModifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+                Column(
+                    modifier = GlanceModifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
-                    Text(
-                        text = data.nextName,
-                        style = TextStyle(
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = ColorProvider(Color.White),
-                        ),
-                    )
-                    Spacer(modifier = GlanceModifier.defaultWeight())
-                    Text(
-                        text = data.nextTime,
-                        style = TextStyle(
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = ColorProvider(Color.White),
-                        ),
-                    )
-                }
+                    // Row 1: next prayer name + time
+                    Row(
+                        modifier = GlanceModifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        Text(
+                            text = data.nextName,
+                            style = TextStyle(
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = ColorProvider(Color.White),
+                            ),
+                        )
+                        Spacer(modifier = GlanceModifier.defaultWeight())
+                        Text(
+                            text = data.nextTime,
+                            style = TextStyle(
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = ColorProvider(Color.White),
+                            ),
+                        )
+                    }
 
-                Spacer(modifier = GlanceModifier.height(16.dp))
+                    Spacer(modifier = GlanceModifier.height(10.dp))
 
-                // Row 2: all 5 prayers
-                Row(
-                    modifier = GlanceModifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    for (prayer in data.prayers) {
-                        val isNext = prayer.name == data.nextName
+                    // Row 2: all 5 prayers
+                    Row(
+                        modifier = GlanceModifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        for (prayer in data.prayers) {
+                            val isNext = prayer.name == data.nextName
 
-                        Box(
-                            modifier = GlanceModifier.defaultWeight(),
-                            contentAlignment = Alignment.TopCenter,
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = if (isNext) {
-                                    GlanceModifier
-                                        .cornerRadius(12.dp)
-                                        .background(Highlight)
-                                        .padding(horizontal = 6.dp, vertical = 8.dp)
-                                } else {
-                                    GlanceModifier.padding(horizontal = 6.dp, vertical = 8.dp)
-                                },
+                            Box(
+                                modifier = GlanceModifier.defaultWeight(),
+                                contentAlignment = Alignment.TopCenter,
                             ) {
-                                Text(
-                                    text = prayer.name,
-                                    style = TextStyle(
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isNext) FontWeight.Bold
-                                        else FontWeight.Normal,
-                                        color = ColorProvider(
-                                            if (isNext) Color.White else TextMuted,
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = if (isNext) {
+                                        GlanceModifier
+                                            .cornerRadius(10.dp)
+                                            .background(Highlight)
+                                            .padding(horizontal = 4.dp, vertical = 6.dp)
+                                    } else {
+                                        GlanceModifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                                    },
+                                ) {
+                                    Text(
+                                        text = prayer.name,
+                                        style = TextStyle(
+                                            fontSize = 13.sp,
+                                            fontWeight = if (isNext) FontWeight.Bold
+                                            else FontWeight.Normal,
+                                            color = ColorProvider(
+                                                if (isNext) Color.White else TextMuted,
+                                            ),
+                                            textAlign = TextAlign.Center,
                                         ),
-                                        textAlign = TextAlign.Center,
-                                    ),
-                                )
-                                Spacer(modifier = GlanceModifier.height(4.dp))
-                                Text(
-                                    text = prayer.time,
-                                    style = TextStyle(
-                                        fontSize = 14.sp,
-                                        fontWeight = if (isNext) FontWeight.Bold
-                                        else FontWeight.Normal,
-                                        color = ColorProvider(
-                                            if (isNext) Color.White else Peach,
+                                    )
+                                    Spacer(modifier = GlanceModifier.height(2.dp))
+                                    Text(
+                                        text = prayer.time,
+                                        style = TextStyle(
+                                            fontSize = 15.sp,
+                                            fontWeight = if (isNext) FontWeight.Bold
+                                            else FontWeight.Normal,
+                                            color = ColorProvider(
+                                                if (isNext) Color.White else Peach,
+                                            ),
+                                            textAlign = TextAlign.Center,
                                         ),
-                                        textAlign = TextAlign.Center,
-                                    ),
-                                )
+                                    )
+                                }
                             }
                         }
                     }
