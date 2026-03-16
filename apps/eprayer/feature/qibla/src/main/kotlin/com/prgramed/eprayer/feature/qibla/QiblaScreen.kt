@@ -101,7 +101,6 @@ fun QiblaScreen(
                             CompassView(deviceHeading = animatedHeading)
                             QiblaDirectionIndicator(
                                 relativeAngle = animatedRelative.toDouble(),
-                                deviceHeading = animatedHeading,
                             )
                         }
                     }

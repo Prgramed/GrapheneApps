@@ -8,13 +8,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+private val Peach = Color(0xFFE8B98A)
+private val TextMuted = Color(0xFF8899AA)
+private val NavyCard = Color(0xFF162135)
 
 @Composable
 fun NotificationSettingsSection(
@@ -34,7 +41,9 @@ fun NotificationSettingsSection(
     Column(modifier = modifier.fillMaxWidth().padding(16.dp)) {
         Text(
             text = "Notifications",
-            style = MaterialTheme.typography.titleMedium,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color.White,
             modifier = Modifier.padding(bottom = 8.dp),
         )
 
@@ -44,6 +53,7 @@ fun NotificationSettingsSection(
         ) {
             Text(
                 text = "Prayer Notifications",
+                color = Color.White,
                 modifier = Modifier.weight(1f),
             )
             Switch(
@@ -57,6 +67,12 @@ fun NotificationSettingsSection(
                         onNotificationsEnabledChanged(enabled)
                     }
                 },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Peach,
+                    checkedTrackColor = Peach.copy(alpha = 0.3f),
+                    uncheckedThumbColor = TextMuted,
+                    uncheckedTrackColor = NavyCard,
+                ),
             )
         }
     }

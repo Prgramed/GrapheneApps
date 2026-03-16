@@ -19,7 +19,6 @@ private val KaabaBand = Color(0xFFD4A64A)
 @Composable
 fun QiblaDirectionIndicator(
     relativeAngle: Double,
-    deviceHeading: Float,
     modifier: Modifier = Modifier,
 ) {
     Canvas(modifier = modifier.size(300.dp)) {
@@ -44,9 +43,8 @@ fun QiblaDirectionIndicator(
         }
         drawPath(needlePath, color = Peach)
 
-        // Kaaba on the compass rim, rotating with compass + relative angle
-        val kaabaAngle = -deviceHeading + relativeAngle.toFloat()
-        rotate(kaabaAngle, Offset(centerX, centerY)) {
+        // Kaaba on the compass rim — relativeAngle is already relative to device forward
+        rotate(relativeAngle.toFloat(), Offset(centerX, centerY)) {
             val kaabaY = centerY - radius + 6.dp.toPx()
             val kSize = 22.dp.toPx()
 

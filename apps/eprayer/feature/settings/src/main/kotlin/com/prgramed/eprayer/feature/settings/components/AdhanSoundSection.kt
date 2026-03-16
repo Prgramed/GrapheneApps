@@ -13,8 +13,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -24,9 +24,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.prgramed.eprayer.domain.model.AdhanSound
+
+private val Peach = Color(0xFFE8B98A)
+private val TextMuted = Color(0xFF8899AA)
 
 private val adhanDisplayNames = mapOf(
     AdhanSound.MOHAMMED_REFAAT to "Sheikh Mohammed Refaat",
@@ -86,7 +92,9 @@ fun AdhanSoundSection(
     Column(modifier = modifier.fillMaxWidth().padding(16.dp)) {
         Text(
             text = "Adhan Sound",
-            style = MaterialTheme.typography.titleMedium,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color.White,
             modifier = Modifier.padding(bottom = 8.dp),
         )
         AdhanSound.entries.forEach { sound ->
@@ -98,9 +106,14 @@ fun AdhanSoundSection(
                         onSoundSelected(sound)
                         if (hasPreview) playPreview(sound) else stopPreview()
                     },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = Peach,
+                        unselectedColor = TextMuted,
+                    ),
                 )
                 Text(
                     text = adhanDisplayNames[sound] ?: sound.name,
+                    color = Color.White,
                     modifier = Modifier
                         .weight(1f)
                         .padding(start = 8.dp),
@@ -116,7 +129,7 @@ fun AdhanSoundSection(
                             imageVector = if (playingSound == sound) Icons.Default.Stop
                             else Icons.Default.PlayArrow,
                             contentDescription = "Preview",
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = Peach,
                         )
                     }
                 } else {
