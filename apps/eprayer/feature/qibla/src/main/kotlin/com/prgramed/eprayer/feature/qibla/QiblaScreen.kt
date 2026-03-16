@@ -16,6 +16,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -60,13 +63,20 @@ fun QiblaScreen(
             else -> {
                 val direction = uiState.qiblaDirection ?: return
 
+                // Track cumulative angles to avoid 360→0 wraparound jumps
+                var headingTarget by remember { mutableFloatStateOf(direction.deviceHeading) }
+                var relativeTarget by remember { mutableFloatStateOf(direction.relativeAngle.toFloat()) }
+
+                headingTarget = shortestRotation(headingTarget, direction.deviceHeading)
+                relativeTarget = shortestRotation(relativeTarget, direction.relativeAngle.toFloat())
+
                 val animatedHeading by animateFloatAsState(
-                    targetValue = direction.deviceHeading,
+                    targetValue = headingTarget,
                     animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
                     label = "heading",
                 )
                 val animatedRelative by animateFloatAsState(
-                    targetValue = direction.relativeAngle.toFloat(),
+                    targetValue = relativeTarget,
                     animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
                     label = "relative",
                 )
@@ -142,4 +152,11 @@ fun QiblaScreen(
             }
         }
     }
+}
+
+private fun shortestRotation(current: Float, target: Float): Float {
+    var delta = (target - current) % 360f
+    if (delta > 180f) delta -= 360f
+    if (delta < -180f) delta += 360f
+    return current + delta
 }
