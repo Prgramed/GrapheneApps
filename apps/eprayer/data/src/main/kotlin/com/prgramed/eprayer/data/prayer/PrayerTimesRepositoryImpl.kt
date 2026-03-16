@@ -1,6 +1,9 @@
 package com.prgramed.eprayer.data.prayer
 
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import com.batoulapps.adhan2.CalculationMethod
 import com.batoulapps.adhan2.Coordinates
 import com.batoulapps.adhan2.Madhab
@@ -72,8 +75,8 @@ class PrayerTimesRepositoryImpl @Inject constructor(
             val nextPrayer = markedTimes.firstOrNull { it.isNext }
             val prayerDay = PrayerDay(date = date, times = markedTimes, nextPrayer = nextPrayer)
 
-            // Write to SharedPreferences so the widget reads the exact same times
             cacheForWidget(prayerDay)
+            notifyWidget()
 
             prayerDay
         }
@@ -104,6 +107,27 @@ class PrayerTimesRepositoryImpl @Inject constructor(
                 ?.replaceFirstChar { it.uppercase() } ?: "Fajr")
             .putLong("next_prayer_time_millis", next?.time?.toEpochMilliseconds() ?: 0L)
             .apply()
+    }
+
+    private fun notifyWidget() {
+        try {
+            val widgetReceiverClass = Class.forName(
+                "com.prgramed.eprayer.feature.widget.PrayerWidgetReceiver",
+            )
+            val appWidgetManager = AppWidgetManager.getInstance(context)
+            val ids = appWidgetManager.getAppWidgetIds(
+                ComponentName(context, widgetReceiverClass),
+            )
+            if (ids.isNotEmpty()) {
+                val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
+                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+                    component = ComponentName(context, widgetReceiverClass)
+                }
+                context.sendBroadcast(intent)
+            }
+        } catch (_: Exception) {
+            // Widget not installed or class not found — ignore
+        }
     }
 
     private fun mapCalculationMethod(type: CalculationMethodType): CalculationMethod =
