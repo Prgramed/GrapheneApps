@@ -174,29 +174,48 @@ class PrayerWidget : GlanceAppWidget() {
 
     @SuppressLint("MissingPermission")
     private fun computeFallback(context: Context): WidgetData {
-        val loc = try {
-            val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-        } catch (_: SecurityException) {
-            null
+        // Read worker-stored settings if available
+        val sp = context.getSharedPreferences(
+            PrayerWidgetWorker.PREFS_NAME, Context.MODE_PRIVATE,
+        )
+        val storedLat = sp.getFloat(PrayerWidgetWorker.KEY_LAT, Float.NaN)
+        val storedLon = sp.getFloat(PrayerWidgetWorker.KEY_LON, Float.NaN)
+        val methodName = sp.getString(PrayerWidgetWorker.KEY_CALC_METHOD, null)
+        val madhabName = sp.getString(PrayerWidgetWorker.KEY_MADHAB, null)
+
+        val lat: Double
+        val lon: Double
+        if (!storedLat.isNaN()) {
+            lat = storedLat.toDouble()
+            lon = storedLon.toDouble()
+        } else {
+            val loc = try {
+                val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                    ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            } catch (_: SecurityException) {
+                null
+            }
+            lat = loc?.latitude ?: 21.4225
+            lon = loc?.longitude ?: 39.8262
         }
 
-        val coordinates = if (loc != null) {
-            Coordinates(loc.latitude, loc.longitude)
+        val method = mapMethod(methodName ?: "MUSLIM_WORLD_LEAGUE")
+        val madhab = if (madhabName == "HANAFI") {
+            com.batoulapps.adhan2.Madhab.HANAFI
         } else {
-            Coordinates(21.4225, 39.8262)
+            com.batoulapps.adhan2.Madhab.SHAFI
         }
 
         val calendar = Calendar.getInstance()
         val pt = PrayerTimes(
-            coordinates,
+            Coordinates(lat, lon),
             DateComponents(
                 calendar.get(Calendar.YEAR),
                 calendar.get(Calendar.MONTH) + 1,
                 calendar.get(Calendar.DAY_OF_MONTH),
             ),
-            CalculationMethod.MUSLIM_WORLD_LEAGUE.parameters,
+            method.parameters.copy(madhab = madhab),
         )
 
         val nowMillis = System.currentTimeMillis()
@@ -220,6 +239,21 @@ class PrayerWidget : GlanceAppWidget() {
             nextTime = fmt(next.second),
             prayers = all.map { PrayerInfo(it.first, fmt(it.second)) },
         )
+    }
+
+    private fun mapMethod(name: String): CalculationMethod = when (name) {
+        "MUSLIM_WORLD_LEAGUE" -> CalculationMethod.MUSLIM_WORLD_LEAGUE
+        "ISNA" -> CalculationMethod.NORTH_AMERICA
+        "EGYPTIAN" -> CalculationMethod.EGYPTIAN
+        "UMM_AL_QURA" -> CalculationMethod.UMM_AL_QURA
+        "KARACHI" -> CalculationMethod.KARACHI
+        "DUBAI" -> CalculationMethod.DUBAI
+        "QATAR" -> CalculationMethod.QATAR
+        "KUWAIT" -> CalculationMethod.KUWAIT
+        "MOONSIGHTING_COMMITTEE" -> CalculationMethod.MOON_SIGHTING_COMMITTEE
+        "SINGAPORE" -> CalculationMethod.SINGAPORE
+        "NORTH_AMERICA" -> CalculationMethod.NORTH_AMERICA
+        else -> CalculationMethod.MUSLIM_WORLD_LEAGUE
     }
 
     private data class WidgetData(

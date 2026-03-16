@@ -81,6 +81,7 @@ fun PrayerTimesScreen(
                         NextPrayerBanner(
                             prayerTime = nextPrayer,
                             timeRemaining = uiState.timeRemaining,
+                            cityName = uiState.cityName,
                         )
                     }
                 }

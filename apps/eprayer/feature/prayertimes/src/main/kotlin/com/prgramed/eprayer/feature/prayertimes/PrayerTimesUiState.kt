@@ -8,6 +8,7 @@ data class PrayerTimesUiState(
     val prayerDay: PrayerDay? = null,
     val nextPrayer: PrayerTime? = null,
     val timeRemaining: Duration? = null,
+    val cityName: String? = null,
     val isLoading: Boolean = true,
     val error: String? = null,
 )

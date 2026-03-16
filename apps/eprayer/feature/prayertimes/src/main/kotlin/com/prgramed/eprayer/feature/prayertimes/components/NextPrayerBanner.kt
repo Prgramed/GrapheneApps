@@ -29,6 +29,7 @@ import kotlin.time.Duration
 fun NextPrayerBanner(
     prayerTime: PrayerTime,
     timeRemaining: Duration?,
+    cityName: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val displayName = prayerTime.prayer.name.lowercase().replaceFirstChar { it.uppercase() }
@@ -51,7 +52,7 @@ fun NextPrayerBanner(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = "Next Prayer",
+                text = if (cityName != null) "Next Prayer \u2022 $cityName" else "Next Prayer",
                 style = MaterialTheme.typography.labelLarge,
                 color = Color.White.copy(alpha = 0.7f),
             )

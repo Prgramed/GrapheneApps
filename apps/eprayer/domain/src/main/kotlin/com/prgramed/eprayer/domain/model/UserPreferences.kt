@@ -8,6 +8,7 @@ data class UserPreferences(
     val manualCityName: String? = null,
     val notificationsEnabled: Boolean = true,
     val madhab: MadhabType = MadhabType.SHAFI,
+    val adhanSound: AdhanSound = AdhanSound.MOHAMMED_REFAAT,
 )
 
 enum class LocationMode {
@@ -18,4 +19,12 @@ enum class LocationMode {
 enum class MadhabType {
     SHAFI,
     HANAFI,
+}
+
+enum class AdhanSound {
+    MOHAMMED_REFAAT,
+    ABDEL_BASSET,
+    AL_HUSARY,
+    DEVICE_DEFAULT,
+    SILENT,
 }

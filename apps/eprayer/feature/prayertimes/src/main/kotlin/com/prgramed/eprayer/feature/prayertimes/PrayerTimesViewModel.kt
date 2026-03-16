@@ -2,6 +2,7 @@ package com.prgramed.eprayer.feature.prayertimes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.prgramed.eprayer.domain.repository.LocationRepository
 import com.prgramed.eprayer.domain.usecase.GetPrayerTimesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -19,6 +20,7 @@ import kotlin.time.Instant
 @HiltViewModel
 class PrayerTimesViewModel @Inject constructor(
     private val getPrayerTimesUseCase: GetPrayerTimesUseCase,
+    private val locationRepository: LocationRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PrayerTimesUiState())
@@ -33,6 +35,7 @@ class PrayerTimesViewModel @Inject constructor(
     fun onPermissionResult(granted: Boolean) {
         if (granted && observeJob == null) {
             startObserving()
+            observeCity()
         } else if (!granted) {
             _uiState.update {
                 it.copy(isLoading = false, error = "Location permission required to show prayer times")
@@ -59,6 +62,16 @@ class PrayerTimesViewModel @Inject constructor(
                             error = null,
                         )
                     }
+                }
+        }
+    }
+
+    private fun observeCity() {
+        viewModelScope.launch {
+            locationRepository.getCurrentLocation()
+                .catch { /* ignore */ }
+                .collect { location ->
+                    _uiState.update { it.copy(cityName = location.cityName) }
                 }
         }
     }

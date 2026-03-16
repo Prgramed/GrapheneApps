@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.prgramed.eprayer.domain.model.AdhanSound
 import com.prgramed.eprayer.domain.model.CalculationMethodType
 import com.prgramed.eprayer.domain.model.LocationMode
 import com.prgramed.eprayer.domain.model.MadhabType
@@ -29,6 +30,7 @@ class UserPreferencesDataStore @Inject constructor(
         val MANUAL_CITY_NAME = stringPreferencesKey("manual_city_name")
         val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
         val MADHAB = stringPreferencesKey("madhab")
+        val ADHAN_SOUND = stringPreferencesKey("adhan_sound")
     }
 
     override fun getUserPreferences(): Flow<UserPreferences> = dataStore.data.map { prefs ->
@@ -46,6 +48,9 @@ class UserPreferencesDataStore @Inject constructor(
             madhab = prefs[Keys.MADHAB]
                 ?.let { runCatching { MadhabType.valueOf(it) }.getOrNull() }
                 ?: MadhabType.SHAFI,
+            adhanSound = prefs[Keys.ADHAN_SOUND]
+                ?.let { runCatching { AdhanSound.valueOf(it) }.getOrNull() }
+                ?: AdhanSound.MOHAMMED_REFAAT,
         )
     }
 
@@ -79,5 +84,9 @@ class UserPreferencesDataStore @Inject constructor(
 
     override suspend fun updateNotificationsEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.NOTIFICATIONS_ENABLED] = enabled }
+    }
+
+    override suspend fun updateAdhanSound(sound: AdhanSound) {
+        dataStore.edit { it[Keys.ADHAN_SOUND] = sound.name }
     }
 }

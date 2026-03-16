@@ -83,6 +83,10 @@ class PrayerWidgetWorker @AssistedInject constructor(
             .putLong(KEY_ASR, prayers[2].second)
             .putLong(KEY_MAGHRIB, prayers[3].second)
             .putLong(KEY_ISHA, prayers[4].second)
+            .putString(KEY_CALC_METHOD, prefs.calculationMethod.name)
+            .putString(KEY_MADHAB, prefs.madhab.name)
+            .putFloat(KEY_LAT, lat.toFloat())
+            .putFloat(KEY_LON, lon.toFloat())
             .apply()
 
         return Result.success()
@@ -119,6 +123,10 @@ class PrayerWidgetWorker @AssistedInject constructor(
         const val KEY_ASR = "asr_millis"
         const val KEY_MAGHRIB = "maghrib_millis"
         const val KEY_ISHA = "isha_millis"
+        const val KEY_CALC_METHOD = "calc_method"
+        const val KEY_MADHAB = "madhab"
+        const val KEY_LAT = "latitude"
+        const val KEY_LON = "longitude"
         const val WORK_NAME = "eprayer_widget_refresh"
     }
 }

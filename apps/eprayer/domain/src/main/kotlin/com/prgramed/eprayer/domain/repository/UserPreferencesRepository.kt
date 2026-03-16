@@ -1,5 +1,6 @@
 package com.prgramed.eprayer.domain.repository
 
+import com.prgramed.eprayer.domain.model.AdhanSound
 import com.prgramed.eprayer.domain.model.CalculationMethodType
 import com.prgramed.eprayer.domain.model.LocationMode
 import com.prgramed.eprayer.domain.model.MadhabType
@@ -13,4 +14,5 @@ interface UserPreferencesRepository {
     suspend fun updateManualLocation(latitude: Double, longitude: Double, cityName: String?)
     suspend fun updateMadhab(madhab: MadhabType)
     suspend fun updateNotificationsEnabled(enabled: Boolean)
+    suspend fun updateAdhanSound(sound: AdhanSound)
 }

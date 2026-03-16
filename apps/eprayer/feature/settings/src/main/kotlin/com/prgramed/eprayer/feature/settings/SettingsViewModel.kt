@@ -2,6 +2,7 @@ package com.prgramed.eprayer.feature.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.prgramed.eprayer.domain.model.AdhanSound
 import com.prgramed.eprayer.domain.model.CalculationMethodType
 import com.prgramed.eprayer.domain.model.LocationMode
 import com.prgramed.eprayer.domain.model.MadhabType
@@ -39,6 +40,7 @@ class SettingsViewModel @Inject constructor(
                         manualLongitude = prefs.manualLongitude?.toString() ?: "",
                         manualCityName = prefs.manualCityName ?: "",
                         madhab = prefs.madhab,
+                        adhanSound = prefs.adhanSound,
                         notificationsEnabled = prefs.notificationsEnabled,
                         isLoading = false,
                     )
@@ -73,6 +75,12 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             userPreferencesRepository.updateMadhab(madhab)
             rescheduleNotifications()
+        }
+    }
+
+    fun updateAdhanSound(sound: AdhanSound) {
+        viewModelScope.launch {
+            userPreferencesRepository.updateAdhanSound(sound)
         }
     }
 

@@ -23,6 +23,7 @@ import com.prgramed.eprayer.domain.model.MadhabType
 import com.prgramed.eprayer.feature.settings.components.CalculationMethodSection
 import com.prgramed.eprayer.feature.settings.components.CitySearchDialog
 import com.prgramed.eprayer.feature.settings.components.LocationSettingsSection
+import com.prgramed.eprayer.feature.settings.components.AdhanSoundSection
 import com.prgramed.eprayer.feature.settings.components.NotificationSettingsSection
 
 @Composable
@@ -90,6 +91,15 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+
+        item { HorizontalDivider() }
+
+        item {
+            AdhanSoundSection(
+                selectedSound = uiState.adhanSound,
+                onSoundSelected = viewModel::updateAdhanSound,
+            )
         }
 
         item { HorizontalDivider() }
