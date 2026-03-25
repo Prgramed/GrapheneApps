@@ -49,6 +49,10 @@ class LibraryViewModel @Inject constructor(
     val artistCount: StateFlow<Int> = _artistCount.asStateFlow()
 
     init {
+        refreshCounts()
+    }
+
+    private fun refreshCounts() {
         viewModelScope.launch {
             _trackCount.value = trackDao.count()
             _albumCount.value = albumDao.count()
@@ -130,7 +134,9 @@ class LibraryViewModel @Inject constructor(
 
     fun sync() {
         viewModelScope.launch {
-            syncLibraryUseCase().collect { }
+            syncLibraryUseCase().collect { progress ->
+                if (progress.done) refreshCounts()
+            }
         }
     }
 }

@@ -314,15 +314,14 @@ class LibraryRepositoryImpl @Inject constructor(
 
     private suspend fun upsertPreservingLocalPath(tracks: List<TrackEntity>) {
         if (tracks.isEmpty()) return
-        val ids = tracks.map { it.id }
-        val localPaths = trackDao.getLocalPaths(ids).associate { it.id to it.localPath }
-        val merged = if (localPaths.isEmpty()) {
-            tracks
-        } else {
-            tracks.map { t ->
-                val existing = localPaths[t.id]
-                if (existing != null) t.copy(localPath = existing) else t
-            }
+        // Batch to stay under SQLite's 999-variable limit
+        val localPaths = tracks.map { it.id }
+            .chunked(500)
+            .flatMap { trackDao.getLocalPaths(it) }
+            .associate { it.id to it.localPath }
+        val merged = tracks.map { t ->
+            val existing = localPaths[t.id]
+            if (existing != null) t.copy(localPath = existing) else t
         }
         trackDao.upsertAll(merged)
     }

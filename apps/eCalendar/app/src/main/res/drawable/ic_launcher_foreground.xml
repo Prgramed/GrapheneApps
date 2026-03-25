@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Calendar page body (white, rounded corners) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,34 L78,34 Q80,34 80,36 L80,80 Q80,82 78,82 L30,82 Q28,82 28,80 L28,36 Q28,34 30,34 Z" />
+
+    <!-- Red header bar -->
+    <path
+        android:fillColor="#E53935"
+        android:pathData="M30,34 L78,34 Q80,34 80,36 L80,44 L28,44 L28,36 Q28,34 30,34 Z" />
+
+    <!-- Left ring -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#B0BEC5"
+        android:strokeWidth="1.2"
+        android:pathData="M40,30 L40,38" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,29 a2,2 0,1 1,0 0.01" />
+
+    <!-- Right ring -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#B0BEC5"
+        android:strokeWidth="1.2"
+        android:pathData="M68,30 L68,38" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M68,29 a2,2 0,1 1,0 0.01" />
+
+    <!-- Day of month "25" -->
+    <!-- "2" -->
+    <path
+        android:fillColor="#263238"
+        android:pathData="M38,52 Q38,50 40,50 L47,50 Q49,50 49,52 L49,56 Q49,58 47,58 L40,58 L40,62 Q40,64 40,64 L49,64 L49,67 L38,67 L38,58 Q38,56 40,56 L47,56 L47,52 L38,52 Z" />
+
+    <!-- "5" -->
+    <path
+        android:fillColor="#263238"
+        android:pathData="M55,50 L68,50 L68,52 L57,52 L57,56 L66,56 Q68,56 68,58 L68,64 Q68,67 66,67 L57,67 Q55,67 55,64 L55,62 L57,62 L57,64 L66,64 L66,58 L55,58 Z" />
+
+    <!-- Small dots for grid lines -->
+    <path
+        android:fillColor="#CFD8DC"
+        android:pathData="M34,74 h4 v1 h-4z M42,74 h4 v1 h-4z M50,74 h4 v1 h-4z M58,74 h4 v1 h-4z M66,74 h4 v1 h-4z" />
+
+</vector>

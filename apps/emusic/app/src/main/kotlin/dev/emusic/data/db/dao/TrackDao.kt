@@ -4,6 +4,8 @@ import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Upsert
 import dev.emusic.data.db.entity.TrackEntity
 import kotlinx.coroutines.flow.Flow
@@ -90,6 +92,9 @@ interface TrackDao {
 
     @Query("SELECT * FROM tracks WHERE albumId = :albumId ORDER BY discNumber, trackNumber")
     suspend fun getByAlbumId(albumId: String): List<TrackEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnoreAll(tracks: List<TrackEntity>)
 
     @Query("SELECT id, localPath FROM tracks WHERE id IN (:ids) AND localPath IS NOT NULL")
     suspend fun getLocalPaths(ids: List<String>): List<LocalPathEntry>

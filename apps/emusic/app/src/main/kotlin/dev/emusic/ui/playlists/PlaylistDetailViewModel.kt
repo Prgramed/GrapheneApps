@@ -115,10 +115,10 @@ class PlaylistDetailViewModel @Inject constructor(
     fun checkDownloadState() {
         // Only run once on init — never override DOWNLOADING state
         if (hasCheckedInitial || _dlState.value == DlState.DOWNLOADING) return
+        val tracks = _tracks.value
+        if (tracks.isEmpty()) return // Don't mark checked — retry when tracks load
         hasCheckedInitial = true
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val tracks = _tracks.value
-            if (tracks.isEmpty()) return@launch
             val total = tracks.size
             val done = tracks.count { trackDao.getById(it.id)?.localPath != null }
             if (done >= total) {
@@ -145,30 +145,46 @@ class PlaylistDetailViewModel @Inject constructor(
             if (tracks.isEmpty()) { _dlState.value = DlState.NONE; return@launch }
 
             val total = tracks.size
-            val trackIds = tracks.map { it.id }.toSet()
-            var alreadyDone = trackIds.count { id -> trackDao.getById(id)?.localPath != null }
+            // Build a queue of tracks not yet downloaded
+            val remaining = tracks.filter { trackDao.getById(it.id)?.localPath == null }
 
-            if (alreadyDone >= total) {
+            if (remaining.isEmpty()) {
                 _dlState.value = DlState.DONE
                 _downloadStatus.value = "All downloaded"
                 return@launch
             }
 
-            _downloadStatus.value = "Downloading $alreadyDone/$total"
+            _downloadStatus.value = "Downloading ${total - remaining.size}/$total"
 
-            // Enqueue only missing tracks
-            for (track in tracks) {
-                if (trackDao.getById(track.id)?.localPath != null) continue
-                downloadManager.enqueue(track)
+            // Enqueue all tracks but only a small batch at a time to avoid
+            // Android's JobScheduler killing workers for "too many jobs running"
+            val batchSize = 5
+            val queue = ArrayDeque(remaining)
+
+            suspend fun enqueueBatch() {
+                repeat(batchSize) {
+                    val track = queue.removeFirstOrNull() ?: return
+                    downloadManager.enqueue(track)
+                }
             }
 
-            // Poll for progress
+            enqueueBatch()
+
+            // Poll for progress and feed the queue
             downloadJob?.cancel()
             downloadJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                var lastDone = total - remaining.size
                 while (true) {
                     kotlinx.coroutines.delay(3000)
-                    val done = trackIds.count { id -> trackDao.getById(id)?.localPath != null }
+                    val done = tracks.count { trackDao.getById(it.id)?.localPath != null }
                     _downloadStatus.value = "Downloading $done/$total"
+
+                    // When downloads complete, enqueue more
+                    if (done > lastDone) {
+                        enqueueBatch()
+                        lastDone = done
+                    }
+
                     if (done >= total) {
                         _dlState.value = DlState.DONE
                         _downloadStatus.value = "All downloaded"
