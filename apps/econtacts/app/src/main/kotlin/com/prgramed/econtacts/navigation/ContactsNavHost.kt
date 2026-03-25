@@ -14,6 +14,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -173,7 +174,12 @@ fun ContactsNavHost(
                     onSaved = { navController.popBackStack() },
                 )
             }
-            composable(ContactsDestinations.CONTACT_NEW) {
+            composable(
+                "${ContactsDestinations.CONTACT_NEW}?fromVCard={fromVCard}",
+                arguments = listOf(
+                    navArgument("fromVCard") { defaultValue = false; type = NavType.BoolType },
+                ),
+            ) {
                 ContactEditScreen(
                     onBack = { navController.popBackStack() },
                     onSaved = { navController.popBackStack() },
@@ -205,9 +211,13 @@ fun ContactsNavHost(
                             }
                         },
                         onEditBeforeSaving = {
-                            navController.navigate(ContactsDestinations.CONTACT_NEW)
+                            navController.navigate("${ContactsDestinations.CONTACT_NEW}?fromVCard=true")
                         },
                     )
+                } ?: LaunchedEffect(Unit) {
+                    navController.navigate(ContactsDestinations.CONTACTS_LIST) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             }
         }

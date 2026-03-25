@@ -36,7 +36,7 @@ class SpeedDialRepositoryImpl @Inject constructor(
     }
 
     private fun parseSpeedDial(key: Int, value: String): SpeedDial? {
-        val parts = value.split("|")
+        val parts = value.split("|", limit = 3)
         if (parts.size < 3) return null
         return SpeedDial(
             key = key,

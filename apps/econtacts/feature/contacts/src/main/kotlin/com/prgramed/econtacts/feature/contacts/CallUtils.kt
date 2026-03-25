@@ -1,13 +1,16 @@
 package com.prgramed.econtacts.feature.contacts
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
 import android.telephony.SubscriptionManager
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
@@ -69,7 +72,14 @@ fun placeCallWithSim(context: Context, number: String, accountHandle: PhoneAccou
 }
 
 fun placeCallDefault(context: Context, number: String) {
-    context.startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:$number")))
+    val hasPermission = ContextCompat.checkSelfPermission(
+        context, Manifest.permission.CALL_PHONE,
+    ) == PackageManager.PERMISSION_GRANTED
+    if (hasPermission) {
+        context.startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:$number")))
+    } else {
+        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$number")))
+    }
 }
 
 @Composable

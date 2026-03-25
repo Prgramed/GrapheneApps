@@ -33,6 +33,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val newVcard = parseVCardIntent(intent) ?: return
+        setIntent(intent)
+        recreate()
+    }
+
     private fun parseVCardIntent(intent: Intent?): Contact? {
         if (intent?.action != Intent.ACTION_VIEW || intent.data == null) return null
         val mimeType = intent.type ?: ""

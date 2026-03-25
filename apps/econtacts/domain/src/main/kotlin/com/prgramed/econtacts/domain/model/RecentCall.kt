@@ -1,6 +1,7 @@
 package com.prgramed.econtacts.domain.model
 
 data class RecentCall(
+    val id: Long = 0,
     val contactId: Long? = null,
     val name: String? = null,
     val number: String,

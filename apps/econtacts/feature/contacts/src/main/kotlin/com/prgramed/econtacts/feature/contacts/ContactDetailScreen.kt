@@ -229,9 +229,7 @@ fun ContactDetailScreen(
                             FilledTonalButton(
                                 onClick = {
                                     firstPhone?.let {
-                                        context.startActivity(
-                                            Intent(Intent.ACTION_CALL, Uri.parse("tel:${it.number}")),
-                                        )
+                                        placeCallDefault(context, it.number)
                                     }
                                 },
                                 enabled = firstPhone != null,

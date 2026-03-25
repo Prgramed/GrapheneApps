@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -53,8 +54,11 @@ class FavoritesViewModel @Inject constructor(
         }
     }
 
+    private var observeJob: Job? = null
+
     private fun startObserving() {
-        viewModelScope.launch {
+        observeJob?.cancel()
+        observeJob = viewModelScope.launch {
             combine(
                 contactRepository.getStarred(),
                 contactRepository.getAll(),

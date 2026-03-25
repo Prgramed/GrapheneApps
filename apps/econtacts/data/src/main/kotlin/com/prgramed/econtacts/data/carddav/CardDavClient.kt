@@ -8,12 +8,13 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import com.prgramed.econtacts.data.di.CardDavHttpClient
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class CardDavClient @Inject constructor(
-    private val httpClient: OkHttpClient,
+    @CardDavHttpClient private val httpClient: OkHttpClient,
 ) {
 
     suspend fun propfind(url: String, body: String, username: String, password: String): String =
@@ -26,12 +27,13 @@ class CardDavClient @Inject constructor(
                 .header("Content-Type", "application/xml; charset=utf-8")
                 .build()
 
-            val response = httpClient.newCall(request).execute()
-            val responseBody = response.body?.string() ?: throw IOException("Empty PROPFIND response")
-            if (!response.isSuccessful && response.code != 207) {
-                throw IOException("PROPFIND failed (${response.code}): ${responseBody.take(200)}")
+            httpClient.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: throw IOException("Empty PROPFIND response")
+                if (!response.isSuccessful && response.code != 207) {
+                    throw IOException("PROPFIND failed (${response.code}): ${responseBody.take(200)}")
+                }
+                ensureXml(responseBody, "PROPFIND")
             }
-            ensureXml(responseBody, "PROPFIND")
         }
 
     suspend fun report(url: String, body: String, username: String, password: String): String =
@@ -44,12 +46,13 @@ class CardDavClient @Inject constructor(
                 .header("Content-Type", "application/xml; charset=utf-8")
                 .build()
 
-            val response = httpClient.newCall(request).execute()
-            val responseBody = response.body?.string() ?: throw IOException("Empty REPORT response")
-            if (!response.isSuccessful && response.code != 207) {
-                throw IOException("REPORT failed (${response.code}): ${responseBody.take(200)}")
+            httpClient.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: throw IOException("Empty REPORT response")
+                if (!response.isSuccessful && response.code != 207) {
+                    throw IOException("REPORT failed (${response.code}): ${responseBody.take(200)}")
+                }
+                ensureXml(responseBody, "REPORT")
             }
-            ensureXml(responseBody, "REPORT")
         }
 
     private fun ensureXml(body: String, method: String): String {
@@ -74,11 +77,12 @@ class CardDavClient @Inject constructor(
                 builder.header("If-None-Match", "*")
             }
 
-            val response = httpClient.newCall(builder.build()).execute()
-            if (!response.isSuccessful) {
-                throw IOException("PUT failed: ${response.code} ${response.message}")
+            httpClient.newCall(builder.build()).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IOException("PUT failed: ${response.code} ${response.message}")
+                }
+                response.header("ETag")?.removeSurrounding("\"") ?: ""
             }
-            response.header("ETag")?.removeSurrounding("\"") ?: ""
         }
 
     suspend fun delete(url: String, username: String, password: String, etag: String? = null) =
@@ -92,9 +96,10 @@ class CardDavClient @Inject constructor(
                 builder.header("If-Match", "\"$etag\"")
             }
 
-            val response = httpClient.newCall(builder.build()).execute()
-            if (!response.isSuccessful) {
-                throw IOException("DELETE failed: ${response.code} ${response.message}")
+            httpClient.newCall(builder.build()).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IOException("DELETE failed: ${response.code} ${response.message}")
+                }
             }
         }
 
@@ -109,8 +114,9 @@ class CardDavClient @Inject constructor(
                     .header("Content-Type", "application/xml; charset=utf-8")
                     .build()
 
-                val response = httpClient.newCall(request).execute()
-                response.isSuccessful || response.code == 207
+                httpClient.newCall(request).execute().use { response ->
+                    response.isSuccessful || response.code == 207
+                }
             } catch (_: Exception) {
                 false
             }
@@ -180,9 +186,11 @@ class CardDavClient @Inject constructor(
             .header("Depth", "0")
             .header("Content-Type", "application/xml; charset=utf-8")
             .build()
-        val response = httpClient.newCall(request).execute()
-        val body = response.body?.string() ?: return null
-        if (!response.isSuccessful && response.code != 207) return null
+        val (body, isSuccess) = httpClient.newCall(request).execute().use { response ->
+            val b = response.body?.string()
+            b to (response.isSuccessful || response.code == 207)
+        }
+        if (body == null || !isSuccess) return null
         if (!body.trimStart().startsWith("<")) return null
 
         val principal = CardDavXmlParser.parseHref(body, "current-user-principal") ?: return null
@@ -237,11 +245,12 @@ class CardDavClient @Inject constructor(
             .header("Content-Type", "application/xml; charset=utf-8")
             .build()
 
-        val response = httpClient.newCall(request).execute()
-        if (!response.isSuccessful && response.code != 207) {
-            throw IOException("PROPFIND failed: ${response.code} ${response.message}")
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful && response.code != 207) {
+                throw IOException("PROPFIND failed: ${response.code} ${response.message}")
+            }
+            response.body?.string() ?: throw IOException("Empty PROPFIND response")
         }
-        response.body?.string() ?: throw IOException("Empty PROPFIND response")
     }
 
     private fun resolveUrl(baseUrl: String, path: String): String {

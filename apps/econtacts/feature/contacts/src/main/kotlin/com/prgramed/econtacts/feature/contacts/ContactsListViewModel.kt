@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
@@ -110,8 +111,8 @@ class ContactsListViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(selectedIds = emptySet(), undoBackupFile = backupFile)
                 }
-            } catch (_: Exception) {
-                // Merge failed
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "Merge failed: ${e.message}") }
             }
         }
     }
@@ -128,8 +129,11 @@ class ContactsListViewModel @Inject constructor(
         _uiState.update { it.copy(undoBackupFile = null) }
     }
 
+    private var observeJob: Job? = null
+
     private fun startObserving() {
-        viewModelScope.launch {
+        observeJob?.cancel()
+        observeJob = viewModelScope.launch {
             getContactsUseCase()
                 .catch { e ->
                     _uiState.update { it.copy(isLoading = false, error = e.message) }

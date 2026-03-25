@@ -18,10 +18,15 @@ import okhttp3.OkHttpClient
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
+import javax.inject.Qualifier
 import javax.inject.Singleton
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class CardDavHttpClient
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
     name = "econtacts_preferences",
@@ -43,6 +48,7 @@ object DataModule {
 
     @Provides
     @Singleton
+    @CardDavHttpClient
     fun provideOkHttpClient(): OkHttpClient {
         // Trust all certificates for self-signed NAS connections.
         // Safe for private LAN CardDAV — the connection is to the user's own server.

@@ -72,5 +72,5 @@ object VCardBuilder {
     }
 
     private fun escapeValue(value: String): String =
-        value.replace("\\", "\\\\").replace(",", "\\,").replace("\n", "\\n")
+        value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
 }

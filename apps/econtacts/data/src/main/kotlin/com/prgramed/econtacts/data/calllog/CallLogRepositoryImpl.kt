@@ -8,6 +8,7 @@ import android.os.Looper
 import android.provider.CallLog
 import android.provider.ContactsContract
 import com.prgramed.econtacts.domain.model.CallType
+import java.util.concurrent.ConcurrentHashMap
 import com.prgramed.econtacts.domain.model.RecentCall
 import com.prgramed.econtacts.domain.repository.CallLogRepository
 import kotlinx.coroutines.Dispatchers
@@ -25,8 +26,8 @@ class CallLogRepositoryImpl @Inject constructor(
     private val contentResolver: ContentResolver,
 ) : CallLogRepository {
 
-    // Cache name lookups to avoid repeated ContentResolver queries
-    private val nameCache = mutableMapOf<String, String?>()
+    // Cache contact lookups (name + contactId) to avoid repeated ContentResolver queries
+    private val contactCache = ConcurrentHashMap<String, Pair<String?, Long?>>()
 
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     override fun getRecentCalls(limit: Int): Flow<List<RecentCall>> = callbackFlow {
@@ -40,7 +41,7 @@ class CallLogRepositoryImpl @Inject constructor(
         )
         trySend(Unit)
         awaitClose { contentResolver.unregisterContentObserver(observer) }
-    }.debounce(300).map { nameCache.clear(); loadRecentCalls(limit) }.flowOn(Dispatchers.IO)
+    }.debounce(300).map { contactCache.clear(); loadRecentCalls(limit) }.flowOn(Dispatchers.IO)
 
     private fun loadRecentCalls(limit: Int): List<RecentCall> = try {
         val calls = mutableListOf<RecentCall>()
@@ -57,6 +58,7 @@ class CallLogRepositoryImpl @Inject constructor(
             null, null,
             "${CallLog.Calls.DATE} DESC LIMIT $limit",
         )?.use { cursor ->
+            val idIdx = cursor.getColumnIndexOrThrow(CallLog.Calls._ID)
             val nameIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME)
             val numberIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
             val typeIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
@@ -66,14 +68,21 @@ class CallLogRepositoryImpl @Inject constructor(
             while (cursor.moveToNext()) {
                 val number = cursor.getString(numberIdx) ?: ""
                 var name = cursor.getString(nameIdx)
+                var contactId: Long? = null
 
                 // If system didn't cache the name, look it up ourselves
                 if (name.isNullOrBlank() && number.isNotBlank()) {
-                    name = lookupContactName(number)
+                    val lookup = lookupContact(number)
+                    name = lookup?.first
+                    contactId = lookup?.second
+                } else if (number.isNotBlank()) {
+                    contactId = lookupContact(number)?.second
                 }
 
                 calls.add(
                     RecentCall(
+                        id = cursor.getLong(idIdx),
+                        contactId = contactId,
                         name = name,
                         number = number,
                         type = cursor.getInt(typeIdx).toCallType(),
@@ -89,8 +98,9 @@ class CallLogRepositoryImpl @Inject constructor(
         emptyList()
     }
 
-    private fun lookupContactName(phoneNumber: String): String? {
-        if (phoneNumber in nameCache) return nameCache[phoneNumber]
+    /** Returns (displayName, contactId) or null if no matching contact found. */
+    private fun lookupContact(phoneNumber: String): Pair<String?, Long?>? {
+        if (contactCache.containsKey(phoneNumber)) return contactCache[phoneNumber]
         val result = try {
             val uri = Uri.withAppendedPath(
                 ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
@@ -98,15 +108,24 @@ class CallLogRepositoryImpl @Inject constructor(
             )
             contentResolver.query(
                 uri,
-                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+                arrayOf(
+                    ContactsContract.PhoneLookup.DISPLAY_NAME,
+                    ContactsContract.PhoneLookup._ID,
+                ),
                 null, null, null,
             )?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0) else null
+                if (cursor.moveToFirst()) {
+                    val name = cursor.getString(0)
+                    val id = cursor.getLong(1)
+                    Pair(name, id)
+                } else {
+                    null
+                }
             }
         } catch (_: Exception) {
             null
         }
-        nameCache[phoneNumber] = result
+        contactCache[phoneNumber] = result ?: Pair(null, null)
         return result
     }
 }

@@ -23,29 +23,57 @@ class DuplicateRepositoryImpl @Inject constructor(
         val duplicateGroups = mutableListOf<DuplicateGroup>()
         val processed = mutableSetOf<Long>()
 
-        for (i in contacts.indices) {
-            if (contacts[i].id in processed) continue
-            val group = mutableListOf(contacts[i])
-            var reason = ""
-
-            for (j in i + 1 until contacts.size) {
-                if (contacts[j].id in processed) continue
-
-                val phoneMatch = hasMatchingPhone(contacts[i], contacts[j])
-                val nameMatch = isSimilarName(contacts[i].displayName, contacts[j].displayName)
-
-                if (phoneMatch) {
-                    group.add(contacts[j])
-                    reason = "Same phone number"
-                } else if (nameMatch) {
-                    group.add(contacts[j])
-                    reason = "Similar name"
-                }
+        // Index by normalized phone number for O(n) phone matching
+        val phoneIndex = mutableMapOf<String, MutableList<Int>>()
+        contacts.forEachIndexed { idx, c ->
+            c.phoneNumbers.forEach { p ->
+                val norm = normalize(p.number)
+                if (norm.isNotBlank()) phoneIndex.getOrPut(norm) { mutableListOf() }.add(idx)
             }
+        }
 
+        // Index by name prefix (first 3 chars) for bucketed name matching
+        val nameIndex = mutableMapOf<String, MutableList<Int>>()
+        contacts.forEachIndexed { idx, c ->
+            val prefix = c.displayName.lowercase().take(3)
+            if (prefix.length == 3) nameIndex.getOrPut(prefix) { mutableListOf() }.add(idx)
+        }
+
+        // Find phone duplicates
+        for ((_, indices) in phoneIndex) {
+            if (indices.size < 2) continue
+            val anchor = indices.first()
+            if (contacts[anchor].id in processed) continue
+            val group = mutableListOf(contacts[anchor])
+            for (k in 1 until indices.size) {
+                val c = contacts[indices[k]]
+                if (c.id in processed) continue
+                group.add(c)
+            }
             if (group.size > 1) {
                 processed.addAll(group.map { it.id })
-                duplicateGroups.add(DuplicateGroup(group, reason))
+                duplicateGroups.add(DuplicateGroup(group, "Same phone number"))
+            }
+        }
+
+        // Find name duplicates (only within same prefix bucket)
+        for ((_, indices) in nameIndex) {
+            if (indices.size < 2) continue
+            for (i in indices.indices) {
+                val ci = contacts[indices[i]]
+                if (ci.id in processed) continue
+                val group = mutableListOf(ci)
+                for (j in i + 1 until indices.size) {
+                    val cj = contacts[indices[j]]
+                    if (cj.id in processed) continue
+                    if (isSimilarName(ci.displayName, cj.displayName)) {
+                        group.add(cj)
+                    }
+                }
+                if (group.size > 1) {
+                    processed.addAll(group.map { it.id })
+                    duplicateGroups.add(DuplicateGroup(group, "Similar name"))
+                }
             }
         }
 

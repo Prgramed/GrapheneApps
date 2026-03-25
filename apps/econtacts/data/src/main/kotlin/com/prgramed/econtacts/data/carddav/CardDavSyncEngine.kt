@@ -223,17 +223,25 @@ class CardDavSyncEngine @Inject constructor(
                             }
                         } else {
                             // Insert new contact
-                            val newId = contactRepository.insert(parsedContact)
-                            syncStateDao.insert(
-                                SyncStateEntity(
-                                    contactId = newId,
-                                    remoteHref = resource.href,
-                                    etag = resource.etag,
-                                    uid = parsedContact.uid ?: "",
-                                    lastSynced = System.currentTimeMillis(),
-                                ),
-                            )
-                            added++
+                            try {
+                                val newId = contactRepository.insert(parsedContact)
+                                if (newId > 0L) {
+                                    syncStateDao.insert(
+                                        SyncStateEntity(
+                                            contactId = newId,
+                                            remoteHref = resource.href,
+                                            etag = resource.etag,
+                                            uid = parsedContact.uid ?: "",
+                                            lastSynced = System.currentTimeMillis(),
+                                        ),
+                                    )
+                                    added++
+                                } else {
+                                    errors.add("Failed to insert ${parsedContact.displayName}")
+                                }
+                            } catch (e: Exception) {
+                                errors.add("Failed to insert ${parsedContact.displayName}: ${e.message}")
+                            }
                         }
                     } catch (e: Exception) {
                         errors.add("Import failed for ${resource.href}: ${e.message}")

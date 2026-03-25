@@ -119,7 +119,7 @@ fun RecentsScreen(
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(
                             uiState.calls,
-                            key = { "${it.timestamp}_${it.number}_${it.type}" },
+                            key = { it.id },
                         ) { call ->
                             CallRow(
                                 call = call,

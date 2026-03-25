@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -46,8 +47,11 @@ class SpeedDialViewModel @Inject constructor(
         }
     }
 
+    private var loadContactsJob: Job? = null
+
     fun loadContacts() {
-        viewModelScope.launch {
+        loadContactsJob?.cancel()
+        loadContactsJob = viewModelScope.launch {
             contactRepository.getAll()
                 .catch { }
                 .collect { contacts ->

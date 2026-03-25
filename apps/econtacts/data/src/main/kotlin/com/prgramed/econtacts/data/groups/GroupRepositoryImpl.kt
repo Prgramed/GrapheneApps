@@ -118,7 +118,7 @@ class GroupRepositoryImpl @Inject constructor(
     private fun loadGroups(): List<ContactGroup> = try {
         val groups = mutableListOf<ContactGroup>()
         contentResolver.query(
-            ContactsContract.Groups.CONTENT_URI,
+            ContactsContract.Groups.CONTENT_SUMMARY_URI,
             arrayOf(
                 ContactsContract.Groups._ID,
                 ContactsContract.Groups.TITLE,

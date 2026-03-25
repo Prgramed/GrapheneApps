@@ -131,9 +131,18 @@ class ContactRepositoryImpl @Inject constructor(
                 )
                 contentResolver.applyBatch(ContactsContract.AUTHORITY, starOps)
             }
-            rawContactId
-        } catch (e: Exception) { Timber.w(e, "ContactRepository")
-            0L
+            // Resolve aggregate contact ID from raw contact ID
+            contentResolver.query(
+                ContactsContract.RawContacts.CONTENT_URI,
+                arrayOf(ContactsContract.RawContacts.CONTACT_ID),
+                "${ContactsContract.RawContacts._ID} = ?",
+                arrayOf(rawContactId.toString()), null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0) else null
+            } ?: rawContactId
+        } catch (e: Exception) {
+            Timber.w(e, "ContactRepository")
+            throw e
         }
     }
 
@@ -235,8 +244,9 @@ class ContactRepositoryImpl @Inject constructor(
             if (syncState != null) {
                 syncStateDao.update(syncState.copy(isDirty = true))
             }
-        } catch (e: Exception) { Timber.w(e, "ContactRepository")
-            // Silently fail — contact update failed
+        } catch (e: Exception) {
+            Timber.w(e, "ContactRepository")
+            throw e
         }
     }
 
@@ -256,8 +266,9 @@ class ContactRepositoryImpl @Inject constructor(
                 ops.add(ContentProviderOperation.newDelete(uri).build())
             }
             contentResolver.applyBatch(ContactsContract.AUTHORITY, ops)
-        } catch (e: Exception) { Timber.w(e, "ContactRepository")
-            // Silently fail — contact deletion failed
+        } catch (e: Exception) {
+            Timber.w(e, "ContactRepository")
+            throw e
         }
         Unit
     }
@@ -358,7 +369,9 @@ class ContactRepositoryImpl @Inject constructor(
                 while (cursor.moveToNext()) matchingIds.add(cursor.getLong(idIdx))
             }
         if (matchingIds.isEmpty()) return emptyList()
-        loadContactsWhere("${ContactsContract.Contacts._ID} IN (${matchingIds.joinToString(",")})")
+        matchingIds.chunked(BATCH_SIZE).flatMap { chunk ->
+            loadContactsWhere("${ContactsContract.Contacts._ID} IN (${chunk.joinToString(",")})")
+        }
     } catch (e: Exception) { Timber.w(e, "ContactRepository")
         emptyList()
     }
@@ -431,42 +444,49 @@ class ContactRepositoryImpl @Inject constructor(
 
     // --- Batch loaders ---
 
-    private fun loadPhonesForContacts(ids: List<Long>): Map<Long, List<PhoneNumber>> = safeQueryMap(
-        CommonDataKinds.Phone.CONTENT_URI,
-        arrayOf(CommonDataKinds.Phone.CONTACT_ID, CommonDataKinds.Phone.NUMBER, CommonDataKinds.Phone.TYPE, CommonDataKinds.Phone.LABEL),
-        "${CommonDataKinds.Phone.CONTACT_ID} IN (${ids.joinToString(",")})",
-    ) { cursor ->
-        val number = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.Phone.NUMBER)) ?: return@safeQueryMap null
-        val contactId = cursor.getLong(cursor.getColumnIndexOrThrow(CommonDataKinds.Phone.CONTACT_ID))
-        contactId to PhoneNumber(number, cursor.getInt(cursor.getColumnIndexOrThrow(CommonDataKinds.Phone.TYPE)).toPhoneType(), cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.Phone.LABEL)))
+    private fun loadPhonesForContacts(ids: List<Long>): Map<Long, List<PhoneNumber>> = batchQueryMap(ids) { chunk ->
+        safeQueryMap(
+            CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(CommonDataKinds.Phone.CONTACT_ID, CommonDataKinds.Phone.NUMBER, CommonDataKinds.Phone.TYPE, CommonDataKinds.Phone.LABEL),
+            "${CommonDataKinds.Phone.CONTACT_ID} IN (${chunk.joinToString(",")})",
+        ) { cursor ->
+            val number = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.Phone.NUMBER)) ?: return@safeQueryMap null
+            val contactId = cursor.getLong(cursor.getColumnIndexOrThrow(CommonDataKinds.Phone.CONTACT_ID))
+            contactId to PhoneNumber(number, cursor.getInt(cursor.getColumnIndexOrThrow(CommonDataKinds.Phone.TYPE)).toPhoneType(), cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.Phone.LABEL)))
+        }
     }
 
-    private fun loadEmailsForContacts(ids: List<Long>): Map<Long, List<Email>> = safeQueryMap(
-        CommonDataKinds.Email.CONTENT_URI,
-        arrayOf(CommonDataKinds.Email.CONTACT_ID, CommonDataKinds.Email.ADDRESS, CommonDataKinds.Email.TYPE, CommonDataKinds.Email.LABEL),
-        "${CommonDataKinds.Email.CONTACT_ID} IN (${ids.joinToString(",")})",
-    ) { cursor ->
-        val address = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.Email.ADDRESS)) ?: return@safeQueryMap null
-        val contactId = cursor.getLong(cursor.getColumnIndexOrThrow(CommonDataKinds.Email.CONTACT_ID))
-        contactId to Email(address, cursor.getInt(cursor.getColumnIndexOrThrow(CommonDataKinds.Email.TYPE)).toEmailType(), cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.Email.LABEL)))
+    private fun loadEmailsForContacts(ids: List<Long>): Map<Long, List<Email>> = batchQueryMap(ids) { chunk ->
+        safeQueryMap(
+            CommonDataKinds.Email.CONTENT_URI,
+            arrayOf(CommonDataKinds.Email.CONTACT_ID, CommonDataKinds.Email.ADDRESS, CommonDataKinds.Email.TYPE, CommonDataKinds.Email.LABEL),
+            "${CommonDataKinds.Email.CONTACT_ID} IN (${chunk.joinToString(",")})",
+        ) { cursor ->
+            val address = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.Email.ADDRESS)) ?: return@safeQueryMap null
+            val contactId = cursor.getLong(cursor.getColumnIndexOrThrow(CommonDataKinds.Email.CONTACT_ID))
+            contactId to Email(address, cursor.getInt(cursor.getColumnIndexOrThrow(CommonDataKinds.Email.TYPE)).toEmailType(), cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.Email.LABEL)))
+        }
     }
 
     private fun loadNotesForContacts(ids: List<Long>): Map<Long, String> {
+        if (ids.isEmpty()) return emptyMap()
         val map = mutableMapOf<Long, String>()
-        try {
-            contentResolver.query(
-                Data.CONTENT_URI, arrayOf(Data.CONTACT_ID, CommonDataKinds.Note.NOTE),
-                "${Data.MIMETYPE} = ? AND ${Data.CONTACT_ID} IN (${ids.joinToString(",")})",
-                arrayOf(CommonDataKinds.Note.CONTENT_ITEM_TYPE), null,
-            )?.use { cursor ->
-                val idIdx = cursor.getColumnIndexOrThrow(Data.CONTACT_ID)
-                val noteIdx = cursor.getColumnIndexOrThrow(CommonDataKinds.Note.NOTE)
-                while (cursor.moveToNext()) {
-                    val note = cursor.getString(noteIdx)
-                    if (!note.isNullOrBlank()) map[cursor.getLong(idIdx)] = note
+        ids.chunked(BATCH_SIZE).forEach { chunk ->
+            try {
+                contentResolver.query(
+                    Data.CONTENT_URI, arrayOf(Data.CONTACT_ID, CommonDataKinds.Note.NOTE),
+                    "${Data.MIMETYPE} = ? AND ${Data.CONTACT_ID} IN (${chunk.joinToString(",")})",
+                    arrayOf(CommonDataKinds.Note.CONTENT_ITEM_TYPE), null,
+                )?.use { cursor ->
+                    val idIdx = cursor.getColumnIndexOrThrow(Data.CONTACT_ID)
+                    val noteIdx = cursor.getColumnIndexOrThrow(CommonDataKinds.Note.NOTE)
+                    while (cursor.moveToNext()) {
+                        val note = cursor.getString(noteIdx)
+                        if (!note.isNullOrBlank()) map[cursor.getLong(idIdx)] = note
+                    }
                 }
-            }
-        } catch (e: Exception) { Timber.w(e, "ContactRepository") }
+            } catch (e: Exception) { Timber.w(e, "ContactRepository") }
+        }
         return map
     }
 
@@ -474,57 +494,65 @@ class ContactRepositoryImpl @Inject constructor(
     private fun loadTitlesForContacts(ids: List<Long>): Map<Long, String> = safeQuerySingle(ids, CommonDataKinds.Organization.CONTENT_ITEM_TYPE, CommonDataKinds.Organization.TITLE)
 
     private fun loadBirthdaysForContacts(ids: List<Long>): Map<Long, String> {
+        if (ids.isEmpty()) return emptyMap()
         val map = mutableMapOf<Long, String>()
-        try {
-            contentResolver.query(
-                Data.CONTENT_URI, arrayOf(Data.CONTACT_ID, CommonDataKinds.Event.START_DATE),
-                "${Data.MIMETYPE} = ? AND ${CommonDataKinds.Event.TYPE} = ? AND ${Data.CONTACT_ID} IN (${ids.joinToString(",")})",
-                arrayOf(CommonDataKinds.Event.CONTENT_ITEM_TYPE, CommonDataKinds.Event.TYPE_BIRTHDAY.toString()), null,
-            )?.use { cursor ->
-                val idIdx = cursor.getColumnIndexOrThrow(Data.CONTACT_ID)
-                val dateIdx = cursor.getColumnIndexOrThrow(CommonDataKinds.Event.START_DATE)
-                while (cursor.moveToNext()) {
-                    val date = cursor.getString(dateIdx)
-                    if (!date.isNullOrBlank()) map[cursor.getLong(idIdx)] = date
+        ids.chunked(BATCH_SIZE).forEach { chunk ->
+            try {
+                contentResolver.query(
+                    Data.CONTENT_URI, arrayOf(Data.CONTACT_ID, CommonDataKinds.Event.START_DATE),
+                    "${Data.MIMETYPE} = ? AND ${CommonDataKinds.Event.TYPE} = ? AND ${Data.CONTACT_ID} IN (${chunk.joinToString(",")})",
+                    arrayOf(CommonDataKinds.Event.CONTENT_ITEM_TYPE, CommonDataKinds.Event.TYPE_BIRTHDAY.toString()), null,
+                )?.use { cursor ->
+                    val idIdx = cursor.getColumnIndexOrThrow(Data.CONTACT_ID)
+                    val dateIdx = cursor.getColumnIndexOrThrow(CommonDataKinds.Event.START_DATE)
+                    while (cursor.moveToNext()) {
+                        val date = cursor.getString(dateIdx)
+                        if (!date.isNullOrBlank()) map[cursor.getLong(idIdx)] = date
+                    }
                 }
-            }
-        } catch (e: Exception) { Timber.w(e, "ContactRepository") }
+            } catch (e: Exception) { Timber.w(e, "ContactRepository") }
+        }
         return map
     }
 
-    private fun loadAddressesForContacts(ids: List<Long>): Map<Long, List<Address>> = safeQueryMap(
-        Data.CONTENT_URI,
-        arrayOf(Data.CONTACT_ID, CommonDataKinds.StructuredPostal.STREET, CommonDataKinds.StructuredPostal.CITY, CommonDataKinds.StructuredPostal.REGION, CommonDataKinds.StructuredPostal.POSTCODE, CommonDataKinds.StructuredPostal.COUNTRY, CommonDataKinds.StructuredPostal.TYPE),
-        "${Data.MIMETYPE} = ? AND ${Data.CONTACT_ID} IN (${ids.joinToString(",")})",
-        selectionArgs = arrayOf(CommonDataKinds.StructuredPostal.CONTENT_ITEM_TYPE),
-    ) { cursor ->
-        val contactId = cursor.getLong(cursor.getColumnIndexOrThrow(Data.CONTACT_ID))
-        contactId to Address(
-            street = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.StructuredPostal.STREET)) ?: "",
-            city = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.StructuredPostal.CITY)) ?: "",
-            region = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.StructuredPostal.REGION)) ?: "",
-            postalCode = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.StructuredPostal.POSTCODE)) ?: "",
-            country = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.StructuredPostal.COUNTRY)) ?: "",
-            type = cursor.getInt(cursor.getColumnIndexOrThrow(CommonDataKinds.StructuredPostal.TYPE)).toAddressType(),
-        )
+    private fun loadAddressesForContacts(ids: List<Long>): Map<Long, List<Address>> = batchQueryMap(ids) { chunk ->
+        safeQueryMap(
+            Data.CONTENT_URI,
+            arrayOf(Data.CONTACT_ID, CommonDataKinds.StructuredPostal.STREET, CommonDataKinds.StructuredPostal.CITY, CommonDataKinds.StructuredPostal.REGION, CommonDataKinds.StructuredPostal.POSTCODE, CommonDataKinds.StructuredPostal.COUNTRY, CommonDataKinds.StructuredPostal.TYPE),
+            "${Data.MIMETYPE} = ? AND ${Data.CONTACT_ID} IN (${chunk.joinToString(",")})",
+            selectionArgs = arrayOf(CommonDataKinds.StructuredPostal.CONTENT_ITEM_TYPE),
+        ) { cursor ->
+            val contactId = cursor.getLong(cursor.getColumnIndexOrThrow(Data.CONTACT_ID))
+            contactId to Address(
+                street = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.StructuredPostal.STREET)) ?: "",
+                city = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.StructuredPostal.CITY)) ?: "",
+                region = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.StructuredPostal.REGION)) ?: "",
+                postalCode = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.StructuredPostal.POSTCODE)) ?: "",
+                country = cursor.getString(cursor.getColumnIndexOrThrow(CommonDataKinds.StructuredPostal.COUNTRY)) ?: "",
+                type = cursor.getInt(cursor.getColumnIndexOrThrow(CommonDataKinds.StructuredPostal.TYPE)).toAddressType(),
+            )
+        }
     }
 
     private fun loadWebsitesForContacts(ids: List<Long>): Map<Long, List<String>> {
+        if (ids.isEmpty()) return emptyMap()
         val map = mutableMapOf<Long, MutableList<String>>()
-        try {
-            contentResolver.query(
-                Data.CONTENT_URI, arrayOf(Data.CONTACT_ID, CommonDataKinds.Website.URL),
-                "${Data.MIMETYPE} = ? AND ${Data.CONTACT_ID} IN (${ids.joinToString(",")})",
-                arrayOf(CommonDataKinds.Website.CONTENT_ITEM_TYPE), null,
-            )?.use { cursor ->
-                val idIdx = cursor.getColumnIndexOrThrow(Data.CONTACT_ID)
-                val urlIdx = cursor.getColumnIndexOrThrow(CommonDataKinds.Website.URL)
-                while (cursor.moveToNext()) {
-                    val url = cursor.getString(urlIdx) ?: continue
-                    map.getOrPut(cursor.getLong(idIdx)) { mutableListOf() }.add(url)
+        ids.chunked(BATCH_SIZE).forEach { chunk ->
+            try {
+                contentResolver.query(
+                    Data.CONTENT_URI, arrayOf(Data.CONTACT_ID, CommonDataKinds.Website.URL),
+                    "${Data.MIMETYPE} = ? AND ${Data.CONTACT_ID} IN (${chunk.joinToString(",")})",
+                    arrayOf(CommonDataKinds.Website.CONTENT_ITEM_TYPE), null,
+                )?.use { cursor ->
+                    val idIdx = cursor.getColumnIndexOrThrow(Data.CONTACT_ID)
+                    val urlIdx = cursor.getColumnIndexOrThrow(CommonDataKinds.Website.URL)
+                    while (cursor.moveToNext()) {
+                        val url = cursor.getString(urlIdx) ?: continue
+                        map.getOrPut(cursor.getLong(idIdx)) { mutableListOf() }.add(url)
+                    }
                 }
-            }
-        } catch (e: Exception) { Timber.w(e, "ContactRepository") }
+            } catch (e: Exception) { Timber.w(e, "ContactRepository") }
+        }
         return map
     }
 
@@ -533,25 +561,27 @@ class ContactRepositoryImpl @Inject constructor(
     private fun loadGroupsForContact(id: Long): List<ContactGroup> = loadGroupsForContacts(listOf(id))[id] ?: emptyList()
 
     private fun loadGroupsForContacts(ids: List<Long>): Map<Long, List<ContactGroup>> {
+        if (ids.isEmpty()) return emptyMap()
         val map = mutableMapOf<Long, MutableList<ContactGroup>>()
-        try {
-            contentResolver.query(
-                Data.CONTENT_URI,
-                arrayOf(Data.CONTACT_ID, CommonDataKinds.GroupMembership.GROUP_ROW_ID),
-                "${Data.MIMETYPE} = ? AND ${Data.CONTACT_ID} IN (${ids.joinToString(",")})",
-                arrayOf(CommonDataKinds.GroupMembership.CONTENT_ITEM_TYPE), null,
-            )?.use { cursor ->
-                val idIdx = cursor.getColumnIndexOrThrow(Data.CONTACT_ID)
-                val groupIdx = cursor.getColumnIndexOrThrow(CommonDataKinds.GroupMembership.GROUP_ROW_ID)
-                while (cursor.moveToNext()) {
-                    val contactId = cursor.getLong(idIdx)
-                    val groupId = cursor.getLong(groupIdx)
-                    // Resolve group name
-                    val groupName = resolveGroupName(groupId) ?: continue
-                    map.getOrPut(contactId) { mutableListOf() }.add(ContactGroup(id = groupId, title = groupName))
+        ids.chunked(BATCH_SIZE).forEach { chunk ->
+            try {
+                contentResolver.query(
+                    Data.CONTENT_URI,
+                    arrayOf(Data.CONTACT_ID, CommonDataKinds.GroupMembership.GROUP_ROW_ID),
+                    "${Data.MIMETYPE} = ? AND ${Data.CONTACT_ID} IN (${chunk.joinToString(",")})",
+                    arrayOf(CommonDataKinds.GroupMembership.CONTENT_ITEM_TYPE), null,
+                )?.use { cursor ->
+                    val idIdx = cursor.getColumnIndexOrThrow(Data.CONTACT_ID)
+                    val groupIdx = cursor.getColumnIndexOrThrow(CommonDataKinds.GroupMembership.GROUP_ROW_ID)
+                    while (cursor.moveToNext()) {
+                        val contactId = cursor.getLong(idIdx)
+                        val groupId = cursor.getLong(groupIdx)
+                        val groupName = resolveGroupName(groupId) ?: continue
+                        map.getOrPut(contactId) { mutableListOf() }.add(ContactGroup(id = groupId, title = groupName))
+                    }
                 }
-            }
-        } catch (e: Exception) { Timber.w(e, "ContactRepository") }
+            } catch (e: Exception) { Timber.w(e, "ContactRepository") }
+        }
         return map
     }
 
@@ -599,21 +629,24 @@ class ContactRepositoryImpl @Inject constructor(
     }
 
     private fun safeQuerySingle(ids: List<Long>, mimeType: String, column: String): Map<Long, String> {
+        if (ids.isEmpty()) return emptyMap()
         val map = mutableMapOf<Long, String>()
-        try {
-            contentResolver.query(
-                Data.CONTENT_URI, arrayOf(Data.CONTACT_ID, column),
-                "${Data.MIMETYPE} = ? AND ${Data.CONTACT_ID} IN (${ids.joinToString(",")})",
-                arrayOf(mimeType), null,
-            )?.use { cursor ->
-                val idIdx = cursor.getColumnIndexOrThrow(Data.CONTACT_ID)
-                val valIdx = cursor.getColumnIndexOrThrow(column)
-                while (cursor.moveToNext()) {
-                    val v = cursor.getString(valIdx)
-                    if (!v.isNullOrBlank()) map[cursor.getLong(idIdx)] = v
+        ids.chunked(BATCH_SIZE).forEach { chunk ->
+            try {
+                contentResolver.query(
+                    Data.CONTENT_URI, arrayOf(Data.CONTACT_ID, column),
+                    "${Data.MIMETYPE} = ? AND ${Data.CONTACT_ID} IN (${chunk.joinToString(",")})",
+                    arrayOf(mimeType), null,
+                )?.use { cursor ->
+                    val idIdx = cursor.getColumnIndexOrThrow(Data.CONTACT_ID)
+                    val valIdx = cursor.getColumnIndexOrThrow(column)
+                    while (cursor.moveToNext()) {
+                        val v = cursor.getString(valIdx)
+                        if (!v.isNullOrBlank()) map[cursor.getLong(idIdx)] = v
+                    }
                 }
-            }
-        } catch (e: Exception) { Timber.w(e, "ContactRepository") }
+            } catch (e: Exception) { Timber.w(e, "ContactRepository") }
+        }
         return map
     }
 
@@ -645,7 +678,22 @@ class ContactRepositoryImpl @Inject constructor(
         null
     }
 
+    private fun <T> batchQueryMap(
+        ids: List<Long>,
+        query: (List<Long>) -> Map<Long, List<T>>,
+    ): Map<Long, List<T>> {
+        if (ids.isEmpty()) return emptyMap()
+        val result = mutableMapOf<Long, MutableList<T>>()
+        ids.chunked(BATCH_SIZE).forEach { chunk ->
+            query(chunk).forEach { (key, values) ->
+                result.getOrPut(key) { mutableListOf() }.addAll(values)
+            }
+        }
+        return result
+    }
+
     companion object {
+        private const val BATCH_SIZE = 500
         private val CONTACT_PROJECTION = arrayOf(
             ContactsContract.Contacts._ID,
             ContactsContract.Contacts.LOOKUP_KEY,
