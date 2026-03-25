@@ -45,4 +45,10 @@ interface EventDao {
 
     @Query("SELECT serverUrl, etag FROM event_series WHERE calendarSourceId = :calendarSourceId")
     suspend fun getServerUrlEtags(calendarSourceId: Long): List<ServerUrlEtag>
+
+    @Query("SELECT * FROM calendar_events WHERE uid = :uid AND instanceStart = :instanceStart LIMIT 1")
+    suspend fun getEventInstance(uid: String, instanceStart: Long): CalendarEventEntity?
+
+    @Query("SELECT * FROM calendar_events WHERE instanceStart > :start AND instanceStart < :end AND isCancelled = 0 ORDER BY instanceStart")
+    suspend fun getFutureEvents(start: Long, end: Long): List<CalendarEventEntity>
 }

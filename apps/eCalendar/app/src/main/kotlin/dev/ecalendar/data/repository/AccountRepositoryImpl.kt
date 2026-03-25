@@ -9,6 +9,7 @@ import dev.ecalendar.data.db.dao.CalendarDao
 import dev.ecalendar.data.db.entity.CalendarSourceEntity
 import dev.ecalendar.data.db.entity.toDomain
 import dev.ecalendar.data.db.entity.toEntity
+import dev.ecalendar.domain.model.AccountType
 import dev.ecalendar.domain.model.CalendarAccount
 import dev.ecalendar.domain.repository.AccountRepository
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +32,11 @@ class AccountRepositoryImpl @Inject constructor(
     override suspend fun addAccount(account: CalendarAccount, password: String): DiscoveryResult {
         // Store account
         val accountId = accountDao.upsert(account.toEntity())
+
+        // iCal subscriptions don't use CalDAV discovery — just save the account
+        if (account.type == AccountType.ICAL_SUBSCRIPTION) {
+            return DiscoveryResult.Success(emptyList())
+        }
 
         // Store credentials
         credentialStore.setPassword(accountId, password)

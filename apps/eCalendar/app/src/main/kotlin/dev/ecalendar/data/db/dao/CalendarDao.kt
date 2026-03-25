@@ -23,4 +23,7 @@ interface CalendarDao {
 
     @Query("DELETE FROM calendar_sources WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("SELECT * FROM calendar_sources WHERE calDavUrl = :url LIMIT 1")
+    suspend fun getByUrl(url: String): CalendarSourceEntity?
 }

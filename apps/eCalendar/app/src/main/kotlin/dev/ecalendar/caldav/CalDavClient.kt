@@ -3,6 +3,7 @@ package dev.ecalendar.caldav
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.ConnectionPool
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -15,9 +16,11 @@ class CalDavClient(
     username: String,
     password: String,
     baseClient: OkHttpClient = OkHttpClient(),
+    extraInterceptor: Interceptor? = null,
 ) {
     private val client: OkHttpClient = baseClient.newBuilder()
         .addInterceptor(BasicAuthInterceptor(username, password))
+        .apply { if (extraInterceptor != null) addInterceptor(extraInterceptor) }
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -83,6 +86,28 @@ class CalDavClient(
             val request = Request.Builder()
                 .url(url)
                 .get()
+                .build()
+            client.newCall(request).execute()
+        }
+
+    suspend fun mkcalendar(url: String, displayName: String, colorHex: String): Response =
+        withContext(Dispatchers.IO) {
+            val body = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"
+                              xmlns:ical="http://apple.com/ns/ical/">
+                  <d:set>
+                    <d:prop>
+                      <d:displayname>$displayName</d:displayname>
+                      <ical:calendar-color>$colorHex</ical:calendar-color>
+                    </d:prop>
+                  </d:set>
+                </c:mkcalendar>
+            """.trimIndent()
+            val request = Request.Builder()
+                .url(url)
+                .method("MKCALENDAR", body.toRequestBody(xmlMediaType))
+                .header("Content-Type", "application/xml; charset=utf-8")
                 .build()
             client.newCall(request).execute()
         }

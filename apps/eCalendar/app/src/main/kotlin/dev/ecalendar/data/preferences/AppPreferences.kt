@@ -13,4 +13,5 @@ data class AppPreferences(
     val defaultReminderMins: Int = 15,
     val notificationsEnabled: Boolean = true,
     val syncIntervalHours: Int = 1,
+    val themeMode: String = "system", // "system", "light", "dark"
 )

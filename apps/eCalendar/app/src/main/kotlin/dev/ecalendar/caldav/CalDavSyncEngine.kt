@@ -50,10 +50,16 @@ object CalDavSyncEngine {
             return
         }
 
-        val xml = response.body?.string() ?: return
+        val body = response.body?.string() ?: return
         response.close()
 
-        val items = parseMultiStatusResponse(xml, source.calDavUrl)
+        if (!isXmlResponse(response, body)) {
+            Timber.w("fullSync: non-XML response from ${source.displayName}: ${body.take(200)}")
+            logZohoError(body)
+            return
+        }
+
+        val items = parseMultiStatusResponse(body, source.calDavUrl)
         Timber.d("fullSync: ${items.size} events from ${source.displayName}")
 
         val serverUids = mutableSetOf<String>()
@@ -153,10 +159,17 @@ object CalDavSyncEngine {
             return
         }
 
-        val xml = response.body?.string() ?: return
+        val body = response.body?.string() ?: return
         response.close()
 
-        val serverEtags = parseEtagPropfind(xml, source.calDavUrl) // href → etag
+        if (!isXmlResponse(response, body)) {
+            Timber.w("quickSync: non-XML response from ${source.displayName}: ${body.take(200)}")
+            logZohoError(body)
+            fullSync(client, source, eventDao, calendarDao)
+            return
+        }
+
+        val serverEtags = parseEtagPropfind(body, source.calDavUrl) // href → etag
         val localEtags = eventDao.getServerUrlEtags(source.id)
             .associate { it.serverUrl to it.etag } // serverUrl → etag
 
@@ -337,5 +350,23 @@ object CalDavSyncEngine {
         if (path.startsWith("http://") || path.startsWith("https://")) return path
         val baseUri = java.net.URI(base)
         return baseUri.resolve(path).toString()
+    }
+
+    private fun isXmlResponse(response: okhttp3.Response, body: String): Boolean {
+        val ct = response.header("Content-Type") ?: return body.trimStart().startsWith("<?xml") || body.trimStart().startsWith("<")
+        if (ct.contains("xml", ignoreCase = true)) return true
+        if (ct.contains("text/calendar", ignoreCase = true)) return true
+        // Zoho sometimes returns text/plain with valid XML — check body
+        return body.trimStart().startsWith("<?xml") || body.trimStart().startsWith("<d:") || body.trimStart().startsWith("<D:")
+    }
+
+    private fun logZohoError(body: String) {
+        val lower = body.lowercase()
+        when {
+            "no calendar found" in lower -> Timber.e("Zoho: calendar not found — check URL")
+            "invalid credentials" in lower || "authentication" in lower -> Timber.e("Zoho: authentication failed — check app-specific password")
+            "rate limit" in lower || "too many" in lower -> Timber.e("Zoho: rate limit reached — will retry later")
+            else -> Timber.w("Zoho: unexpected response — ${body.take(300)}")
+        }
     }
 }

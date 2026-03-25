@@ -497,7 +497,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 2.3 — Write Operations (Push Local Changes)**
+- [x] **Session 2.3 — Write Operations (Push Local Changes)** ✅ 2026-03-24
   - `OfflineQueueProcessor.kt`: drains `SyncQueueEntity` in order of `createdAt`; processes one item at a time:
     - `CREATE`: `CalDavClient.put(calendarUrl + uid + ".ics", icsPayload, etag=null)` with `If-None-Match: *` → 201 Created → update `EventSeriesEntity.isLocal=false`, store returned ETag; 412 = UID conflict → regenerate UID and retry once
     - `UPDATE`: fetch current ETag from server (`HEAD {url}`) → `CalDavClient.put(url, icsPayload, etag=serverEtag)` → 204 Updated; 412 = conflict → last-write-wins: re-fetch server version, overwrite local Room record, discard local change, remove from queue silently
@@ -509,7 +509,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 2.4 — SyncCoordinator + WorkManager**
+- [x] **Session 2.4 — SyncCoordinator + WorkManager** ✅ 2026-03-24
   - `SyncCoordinator.kt`: orchestrates sync across all accounts; `suspend fun syncAll()`:
     - Load all enabled `CalendarAccount`s + their `CalendarSource`s
     - For each account: create `CalDavClient(baseUrl, username, credentialStore.getPassword(id))`
@@ -538,7 +538,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 3.1 — Shared Calendar Infrastructure**
+- [x] **Session 3.1 — Shared Calendar Infrastructure** ✅ 2026-03-24
   - `CalendarViewModel.kt` (shared across all views): `observeEventsInRange(start, end)` from `CalendarRepository`; `activeDate: StateFlow<LocalDate>` (navigated date); `fun navigate(date: LocalDate)` updates `activeDate` + writes to `AppPreferencesRepository`; `visibleCalendars: StateFlow<Set<Long>>` (which calendar source IDs are shown); restores `activeDate` from DataStore on init
   - `EventChip.kt`: shared composable for event representation; takes `event: CalendarEvent`, `isCompact: Boolean`; compact = small coloured dot/pill; full = coloured rounded rectangle with title; colour from `event.colorHex ?: CalendarSource.colorHex`
   - `ColorPalette.kt`: 8 predefined event colours: Tomato, Flamingo, Tangerine, Banana, Sage, Basil, Peacock, Blueberry (matching Google Calendar palette); each has `lightVariant` and `darkVariant` hex strings; `fun forTheme(hex: String, isDark: Boolean): Color`
@@ -549,7 +549,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 3.2 — Month Grid View**
+- [x] **Session 3.2 — Month Grid View** ✅ 2026-03-24
   - `MonthScreen.kt` + `MonthViewModel.kt`
   - 6-row × 7-column grid; each cell = one day; built with `LazyVerticalGrid` or a custom `Layout` composable (custom layout preferred — gives precise control over cell sizing)
   - Each cell: day number (top-left); up to 3 event pills below (truncated title, coloured background); "+N more" label if >3 events
@@ -564,7 +564,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 3.3 — Week View**
+- [x] **Session 3.3 — Week View** ✅ 2026-03-24
   - `WeekScreen.kt` + `WeekViewModel.kt`
   - Time grid: 7 columns (one per day), 24 rows (hours); scrollable vertically; current time = horizontal red line with a dot
   - Hour labels: left column, small grey text, positioned at hour boundaries
@@ -580,7 +580,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 3.4 — Day View**
+- [x] **Session 3.4 — Day View** ✅ 2026-03-24
   - `DayScreen.kt` + `DayViewModel.kt`
   - Single-column time grid; same structure as week view but one column fills the full width
   - Event blocks wider → room for 2–3 lines of text (title + location)
@@ -594,7 +594,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 3.5 — Agenda / List View**
+- [x] **Session 3.5 — Agenda / List View** ✅ Done 2026-03-25
   - `AgendaScreen.kt` + `AgendaViewModel.kt`
   - `LazyColumn` with sticky date headers; infinite scroll in both directions (past and future)
   - Each event: left colour bar (calendar colour), title (bold), time range or "All day", location (if set), calendar name (small, bottom-right)
@@ -608,7 +608,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 3.6 — View Transitions + Navigation**
+- [x] **Session 3.6 — View Transitions + Navigation** ✅ Done 2026-03-25
   - `NavGraph.kt`: `MainActivity` hosts a `NavHost`; routes: `month`, `week`, `day/{date}`, `agenda`, `event/detail/{uid}/{instanceStart}`, `event/edit/{uid?}`, `accounts`, `settings`
   - View switcher (M/W/D/A) in `CalendarHeader`: taps navigate to the corresponding route; active tab highlighted
   - Shared element transition: event pill in month/week/day → event card in `EventDetailScreen` — `SharedTransitionLayout` on event title + colour indicator
@@ -630,7 +630,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 4.1 — Event Edit Screen (Core Fields)**
+- [x] **Session 4.1 — Event Edit Screen (Core Fields)** ✅ Done 2026-03-25
   - `EventEditScreen.kt` + `EventViewModel.kt`
   - Full-screen bottom sheet or dedicated screen (decide based on visual testing — full screen likely better given the number of fields)
   - Fields in order:
@@ -652,7 +652,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 4.2 — Attendees + Recurrence**
+- [x] **Session 4.2 — Attendees + Recurrence** ✅ Done 2026-03-25
   - **Attendees section** (add to `EventEditScreen`):
     - Chip input field: type email → "Add" creates `ATTENDEE` chip; each chip shows email + X to remove
     - "Invite via Thunderbird" note: small info text explaining that attendees will be notified when you send the invite ICS via Thunderbird (covered in Phase 7)
@@ -671,7 +671,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 4.3 — Reminders (VALARM)**
+- [x] **Session 4.3 — Reminders (VALARM)** ✅ Done 2026-03-25
   - **Reminders section** (add to `EventEditScreen`):
     - List of reminders; each shows offset ("15 minutes before"); "Add reminder" button adds a default (from `AppPreferences.defaultReminderMins`)
     - Reminder time picker: preset chips (At time / 5 min / 10 min / 15 min / 30 min / 1 hour / 1 day / 2 days) + custom input
@@ -688,7 +688,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 4.4 — Event Detail Screen**
+- [x] **Session 4.4 — Event Detail Screen** ✅ Done 2026-03-25
   - `EventDetailScreen.kt`: shows all event fields read-only; entry point for edit and delete
   - Header: event colour as a full-bleed top strip (40dp tall); title in large text below; calendar name + colour dot
   - Fields shown (only if non-empty): date + time (or "All day"); recurrence description ("Weekly on Mon, Wed until Dec 31"); location (with map pin icon; tapping → opens maps intent `geo:lat,lon?q=address` — works without GMS); notes; URL (tappable); attendees (list of emails with their RSVP status if available); reminders; travel time buffer
@@ -711,7 +711,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 5.1 — Zoho Account Setup**
+- [x] **Session 5.1 — Zoho Account Setup** ✅ Done 2026-03-25
   - `AccountsScreen.kt` + `AccountSetupScreen.kt`
   - `AccountsScreen`: list of configured accounts with type icon (Synology/Zoho/iCloud), display name, last synced time, enabled toggle, edit/delete actions; "Add account" FAB
   - `AccountSetupScreen`: tabbed or wizard-style; account type selector (Synology / Zoho / iCloud / CalDAV — generic); for Zoho: email field + app-specific password field + "Verify connection" button
@@ -724,7 +724,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 5.2 — Zoho Sync**
+- [x] **Session 5.2 — Zoho Sync** ✅ Done 2026-03-25
   - `SyncCoordinator.syncAll()` already iterates all accounts — Zoho accounts synced automatically once `CalendarAccount` + `CalendarSource` entries exist in Room
   - Zoho-specific sync consideration: Zoho CalDAV sometimes returns `text/plain` for error responses instead of proper HTTP error codes; add Zoho-specific error detection in `CalDavSyncEngine` — check response body for "No calendar found" or "Invalid credentials" even on 200 responses
   - Zoho write: `EventEditScreen` calendar picker includes Zoho calendars for Zoho-owned events (events where `CalendarSource.accountType == ZOHO`); editing a Zoho event → `UPDATE` queue item targeting the Zoho CalDAV URL directly
@@ -734,7 +734,7 @@ Zoho CalDAV URL pattern: `https://calendar.zoho.com/caldav/[email-address]/`
 
 ---
 
-- [ ] **Session 5.3 — Zoho Request Rate Limiter**
+- [x] **Session 5.3 — Zoho Request Rate Limiter** ✅ Done 2026-03-25
   - Zoho's CalDAV endpoint allows ~500 requests/hour per account. With 4 accounts, each potentially doing per-event `GET` requests during a sync with many changes, this is reachable — especially on first sync with a large Zoho history.
   - `ZohoRateLimiter.kt`: per-account token bucket; 500 requests per rolling 60-minute window; shared across all CalDAV operations for a given Zoho `accountId`
   - ```kotlin
@@ -800,7 +800,7 @@ The subscription fetch is a separate job from normal Synology sync. It runs firs
 
 ---
 
-- [ ] **Session 6.1 — iCal Subscription Fetcher**
+- [x] **Session 6.1 — iCal Subscription Fetcher** ✅ Done 2026-03-25
   - **New `AccountType.ICAL_SUBSCRIPTION`** — stored in `AccountEntity`; no username, no password; `baseUrl` holds the `https://` subscription URL
   - **`AccountSetupScreen` for iCal subscription:** single URL field ("Paste your iCloud calendar URL"); display name field (default "iCloud – Shared"); refresh interval selector (1h / 6h / 24h / Manual); note: "Get the URL from Calendar on your Mac → right-click calendar → Get Info → change webcal:// to https://"
   - **`ICalSubscriptionSyncer.kt`:**
@@ -849,7 +849,7 @@ The subscription fetch is a separate job from normal Synology sync. It runs firs
 
 ---
 
-- [ ] **Session 6.2 — Mirror Calendar Read-Only Enforcement**
+- [x] **Session 6.2 — Mirror Calendar Read-Only Enforcement** ✅ Done 2026-03-25
   - After `ensureMirrorCalendarExists` creates (or finds) the mirror calendar, store its `CalendarSource` in Room with `isReadOnly = true` and a new flag `isMirror = true` (add column to `CalendarSourceEntity`)
   - `isMirror` flag is the signal throughout the app that this calendar's events are managed by the subscription syncer — not by the user
   - `EventDetailScreen`: events whose `calendarSourceId` points to a mirror source → no edit button, no delete button; footer note: "Synced from iCloud — edit on your Mac. Updates every [interval]."
@@ -872,7 +872,7 @@ The subscription fetch is a separate job from normal Synology sync. It runs firs
 
 ---
 
-- [ ] **Session 7.1 — ICS Intent Handler**
+- [x] **Session 7.1 — ICS Intent Handler** ✅ Done 2026-03-25
   - Register `eCalendar` as a handler for `text/calendar` and `application/ics` MIME types in `AndroidManifest.xml`:
     ```xml
     <intent-filter>
@@ -896,7 +896,7 @@ The subscription fetch is a separate job from normal Synology sync. It runs firs
 
 ---
 
-- [ ] **Session 7.2 — RSVP Reply Generation + Thunderbird Intent**
+- [x] **Session 7.2 — RSVP Reply Generation + Thunderbird Intent** ✅ Done 2026-03-25
   - `RsvpScreen.kt`: shown after ICS import; "Accept / Tentative / Decline" button row; shows reply preview: "Your reply to [organiser@email.com]"
   - On button tap:
     1. `RsvpGenerator.generateRsvpReply(originalIcs, myEmail, partStat)` → produces reply ICS string
@@ -932,7 +932,7 @@ The subscription fetch is a separate job from normal Synology sync. It runs firs
 
 ---
 
-- [ ] **Session 8.1 — Alarm Scheduling System**
+- [x] **Session 8.1 — Alarm Scheduling System** ✅ Done 2026-03-25
   - `AlarmScheduler.kt` (from Phase 4.3 stub) — full implementation:
     - After any sync or local event create/update: call `scheduleAlarmsForEvent` for all future events with VALARMs
     - Only schedule alarms up to 30 days in the future; daily WorkManager job re-schedules the next batch
@@ -950,7 +950,7 @@ The subscription fetch is a separate job from normal Synology sync. It runs firs
 
 ---
 
-- [ ] **Session 8.2 — Notification Channels + Settings**
+- [x] **Session 8.2 — Notification Channels + Settings** ✅ Done 2026-03-25
   - `NotificationHelper.kt`: creates channels on app init:
     - `ecalendar_reminders` — IMPORTANCE_HIGH, "Event Reminders", vibration on
     - `ecalendar_sync_errors` — IMPORTANCE_DEFAULT, "Sync Issues" — for persistent sync failure alerts
@@ -971,7 +971,7 @@ The subscription fetch is a separate job from normal Synology sync. It runs firs
 
 ---
 
-- [ ] **Session 9.1 — Settings Screen (Complete)**
+- [x] **Session 9.1 — Settings Screen (Complete)** ✅ Done 2026-03-25
   - `SettingsScreen.kt` — complete implementation:
     - **General**: first day of week (Monday/Sunday); time format (12h/24h); default calendar (picker from all writable sources); default reminder time
     - **Accounts**: link to `AccountsScreen` (Phase 5.1); sync interval (15min / 30min / 1h / 2h / Manual); "Sync now" button with last-synced timestamp
@@ -983,7 +983,7 @@ The subscription fetch is a separate job from normal Synology sync. It runs firs
 
 ---
 
-- [ ] **Session 9.2 — UI Polish + Animations**
+- [x] **Session 9.2 — UI Polish + Animations** ✅ Done 2026-03-25
   - Transition polish audit: verify shared element on all event tap flows; add `spring(dampingRatio = 0.8f, stiffness = 400f)` to all navigation transitions
   - FAB: `AnimatedVisibility` hide/show when scrolling in Agenda view (hide on scroll down, show on scroll up)
   - Event creation: `BottomSheetScaffold` with `dragHandle` — feels native; keyboard avoidance via `WindowInsets.ime`
@@ -997,7 +997,7 @@ The subscription fetch is a separate job from normal Synology sync. It runs firs
 
 ---
 
-- [ ] **Session 9.3 — Error Handling + Edge Cases**
+- [x] **Session 9.3 — Error Handling + Edge Cases** ✅ Done 2026-03-25
   - Tailscale disconnected: Synology operations fail gracefully → queue items accumulate → `OfflineQueueProcessor` retries on reconnect; no crash; banner "Working offline — changes will sync when connected"
   - iCloud share revoked: next sync returns empty calendar or 403 → emit `CalendarSource.syncError = "Access revoked"` → show in `AccountsScreen` as "⚠ Cannot access shared calendar"; don't delete existing events (they stay visible but marked as stale)
   - Zoho app-specific password expired: 401 response → `AccountsScreen` shows "⚠ Authentication failed — update credentials"; tapping opens `AccountSetupScreen` pre-filled with account details
@@ -1009,7 +1009,7 @@ The subscription fetch is a separate job from normal Synology sync. It runs firs
 
 ---
 
-- [ ] **Session 9.4 — Deploy Script + Logging**
+- [x] **Session 9.4 — Deploy Script + Logging** ✅ Done 2026-03-25
   - `scripts/deploy.sh`: build release → sign → `adb install -r`; same pattern as eMusic; keystore from `local.properties`
   - `Timber` in debug only; release ProGuard strips all log calls
   - Fatal crash handler: writes to `filesDir/crash.log`

@@ -11,6 +11,8 @@ interface CalendarRepository {
     fun observeEventsInRange(start: Long, end: Long): Flow<List<CalendarEvent>>
     fun observeCalendars(): Flow<List<CalendarSource>>
     suspend fun getEventSeries(uid: String): EventSeries?
+    suspend fun getEventInstance(uid: String, instanceStart: Long): CalendarEvent?
+    suspend fun getCalendarSource(id: Long): CalendarSource?
     suspend fun createEvent(editable: EditableEvent): Long
     suspend fun updateEvent(uid: String, editable: EditableEvent, scope: EditScope)
     suspend fun deleteEvent(uid: String, scope: EditScope)

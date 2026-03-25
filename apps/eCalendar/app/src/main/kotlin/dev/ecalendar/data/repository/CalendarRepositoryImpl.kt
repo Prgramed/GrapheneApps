@@ -1,5 +1,6 @@
 package dev.ecalendar.data.repository
 
+import dev.ecalendar.alarm.EventAlarmScheduler
 import dev.ecalendar.data.db.dao.CalendarDao
 import dev.ecalendar.data.db.dao.EventDao
 import dev.ecalendar.data.db.dao.SyncQueueDao
@@ -27,6 +28,7 @@ class CalendarRepositoryImpl @Inject constructor(
     private val eventDao: EventDao,
     private val calendarDao: CalendarDao,
     private val syncQueueDao: SyncQueueDao,
+    private val alarmScheduler: EventAlarmScheduler,
 ) : CalendarRepository {
 
     override fun observeEventsInRange(start: Long, end: Long): Flow<List<CalendarEvent>> =
@@ -37,6 +39,12 @@ class CalendarRepositoryImpl @Inject constructor(
 
     override suspend fun getEventSeries(uid: String): EventSeries? =
         eventDao.getSeriesByUid(uid)?.toDomain()
+
+    override suspend fun getEventInstance(uid: String, instanceStart: Long): CalendarEvent? =
+        eventDao.getEventInstance(uid, instanceStart)?.toDomain()
+
+    override suspend fun getCalendarSource(id: Long): CalendarSource? =
+        calendarDao.getById(id)?.toDomain()
 
     override suspend fun createEvent(editable: EditableEvent): Long {
         // Generate ICS
@@ -60,6 +68,16 @@ class CalendarRepositoryImpl @Inject constructor(
 
         // Get calendar URL for sync
         val source = calendarDao.getById(editable.calendarSourceId)
+
+        // Schedule alarms
+        if (editable.alarms.isNotEmpty()) {
+            events.forEach { event ->
+                alarmScheduler.scheduleForEvent(
+                    uid = event.uid, instanceStart = event.instanceStart,
+                    alarmMins = editable.alarms, title = event.title, location = event.location,
+                )
+            }
+        }
 
         // Enqueue for sync
         return syncQueueDao.enqueue(
@@ -103,6 +121,16 @@ class CalendarRepositoryImpl @Inject constructor(
         eventDao.deleteEventsByUid(uid)
         eventDao.upsertSeries(newSeries.toEntity())
         events.forEach { eventDao.upsertEvent(it.toEntity()) }
+
+        // Reschedule alarms for updated events
+        if (editable.alarms.isNotEmpty()) {
+            events.forEach { event ->
+                alarmScheduler.scheduleForEvent(
+                    uid = event.uid, instanceStart = event.instanceStart,
+                    alarmMins = editable.alarms, title = event.title, location = event.location,
+                )
+            }
+        }
 
         // Enqueue sync
         val source = calendarDao.getById(existingSeries.calendarSourceId)

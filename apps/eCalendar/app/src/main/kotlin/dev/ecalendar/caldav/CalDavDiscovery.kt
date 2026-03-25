@@ -55,6 +55,19 @@ object CalDavDiscovery {
         }
     }
 
+    /**
+     * Discovers just the calendar home URL (steps 1+2 of full discovery).
+     * Returns null if discovery fails.
+     */
+    suspend fun discoverCalendarHomeUrl(client: CalDavClient, baseUrl: String): String? {
+        return try {
+            val principalUrl = discoverPrincipal(client, baseUrl) ?: return null
+            discoverCalendarHome(client, principalUrl)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private suspend fun discoverPrincipal(client: CalDavClient, baseUrl: String): String? {
         val body = """
             <?xml version="1.0" encoding="utf-8"?>
