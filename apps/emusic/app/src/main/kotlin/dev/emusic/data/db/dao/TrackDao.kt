@@ -90,9 +90,17 @@ interface TrackDao {
 
     @Query("SELECT * FROM tracks WHERE albumId = :albumId ORDER BY discNumber, trackNumber")
     suspend fun getByAlbumId(albumId: String): List<TrackEntity>
+
+    @Query("SELECT id, localPath FROM tracks WHERE id IN (:ids) AND localPath IS NOT NULL")
+    suspend fun getLocalPaths(ids: List<String>): List<LocalPathEntry>
 }
 
 data class GenreCount(
     val genre: String,
     val count: Int,
+)
+
+data class LocalPathEntry(
+    val id: String,
+    val localPath: String,
 )

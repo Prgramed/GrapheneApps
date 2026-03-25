@@ -2,6 +2,7 @@ package dev.emusic.domain.usecase
 
 import dev.emusic.data.preferences.AppPreferencesRepository
 import dev.emusic.domain.repository.LibraryRepository
+import dev.emusic.domain.repository.PlaylistRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +24,7 @@ data class SyncProgress(
 @Singleton
 class SyncLibraryUseCase @Inject constructor(
     private val libraryRepository: LibraryRepository,
+    private val playlistRepository: PlaylistRepository,
     private val preferencesRepository: AppPreferencesRepository,
 ) {
     private val mutex = Mutex()
@@ -95,6 +97,14 @@ class SyncLibraryUseCase @Inject constructor(
             } catch (e: Exception) {
                 errors++
                 timber.log.Timber.w(e, "Sync tracks failed")
+            }
+
+            emit(SyncProgress(stage = "Syncing playlists…"))
+            try {
+                playlistRepository.syncPlaylists()
+            } catch (e: Exception) {
+                errors++
+                timber.log.Timber.w(e, "Sync playlists failed")
             }
 
             preferencesRepository.setLastSyncMs(System.currentTimeMillis())

@@ -59,4 +59,7 @@ interface AlbumDao {
 
     @Query("SELECT * FROM albums WHERE artistId = :artistId ORDER BY year DESC, name COLLATE NOCASE")
     suspend fun getByArtistId(artistId: String): List<AlbumEntity>
+
+    @Query("SELECT id FROM albums WHERE id IN (:ids)")
+    suspend fun getExistingIds(ids: List<String>): List<String>
 }

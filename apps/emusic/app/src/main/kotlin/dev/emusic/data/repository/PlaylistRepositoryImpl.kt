@@ -50,7 +50,16 @@ class PlaylistRepositoryImpl @Inject constructor(
 
         // Ensure tracks exist in the tracks table (JOIN requires them)
         val trackEntities = trackDtos.map { it.toDomain().toEntity() }
-        trackDao.upsertAll(trackEntities)
+        // Preserve localPath for downloaded tracks (API doesn't include this field)
+        val ids = trackEntities.map { it.id }
+        val localPaths = trackDao.getLocalPaths(ids).associate { it.id to it.localPath }
+        val merged = if (localPaths.isEmpty()) trackEntities else {
+            trackEntities.map { t ->
+                val existing = localPaths[t.id]
+                if (existing != null) t.copy(localPath = existing) else t
+            }
+        }
+        trackDao.upsertAll(merged)
 
         val refs = trackDtos.mapIndexed { index, trackDto ->
             PlaylistTrackCrossRef(

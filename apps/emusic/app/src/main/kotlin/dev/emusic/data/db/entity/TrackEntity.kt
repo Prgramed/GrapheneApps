@@ -13,6 +13,7 @@ import androidx.room.PrimaryKey
         Index("starred"),
         Index("genre"),
         Index("playCount"),
+        Index("localPath"),
     ],
 )
 data class TrackEntity(

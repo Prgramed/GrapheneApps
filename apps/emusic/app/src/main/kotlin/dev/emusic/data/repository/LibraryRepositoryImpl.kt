@@ -11,6 +11,7 @@ import dev.emusic.data.api.toDomain
 import dev.emusic.data.db.dao.AlbumDao
 import dev.emusic.data.db.dao.ArtistDao
 import dev.emusic.data.db.dao.TrackDao
+import dev.emusic.data.db.entity.TrackEntity
 import dev.emusic.data.db.entity.toDomain
 import dev.emusic.data.db.entity.toEntity
 import dev.emusic.domain.model.Album
@@ -49,7 +50,6 @@ class LibraryRepositoryImpl @Inject constructor(
         var offset = 0
         val pageSize = 500
         while (true) {
-            android.util.Log.d("SyncDebug","syncAlbums: fetching offset=$offset size=$pageSize")
             val response = api.getAlbumList2(
                 type = "alphabeticalByName",
                 size = pageSize,
@@ -58,13 +58,11 @@ class LibraryRepositoryImpl @Inject constructor(
             val albums = response.albumList2?.album
                 ?.map { it.toDomain().toEntity() }
                 ?: break
-            android.util.Log.d("SyncDebug","syncAlbums: got ${albums.size} albums at offset $offset")
             if (albums.isEmpty()) break
             albumDao.upsertAll(albums)
             offset += albums.size
             if (albums.size < pageSize) break
         }
-        android.util.Log.d("SyncDebug","syncAlbums: done, total albums in DB = ${albumDao.count()}")
     }
 
     override suspend fun syncAlbumsIncremental(): Int {
@@ -83,7 +81,8 @@ class LibraryRepositoryImpl @Inject constructor(
             if (albums.isEmpty()) break
 
             // Check which albums are new (not in Room)
-            val newAlbums = albums.filter { albumDao.getById(it.id) == null }
+            val existingIds = albumDao.getExistingIds(albums.map { it.id }).toSet()
+            val newAlbums = albums.filter { it.id !in existingIds }
             if (newAlbums.isNotEmpty()) {
                 albumDao.upsertAll(newAlbums)
                 newCount += newAlbums.size
@@ -102,7 +101,7 @@ class LibraryRepositoryImpl @Inject constructor(
         val tracks = response.album?.song
             ?.map { it.toDomain().toEntity() }
             ?: return
-        trackDao.upsertAll(tracks)
+        upsertPreservingLocalPath(tracks)
     }
 
     override suspend fun syncAllTracks(onProgress: (current: Int, total: Int) -> Unit) {
@@ -125,14 +124,13 @@ class LibraryRepositoryImpl @Inject constructor(
                 if (songs.isNullOrEmpty()) break
 
                 val tracks = songs.map { it.toDomain().toEntity() }
-                trackDao.upsertAll(tracks)
+                upsertPreservingLocalPath(tracks)
                 totalFetched += tracks.size
                 onProgress(totalFetched, totalFetched + pageSize)
                 offset += songs.size
-                android.util.Log.d("SyncDebug", "search3: fetched $totalFetched tracks so far")
                 if (songs.size < pageSize) break
             } catch (e: Exception) {
-                android.util.Log.w("SyncDebug", "search3 failed at offset $offset: ${e.message}")
+                timber.log.Timber.w(e, "search3 failed at offset $offset")
                 if (totalFetched == 0) search3Works = false // search3 not supported, fall back
                 break
             }
@@ -140,7 +138,6 @@ class LibraryRepositoryImpl @Inject constructor(
 
         // Fallback: album-by-album if search3 didn't work
         if (!search3Works) {
-            android.util.Log.d("SyncDebug", "Falling back to album-by-album sync")
             val albumIds = albumDao.getAllIds()
             for ((index, albumId) in albumIds.withIndex()) {
                 for (attempt in 1..3) {
@@ -149,7 +146,7 @@ class LibraryRepositoryImpl @Inject constructor(
                         break
                     } catch (e: Exception) {
                         if (attempt == 3) {
-                            android.util.Log.w("SyncDebug", "Track sync failed for $albumId: ${e.message}")
+                            timber.log.Timber.w(e, "Track sync failed for $albumId")
                         } else {
                             kotlinx.coroutines.delay(1000L * attempt)
                         }
@@ -159,7 +156,6 @@ class LibraryRepositoryImpl @Inject constructor(
             }
         }
 
-        android.util.Log.d("SyncDebug", "syncAllTracks done: ${trackDao.count()} tracks in DB")
     }
 
     // --- Observe ---
@@ -315,6 +311,21 @@ class LibraryRepositoryImpl @Inject constructor(
         } catch (_: Exception) {
             null
         }
+
+    private suspend fun upsertPreservingLocalPath(tracks: List<TrackEntity>) {
+        if (tracks.isEmpty()) return
+        val ids = tracks.map { it.id }
+        val localPaths = trackDao.getLocalPaths(ids).associate { it.id to it.localPath }
+        val merged = if (localPaths.isEmpty()) {
+            tracks
+        } else {
+            tracks.map { t ->
+                val existing = localPaths[t.id]
+                if (existing != null) t.copy(localPath = existing) else t
+            }
+        }
+        trackDao.upsertAll(merged)
+    }
 
     companion object {
         private val DEFAULT_PAGING_CONFIG = PagingConfig(

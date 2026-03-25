@@ -20,6 +20,7 @@ import androidx.room.PrimaryKey
         Index("starred"),
         Index("year"),
         Index("name"),
+        Index("genre"),
     ],
 )
 data class AlbumEntity(
