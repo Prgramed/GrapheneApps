@@ -22,7 +22,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun PrayerTheme(
+fun GrapheneAppsTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit,

@@ -1,0 +1,358 @@
+package com.prgramed.emessages.feature.chat.components
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.text.format.DateFormat
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.filled.ContactPage
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import com.prgramed.emessages.domain.model.Attachment
+import com.prgramed.emessages.domain.model.LinkPreview
+import com.prgramed.emessages.domain.model.Message
+import com.prgramed.emessages.domain.model.MessageType
+import java.util.Date
+import java.util.regex.Pattern
+
+private val URL_PATTERN = Pattern.compile(
+    "(https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+)",
+    Pattern.CASE_INSENSITIVE,
+)
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun ChatBubble(
+    message: Message,
+    isSent: Boolean,
+    isLastInGroup: Boolean,
+    modifier: Modifier = Modifier,
+    simLabel: String? = null,
+    onLongPress: (Message) -> Unit = {},
+    onAttachmentClick: (Attachment) -> Unit = {},
+    onAttachmentLongPress: (Attachment) -> Unit = {},
+    linkPreview: LinkPreview? = null,
+) {
+    val bubbleShape = if (isSent) {
+        RoundedCornerShape(
+            topStart = 18.dp,
+            topEnd = 18.dp,
+            bottomStart = 18.dp,
+            bottomEnd = if (isLastInGroup) 4.dp else 18.dp,
+        )
+    } else {
+        RoundedCornerShape(
+            topStart = 18.dp,
+            topEnd = 18.dp,
+            bottomStart = if (isLastInGroup) 4.dp else 18.dp,
+            bottomEnd = 18.dp,
+        )
+    }
+
+    val backgroundColor = if (isSent) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+
+    val textColor = if (isSent) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    val linkColor = if (isSent) {
+        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
+    val alignment = if (isSent) Alignment.CenterEnd else Alignment.CenterStart
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(
+                start = if (isSent) 64.dp else 8.dp,
+                end = if (isSent) 8.dp else 64.dp,
+                top = if (isLastInGroup) 4.dp else 1.dp,
+                bottom = 1.dp,
+            ),
+        contentAlignment = alignment,
+    ) {
+        Column(
+            horizontalAlignment = if (isSent) Alignment.End else Alignment.Start,
+        ) {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .clip(bubbleShape)
+                    .background(backgroundColor)
+                    .combinedClickable(
+                        onClick = {},
+                        onLongClick = { onLongPress(message) },
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Column {
+                    // Attachments
+                    message.attachments.forEach { attachment ->
+                        when {
+                            attachment.mimeType.startsWith("image/") -> {
+                                AsyncImage(
+                                    model = attachment.uri,
+                                    contentDescription = "Image",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 200.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .combinedClickable(
+                                            onClick = { onAttachmentClick(attachment) },
+                                            onLongClick = { onAttachmentLongPress(attachment) },
+                                        )
+                                        .padding(bottom = if (message.body.isNotBlank()) 4.dp else 0.dp),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            }
+                            attachment.mimeType.startsWith("video/") -> {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(120.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.3f))
+                                        .clickable { onAttachmentClick(attachment) }
+                                        .padding(bottom = if (message.body.isNotBlank()) 4.dp else 0.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        Icons.Default.PlayCircle,
+                                        contentDescription = "Play video",
+                                        modifier = Modifier.size(48.dp),
+                                        tint = if (isSent) MaterialTheme.colorScheme.onPrimary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            attachment.mimeType.startsWith("audio/") -> {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onAttachmentClick(attachment) }
+                                        .padding(vertical = 8.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.AudioFile,
+                                        contentDescription = "Audio",
+                                        modifier = Modifier.size(32.dp),
+                                        tint = if (isSent) MaterialTheme.colorScheme.onPrimary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Spacer(Modifier.padding(start = 8.dp))
+                                    Text(
+                                        text = attachment.fileName ?: "Audio",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = textColor,
+                                    )
+                                }
+                            }
+                            // Generic file attachment (vCard, PDF, etc.)
+                            else -> {
+                                val icon = when {
+                                    attachment.mimeType.contains("vcard", ignoreCase = true) -> Icons.Default.ContactPage
+                                    else -> Icons.Default.AttachFile
+                                }
+                                val label = when {
+                                    attachment.mimeType.contains("vcard", ignoreCase = true) -> "Contact card"
+                                    attachment.mimeType.startsWith("application/pdf") -> "PDF"
+                                    else -> attachment.fileName ?: "File"
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onAttachmentClick(attachment) }
+                                        .padding(vertical = 8.dp),
+                                ) {
+                                    Icon(
+                                        icon,
+                                        contentDescription = label,
+                                        modifier = Modifier.size(32.dp),
+                                        tint = if (isSent) MaterialTheme.colorScheme.onPrimary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Spacer(Modifier.padding(start = 8.dp))
+                                    Column {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = textColor,
+                                        )
+                                        Text(
+                                            text = "Tap to open",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = textColor.copy(alpha = 0.6f),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Message text with clickable links
+                    if (message.body.isNotBlank()) {
+                        val linkStyles = TextLinkStyles(
+                            style = SpanStyle(
+                                color = linkColor,
+                                textDecoration = TextDecoration.Underline,
+                            ),
+                        )
+                        val annotated = buildAnnotatedString {
+                            append(message.body)
+                            val matcher = URL_PATTERN.matcher(message.body)
+                            while (matcher.find()) {
+                                val start = matcher.start()
+                                val end = matcher.end()
+                                val url = matcher.group() ?: continue
+                                addLink(
+                                    LinkAnnotation.Url(url, linkStyles),
+                                    start, end,
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = annotated,
+                            style = MaterialTheme.typography.bodyLarge.copy(color = textColor),
+                        )
+                    }
+
+                    // Link preview card
+                    if (linkPreview != null) {
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isSent) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                    else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                                )
+                                .clickable {
+                                    context.startActivity(
+                                        android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse(linkPreview.url),
+                                        ),
+                                    )
+                                }
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (linkPreview.imageUrl != null) {
+                                AsyncImage(
+                                    model = linkPreview.imageUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(4.dp)),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                Spacer(Modifier.padding(start = 8.dp))
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                val previewTitle = linkPreview.title
+                                if (previewTitle != null) {
+                                    Text(
+                                        text = previewTitle,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = textColor,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Text(
+                                    text = linkPreview.domain,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isSent) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Timestamp and status
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            ) {
+                if (simLabel != null) {
+                    Text(
+                        text = simLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    )
+                    Text(
+                        text = " \u00b7 ",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    )
+                }
+                Text(
+                    text = formatMessageTime(message.timestamp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                )
+                if (isSent) {
+                    MessageStatusIndicator(status = message.status)
+                }
+            }
+        }
+    }
+}
+
+private fun formatMessageTime(timestamp: Long): String {
+    if (timestamp == 0L) return ""
+    return DateFormat.format("h:mm a", Date(timestamp)).toString()
+}

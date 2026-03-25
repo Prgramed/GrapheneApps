@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Notepad body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,28 L74,28 C76,28 78,30 78,32 L78,80 C78,82 76,84 74,84 L34,84 C32,84 30,82 30,80 L30,32 C30,30 32,28 34,28 Z" />
+    <!-- Lines on notepad -->
+    <path
+        android:fillColor="#B0BEC5"
+        android:pathData="M38,42 L70,42"
+        android:strokeWidth="1.5"
+        android:strokeColor="#B0BEC5" />
+    <path
+        android:fillColor="#B0BEC5"
+        android:pathData="M38,50 L70,50"
+        android:strokeWidth="1.5"
+        android:strokeColor="#B0BEC5" />
+    <path
+        android:fillColor="#B0BEC5"
+        android:pathData="M38,58 L60,58"
+        android:strokeWidth="1.5"
+        android:strokeColor="#B0BEC5" />
+    <!-- Pencil -->
+    <path
+        android:fillColor="#FFC107"
+        android:pathData="M68,20 L78,30 L62,46 L52,36 Z" />
+    <path
+        android:fillColor="#455A64"
+        android:pathData="M52,36 L48,40 L62,46 Z" />
+</vector>

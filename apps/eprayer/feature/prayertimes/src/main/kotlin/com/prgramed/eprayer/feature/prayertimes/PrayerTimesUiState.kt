@@ -9,6 +9,7 @@ data class PrayerTimesUiState(
     val nextPrayer: PrayerTime? = null,
     val timeRemaining: Duration? = null,
     val cityName: String? = null,
+    val hijriDate: String? = null,
     val enabledNotifications: Set<String> = setOf("FAJR", "DHUHR", "ASR", "MAGHRIB", "ISHA"),
     val isLoading: Boolean = true,
     val error: String? = null,

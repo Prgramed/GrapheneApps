@@ -56,8 +56,16 @@ fun QiblaScreen(
                 }
             }
             uiState.error != null -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(text = uiState.error ?: "Error", color = Peach)
+                    Spacer(Modifier.height(16.dp))
+                    androidx.compose.material3.TextButton(onClick = { viewModel.retry() }) {
+                        Text("Retry", color = Peach)
+                    }
                 }
             }
             else -> {

@@ -1,0 +1,27 @@
+package dev.emusic.domain.model
+
+data class Track(
+    val id: String,
+    val title: String,
+    val artist: String,
+    val artistId: String,
+    val album: String,
+    val albumId: String,
+    val duration: Int,
+    val trackNumber: Int,
+    val discNumber: Int = 1,
+    val year: Int? = null,
+    val genre: String? = null,
+    val size: Long = 0,
+    val contentType: String? = null,
+    val suffix: String? = null,
+    val bitRate: Int? = null,
+    val starred: Boolean = false,
+    val playCount: Int = 0,
+    val userRating: Int? = null,
+    val localPath: String? = null,
+    val trackGain: Float? = null,
+    val albumGain: Float? = null,
+    val trackPeak: Float? = null,
+    val albumPeak: Float? = null,
+)

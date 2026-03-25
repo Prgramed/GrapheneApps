@@ -14,6 +14,9 @@ import com.prgramed.eprayer.domain.model.CalculationMethodType
 import com.prgramed.eprayer.domain.model.LocationMode
 import com.prgramed.eprayer.domain.model.MadhabType
 import com.prgramed.eprayer.domain.repository.UserPreferencesRepository
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import android.content.Intent
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
@@ -88,6 +91,20 @@ class PrayerWidgetWorker @AssistedInject constructor(
             .putFloat(KEY_LAT, lat.toFloat())
             .putFloat(KEY_LON, lon.toFloat())
             .apply()
+
+        // Notify AppWidgetManager to update widget UI
+        try {
+            val widgetClass = Class.forName("com.prgramed.eprayer.feature.widget.PrayerWidgetReceiver")
+            val widgetManager = AppWidgetManager.getInstance(applicationContext)
+            val ids = widgetManager.getAppWidgetIds(ComponentName(applicationContext, widgetClass))
+            if (ids.isNotEmpty()) {
+                val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
+                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+                    component = ComponentName(applicationContext, widgetClass)
+                }
+                applicationContext.sendBroadcast(intent)
+            }
+        } catch (_: Exception) { }
 
         return Result.success()
     }

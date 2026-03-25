@@ -6,7 +6,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
@@ -76,8 +79,16 @@ fun PrayerTimesScreen(
                 }
             }
             uiState.error != null -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(text = uiState.error ?: "Error", color = Peach)
+                    Spacer(Modifier.height(16.dp))
+                    TextButton(onClick = { viewModel.onPermissionResult(true) }) {
+                        Text("Retry", color = Peach)
+                    }
                 }
             }
             else -> {
@@ -90,6 +101,7 @@ fun PrayerTimesScreen(
                                 prayerTime = nextPrayer,
                                 timeRemaining = uiState.timeRemaining,
                                 cityName = uiState.cityName,
+                                hijriDate = uiState.hijriDate,
                             )
                         }
                     }

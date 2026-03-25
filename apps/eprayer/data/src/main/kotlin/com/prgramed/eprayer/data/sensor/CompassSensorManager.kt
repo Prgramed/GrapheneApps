@@ -25,7 +25,7 @@ class CompassSensorManager @Inject constructor(
         val magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
 
         if (accelerometer == null || magnetometer == null) {
-            close()
+            close(IllegalStateException("Compass sensor not available on this device"))
             return@callbackFlow
         }
 
@@ -74,12 +74,10 @@ class CompassSensorManager @Inject constructor(
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
 
-        sensorManager.registerListener(
-            listener, accelerometer, SensorManager.SENSOR_DELAY_UI,
-        )
-        sensorManager.registerListener(
-            listener, magnetometer, SensorManager.SENSOR_DELAY_UI,
-        )
+        // 100ms (10Hz) — smooth enough for compass, half the CPU of SENSOR_DELAY_UI (66ms)
+        val sensorRate = 100_000 // microseconds
+        sensorManager.registerListener(listener, accelerometer, sensorRate)
+        sensorManager.registerListener(listener, magnetometer, sensorRate)
 
         awaitClose { sensorManager.unregisterListener(listener) }
     }

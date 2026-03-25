@@ -29,6 +29,8 @@ class PrayerTimesViewModel @Inject constructor(
     val uiState: StateFlow<PrayerTimesUiState> = _uiState.asStateFlow()
 
     private var observeJob: Job? = null
+    private var countdownJob: Job? = null
+    private var lastLoadedDate: java.time.LocalDate? = null
 
     init {
         startCountdown()
@@ -65,11 +67,16 @@ class PrayerTimesViewModel @Inject constructor(
     }
 
     private fun startObserving() {
+        observeJob?.cancel()
+        val javaToday = java.time.LocalDate.now()
+        lastLoadedDate = javaToday
+        val today = kotlinx.datetime.LocalDate(
+            javaToday.year, javaToday.monthValue, javaToday.dayOfMonth,
+        )
+        val hijri = com.prgramed.eprayer.domain.model.HijriDate.fromGregorian(
+            javaToday.year, javaToday.monthValue, javaToday.dayOfMonth,
+        )
         observeJob = viewModelScope.launch {
-            val javaToday = java.time.LocalDate.now()
-            val today = kotlinx.datetime.LocalDate(
-                javaToday.year, javaToday.monthValue, javaToday.dayOfMonth,
-            )
             getPrayerTimesUseCase(today)
                 .catch { e ->
                     _uiState.update { it.copy(isLoading = false, error = e.message) }
@@ -79,6 +86,7 @@ class PrayerTimesViewModel @Inject constructor(
                         it.copy(
                             prayerDay = prayerDay,
                             nextPrayer = prayerDay.nextPrayer,
+                            hijriDate = hijri.formatted,
                             isLoading = false,
                             error = null,
                         )
@@ -98,17 +106,35 @@ class PrayerTimesViewModel @Inject constructor(
     }
 
     private fun startCountdown() {
-        viewModelScope.launch {
+        countdownJob = viewModelScope.launch {
             while (true) {
+                // Check if date changed (midnight boundary)
+                val currentDate = java.time.LocalDate.now()
+                if (lastLoadedDate != null && currentDate != lastLoadedDate) {
+                    // Day changed — reload prayer times for new day
+                    startObserving()
+                }
+
                 val next = _uiState.value.nextPrayer
                 if (next != null) {
                     val now = Instant.fromEpochMilliseconds(System.currentTimeMillis())
                     val remaining = next.time - now
-                    _uiState.update {
-                        it.copy(timeRemaining = if (remaining.isPositive()) remaining else null)
+                    if (remaining.isPositive()) {
+                        _uiState.update { it.copy(timeRemaining = remaining) }
+                    } else {
+                        // Current next prayer has passed — recalculate
+                        _uiState.update { it.copy(timeRemaining = null) }
+                        val prayerDay = _uiState.value.prayerDay
+                        if (prayerDay != null) {
+                            val nowMillis = System.currentTimeMillis()
+                            val newNext = prayerDay.times.firstOrNull {
+                                it.time.toEpochMilliseconds() > nowMillis
+                            }
+                            _uiState.update { it.copy(nextPrayer = newNext) }
+                        }
                     }
                 }
-                delay(10.seconds)
+                delay(60.seconds)
             }
         }
     }

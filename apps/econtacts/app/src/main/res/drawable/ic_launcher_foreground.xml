@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Person icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,36 C58.42,36 62,39.58 62,44 C62,48.42 58.42,52 54,52 C49.58,52 46,48.42 46,44 C46,39.58 49.58,36 54,36Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,56 C44.06,56 36,60.06 36,65 L36,72 L72,72 L72,65 C72,60.06 63.94,56 54,56Z" />
+</vector>

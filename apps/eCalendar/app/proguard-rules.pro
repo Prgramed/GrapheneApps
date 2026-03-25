@@ -1,0 +1,4 @@
+-keep class net.fortuna.ical4j.**
+-keep interface net.fortuna.ical4j.**
+-keepattributes *Annotation*
+-keep class * implements net.fortuna.ical4j.** { *; }

@@ -38,11 +38,20 @@ class PrayerAlarmScheduler @Inject constructor(
                     intent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 )
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    prayerTime.time.toEpochMilliseconds(),
-                    pendingIntent,
-                )
+                try {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        prayerTime.time.toEpochMilliseconds(),
+                        pendingIntent,
+                    )
+                } catch (_: SecurityException) {
+                    // SCHEDULE_EXACT_ALARM not granted — fall back to inexact
+                    alarmManager.set(
+                        AlarmManager.RTC_WAKEUP,
+                        prayerTime.time.toEpochMilliseconds(),
+                        pendingIntent,
+                    )
+                }
             }
     }
 

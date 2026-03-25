@@ -28,6 +28,7 @@ fun NextPrayerBanner(
     prayerTime: PrayerTime,
     timeRemaining: Duration?,
     cityName: String? = null,
+    hijriDate: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val displayName = prayerTime.prayer.name.lowercase().replaceFirstChar { it.uppercase() }
@@ -49,13 +50,22 @@ fun NextPrayerBanner(
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
             )
-            if (cityName != null) {
-                Text(
-                    text = cityName,
-                    fontSize = 14.sp,
-                    color = TextMuted,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+            Column(horizontalAlignment = Alignment.End) {
+                if (cityName != null) {
+                    Text(
+                        text = cityName,
+                        fontSize = 14.sp,
+                        color = TextMuted,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                if (hijriDate != null) {
+                    Text(
+                        text = hijriDate,
+                        fontSize = 12.sp,
+                        color = Peach.copy(alpha = 0.8f),
+                    )
+                }
             }
         }
 

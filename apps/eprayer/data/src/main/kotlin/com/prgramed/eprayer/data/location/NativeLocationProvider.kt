@@ -130,7 +130,7 @@ class NativeLocationProvider @Inject constructor(
     }
 
     companion object {
-        private const val MIN_UPDATE_INTERVAL_MS = 60_000L
+        private const val MIN_UPDATE_INTERVAL_MS = 300_000L // 5 minutes
         private const val MIN_UPDATE_DISTANCE_M = 100f
 
         // Major cities for nearest-match fallback (lat, lon)

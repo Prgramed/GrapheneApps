@@ -3,15 +3,17 @@ package com.prgramed.eprayer.data.notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.media.AudioAttributes
 import android.net.Uri
 import androidx.core.app.NotificationCompat
 import com.prgramed.eprayer.domain.model.AdhanSound
 import com.prgramed.eprayer.domain.model.Prayer
 import com.prgramed.eprayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,6 +24,21 @@ class PrayerNotificationManager @Inject constructor(
 ) {
     private val notificationManager: NotificationManager
         get() = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    // Cached adhan sound — updated when preferences change
+    @Volatile
+    private var cachedAdhanSound: AdhanSound = AdhanSound.MOHAMMED_REFAAT
+
+    init {
+        // Observe preference changes and cache the sound
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            userPreferencesRepository.getUserPreferences()
+                .catch { }
+                .collect { prefs ->
+                    cachedAdhanSound = prefs.adhanSound
+                }
+        }
+    }
 
     fun createNotificationChannel() {
         val channel = NotificationChannel(
@@ -36,9 +53,7 @@ class PrayerNotificationManager @Inject constructor(
 
     fun showPrayerNotification(prayer: Prayer) {
         val displayName = prayer.name.lowercase().replaceFirstChar { it.uppercase() }
-        val adhanSound = runBlocking {
-            userPreferencesRepository.getUserPreferences().first().adhanSound
-        }
+        val adhanSound = cachedAdhanSound
         val soundUri = getAdhanSoundUri(adhanSound)
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
