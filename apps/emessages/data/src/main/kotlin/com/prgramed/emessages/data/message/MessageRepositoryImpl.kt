@@ -298,6 +298,43 @@ class MessageRepositoryImpl @Inject constructor(
             }
         }
 
+    override suspend fun retryMmsDownload(mmsId: Long, contentLocation: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                // Delete the failed placeholder MMS
+                contentResolver.delete(
+                    Uri.parse("content://mms/$mmsId"), null, null,
+                )
+
+                // Create temp file for download
+                val downloadFile = java.io.File(context.cacheDir, "mms_retry_${System.currentTimeMillis()}.pdu")
+                downloadFile.createNewFile()
+                val downloadUri = androidx.core.content.FileProvider.getUriForFile(
+                    context, "${context.packageName}.provider", downloadFile,
+                )
+
+                val completionIntent = Intent().apply {
+                    component = android.content.ComponentName(
+                        context.packageName,
+                        "com.prgramed.emessages.receiver.MmsDownloadedReceiver",
+                    )
+                    putExtra("file_path", downloadFile.absolutePath)
+                    putExtra("sub_id", android.telephony.SubscriptionManager.getDefaultSmsSubscriptionId())
+                    putExtra("content_location", contentLocation)
+                }
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context, downloadFile.name.hashCode(), completionIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+
+                val smsManager = context.getSystemService(android.telephony.SmsManager::class.java)
+                smsManager?.downloadMultimediaMessage(
+                    context, contentLocation, downloadUri, null, pendingIntent,
+                )
+            } catch (_: Exception) {}
+        }
+    }
+
     private fun createSentPendingIntent(messageId: Long): PendingIntent {
         val intent = Intent().apply {
             component = ComponentName(
@@ -582,6 +619,7 @@ class MessageRepositoryImpl @Inject constructor(
                 Telephony.Mms.READ,
                 Telephony.Mms.MESSAGE_BOX,
                 Telephony.Mms.SUBSCRIPTION_ID,
+                Telephony.Mms.CONTENT_LOCATION,
             ),
             selection,
             selectionArgs,
@@ -593,6 +631,7 @@ class MessageRepositoryImpl @Inject constructor(
             val readIdx = cursor.getColumnIndexOrThrow(Telephony.Mms.READ)
             val boxIdx = cursor.getColumnIndexOrThrow(Telephony.Mms.MESSAGE_BOX)
             val mmsSubIdIdx = cursor.getColumnIndex(Telephony.Mms.SUBSCRIPTION_ID)
+            val clIdx = cursor.getColumnIndex(Telephony.Mms.CONTENT_LOCATION)
 
             while (cursor.moveToNext()) {
                 val mmsId = cursor.getLong(idIdx)
@@ -603,6 +642,7 @@ class MessageRepositoryImpl @Inject constructor(
                 val body = loadMmsBody(mmsId)
                 val attachments = loadMmsAttachments(mmsId)
                 val address = loadMmsAddress(mmsId)
+                val contentLoc = if (clIdx >= 0) cursor.getString(clIdx) else null
 
                 messages.add(
                     Message(
@@ -616,6 +656,7 @@ class MessageRepositoryImpl @Inject constructor(
                         isMms = true,
                         attachments = attachments,
                         status = MessageStatus.NONE,
+                        contentLocation = contentLoc,
                         subscriptionId = if (mmsSubIdIdx >= 0) cursor.getInt(mmsSubIdIdx) else -1,
                     ),
                 )
@@ -632,14 +673,41 @@ class MessageRepositoryImpl @Inject constructor(
         contentResolver.query(
             partUri,
             arrayOf("_id", "ct", "text"),
-            "ct = ?",
-            arrayOf("text/plain"),
-            null,
+            null, null, null,
         )?.use { cursor ->
+            val ctIdx = cursor.getColumnIndexOrThrow("ct")
             val textIdx = cursor.getColumnIndexOrThrow("text")
+            val idIdx = cursor.getColumnIndexOrThrow("_id")
             while (cursor.moveToNext()) {
-                val text = cursor.getString(textIdx)
-                if (!text.isNullOrBlank()) sb.append(text)
+                val ct = cursor.getString(ctIdx) ?: continue
+                if (ct == "text/plain") {
+                    // Try text column first
+                    val text = cursor.getString(textIdx)
+                    if (!text.isNullOrBlank()) {
+                        sb.append(text)
+                    } else {
+                        // Fallback: read from _data blob via content provider
+                        try {
+                            val partId = cursor.getLong(idIdx)
+                            contentResolver.openInputStream(Uri.parse("content://mms/part/$partId"))?.use { input ->
+                                sb.append(input.bufferedReader().readText())
+                            }
+                        } catch (_: Exception) { }
+                    }
+                }
+            }
+        }
+        // Fallback: check MMS subject if body is empty
+        if (sb.isEmpty()) {
+            contentResolver.query(
+                Uri.parse("content://mms/$mmsId"),
+                arrayOf("sub"),
+                null, null, null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val subject = cursor.getString(0)
+                    if (!subject.isNullOrBlank()) sb.append(subject)
+                }
             }
         }
         sb.toString()

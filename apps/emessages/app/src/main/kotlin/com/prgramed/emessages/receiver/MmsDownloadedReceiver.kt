@@ -26,6 +26,23 @@ class MmsDownloadedReceiver : BroadcastReceiver() {
 
         if (resultCode != Activity.RESULT_OK || !file.exists() || file.length() == 0L) {
             file.delete()
+            // Store a placeholder MMS with content_location so user can retry download
+            val contentLoc = intent.getStringExtra("content_location")
+            val subscriptionId = intent.getIntExtra("sub_id", -1)
+            if (contentLoc != null) {
+                try {
+                    val values = ContentValues().apply {
+                        put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_INBOX)
+                        put(Telephony.Mms.READ, 0)
+                        put(Telephony.Mms.SEEN, 0)
+                        put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000)
+                        put(Telephony.Mms.CONTENT_TYPE, "application/vnd.wap.multipart.related")
+                        put(Telephony.Mms.CONTENT_LOCATION, contentLoc)
+                        if (subscriptionId >= 0) put(Telephony.Mms.SUBSCRIPTION_ID, subscriptionId)
+                    }
+                    context.contentResolver.insert(Telephony.Mms.CONTENT_URI, values)
+                } catch (_: Exception) {}
+            }
             return
         }
 

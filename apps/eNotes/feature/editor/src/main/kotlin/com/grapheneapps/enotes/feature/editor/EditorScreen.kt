@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -25,9 +26,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -237,5 +241,51 @@ fun EditorScreen(
                 }
             }
         }
+    }
+
+    // Password dialog
+    if (uiState.needsPassword) {
+        var passwordInput by remember { mutableStateOf("") }
+        val title = when (uiState.passwordAction) {
+            PasswordAction.VIEW -> "Enter password to view"
+            PasswordAction.UNLOCK -> "Enter password to unlock"
+            PasswordAction.LOCK -> "Set a password"
+        }
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissPasswordPrompt() },
+            title = { Text(title) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = passwordInput,
+                        onValueChange = { passwordInput = it },
+                        placeholder = { Text("Password") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                    val errorMsg = uiState.error
+                    if (errorMsg != null) {
+                        Text(
+                            errorMsg,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.onPasswordSubmit(passwordInput) },
+                    enabled = passwordInput.isNotBlank(),
+                ) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissPasswordPrompt() }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }

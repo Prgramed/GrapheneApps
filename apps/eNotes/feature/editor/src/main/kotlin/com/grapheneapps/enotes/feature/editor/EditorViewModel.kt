@@ -22,6 +22,8 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
 
+enum class PasswordAction { VIEW, UNLOCK, LOCK }
+
 data class EditorUiState(
     val noteId: String = "",
     val title: String = "",
@@ -30,7 +32,9 @@ data class EditorUiState(
     val isLoading: Boolean = true,
     val isSaved: Boolean = true,
     val isLocked: Boolean = false,
-    val needsAuth: Boolean = false,
+    val needsPassword: Boolean = false,
+    val passwordAction: PasswordAction = PasswordAction.VIEW,
+    val error: String? = null,
 )
 
 @HiltViewModel
@@ -55,13 +59,14 @@ class EditorViewModel @Inject constructor(
             val note = noteRepository.getById(noteId)
             if (note != null) {
                 if (note.isLocked && note.encryptedBody != null) {
-                    // Locked — show auth prompt, don't decrypt yet
+                    // Locked — show password prompt, don't decrypt yet
                     _uiState.value = EditorUiState(
                         noteId = note.id,
                         title = note.title,
                         isLoading = false,
                         isLocked = true,
-                        needsAuth = true,
+                        needsPassword = true,
+                        passwordAction = PasswordAction.VIEW,
                     )
                 } else {
                     val doc = DocumentSerializer.fromJson(note.bodyJson)
@@ -251,47 +256,63 @@ class EditorViewModel @Inject constructor(
         scheduleSave()
     }
 
-    fun onAuthSuccess() {
-        // Decrypt locked note body after biometric auth
+    fun onPasswordSubmit(password: String) {
         viewModelScope.launch {
-            val note = noteRepository.getById(_uiState.value.noteId) ?: return@launch
-            val encrypted = note.encryptedBody
-            if (encrypted != null) {
-                try {
-                    val decrypted = cryptoManager.decrypt(encrypted)
-                    val doc = DocumentSerializer.fromJson(decrypted)
-                    _uiState.update { it.copy(document = doc, needsAuth = false) }
-                } catch (_: Exception) { }
+            val state = _uiState.value
+            val note = noteRepository.getById(state.noteId) ?: return@launch
+
+            when (state.passwordAction) {
+                PasswordAction.VIEW -> {
+                    // Decrypt locked note body to view
+                    val encrypted = note.encryptedBody ?: return@launch
+                    try {
+                        val decrypted = cryptoManager.decrypt(encrypted, password)
+                        val doc = DocumentSerializer.fromJson(decrypted)
+                        _uiState.update { it.copy(document = doc, needsPassword = false, error = null) }
+                    } catch (_: Exception) {
+                        _uiState.update { it.copy(error = "Wrong password") }
+                    }
+                }
+
+                PasswordAction.UNLOCK -> {
+                    // Permanently unlock — decrypt and save as plaintext
+                    val encrypted = note.encryptedBody ?: return@launch
+                    try {
+                        val decrypted = cryptoManager.decrypt(encrypted, password)
+                        noteRepository.save(
+                            note.copy(isLocked = false, bodyJson = decrypted, encryptedBody = null, editedAt = System.currentTimeMillis()),
+                        )
+                        val doc = DocumentSerializer.fromJson(decrypted)
+                        _uiState.update { it.copy(isLocked = false, document = doc, needsPassword = false, error = null) }
+                    } catch (_: Exception) {
+                        _uiState.update { it.copy(error = "Wrong password") }
+                    }
+                }
+
+                PasswordAction.LOCK -> {
+                    // Lock note with password
+                    val bodyJson = DocumentSerializer.toJson(state.document)
+                    val encrypted = cryptoManager.encrypt(bodyJson, password)
+                    noteRepository.save(
+                        note.copy(isLocked = true, bodyJson = "", encryptedBody = encrypted, editedAt = System.currentTimeMillis()),
+                    )
+                    _uiState.update { it.copy(isLocked = true, needsPassword = false, error = null) }
+                }
             }
         }
     }
 
     fun toggleLock() {
-        viewModelScope.launch {
-            val state = _uiState.value
-            val note = noteRepository.getById(state.noteId) ?: return@launch
-            if (state.isLocked) {
-                // Unlock — decrypt body, clear encryptedBody
-                val encBody = note.encryptedBody
-                if (encBody != null) {
-                    val decrypted = cryptoManager.decrypt(encBody)
-                    noteRepository.save(
-                        note.copy(isLocked = false, bodyJson = decrypted, encryptedBody = null, editedAt = System.currentTimeMillis()),
-                    )
-                } else {
-                    noteRepository.save(note.copy(isLocked = false, editedAt = System.currentTimeMillis()))
-                }
-                _uiState.update { it.copy(isLocked = false) }
-            } else {
-                // Lock — encrypt body, clear bodyJson
-                val bodyJson = DocumentSerializer.toJson(state.document)
-                val encrypted = cryptoManager.encrypt(bodyJson)
-                noteRepository.save(
-                    note.copy(isLocked = true, bodyJson = "", encryptedBody = encrypted, editedAt = System.currentTimeMillis()),
-                )
-                _uiState.update { it.copy(isLocked = true) }
-            }
+        val state = _uiState.value
+        if (state.isLocked) {
+            _uiState.update { it.copy(needsPassword = true, passwordAction = PasswordAction.UNLOCK, error = null) }
+        } else {
+            _uiState.update { it.copy(needsPassword = true, passwordAction = PasswordAction.LOCK, error = null) }
         }
+    }
+
+    fun dismissPasswordPrompt() {
+        _uiState.update { it.copy(needsPassword = false, error = null) }
     }
 
     fun insertDivider() {

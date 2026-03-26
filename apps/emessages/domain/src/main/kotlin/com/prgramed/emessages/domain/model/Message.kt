@@ -12,6 +12,7 @@ data class Message(
     val attachments: List<Attachment> = emptyList(),
     val status: MessageStatus = MessageStatus.NONE,
     val subscriptionId: Int = -1,
+    val contentLocation: String? = null,
 )
 
 enum class MessageType { SENT, RECEIVED, DRAFT }

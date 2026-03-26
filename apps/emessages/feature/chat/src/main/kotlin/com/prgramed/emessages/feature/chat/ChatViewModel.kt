@@ -110,6 +110,12 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    fun retryMmsDownload(mmsId: Long, contentLocation: String) {
+        viewModelScope.launch {
+            messageRepository.retryMmsDownload(mmsId, contentLocation)
+        }
+    }
+
     fun loadMore() {
         if (_uiState.value.isLoadingMore || !_uiState.value.hasMoreMessages) return
         _uiState.update { it.copy(isLoadingMore = true) }

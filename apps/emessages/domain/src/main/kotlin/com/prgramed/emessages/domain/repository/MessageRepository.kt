@@ -11,4 +11,5 @@ interface MessageRepository {
     suspend fun sendMms(addresses: List<String>, body: String, attachmentUris: List<Uri>)
     suspend fun deleteMessage(id: Long, isMms: Boolean)
     suspend fun getOrCreateThreadId(addresses: List<String>): Long
+    suspend fun retryMmsDownload(mmsId: Long, contentLocation: String)
 }

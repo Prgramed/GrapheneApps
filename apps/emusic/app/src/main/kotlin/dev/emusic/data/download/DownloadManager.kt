@@ -40,8 +40,8 @@ class DownloadManager @Inject constructor(
         // Prune any stale completed/failed work for this track so KEEP doesn't block
         workManager.pruneWork()
 
-        val prefs = preferencesRepository.preferencesFlow.first()
-        val networkType = if (prefs.wifiOnlyDownloads) NetworkType.UNMETERED else NetworkType.CONNECTED
+        // Always use CONNECTED — VPN (Tailscale) may report as metered even on WiFi
+        val networkType = NetworkType.CONNECTED
         val constraints = Constraints.Builder().setRequiredNetworkType(networkType).build()
         val request = OneTimeWorkRequestBuilder<DownloadWorker>()
             .setInputData(

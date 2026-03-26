@@ -36,6 +36,7 @@ class MmsDeliverReceiver : BroadcastReceiver() {
         val completionIntent = Intent(context, MmsDownloadedReceiver::class.java).apply {
             putExtra("file_path", downloadFile.absolutePath)
             putExtra("sub_id", subscriptionId)
+            putExtra("content_location", contentLocation)
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,

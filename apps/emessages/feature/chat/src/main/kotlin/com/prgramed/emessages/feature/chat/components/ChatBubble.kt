@@ -65,6 +65,7 @@ fun ChatBubble(
     onAttachmentClick: (Attachment) -> Unit = {},
     onAttachmentLongPress: (Attachment) -> Unit = {},
     linkPreview: LinkPreview? = null,
+    onRetryMmsDownload: ((Long, String) -> Unit)? = null,
 ) {
     val bubbleShape = if (isSent) {
         RoundedCornerShape(
@@ -233,6 +234,22 @@ fun ChatBubble(
                                 }
                             }
                         }
+                    }
+
+                    // Empty MMS fallback — tap to retry if content_location available
+                    if (message.body.isBlank() && message.isMms && message.attachments.isEmpty()) {
+                        val hasRetry = !message.contentLocation.isNullOrBlank()
+                        Text(
+                            text = if (hasRetry) "Tap to download MMS" else "MMS not available",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            color = if (hasRetry) MaterialTheme.colorScheme.primary
+                            else if (isSent) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = if (hasRetry) Modifier.clickable {
+                                onRetryMmsDownload?.invoke(message.id, message.contentLocation!!)
+                            } else Modifier,
+                        )
                     }
 
                     // Message text with clickable links

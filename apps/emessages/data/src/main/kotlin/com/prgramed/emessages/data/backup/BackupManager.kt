@@ -94,18 +94,38 @@ class BackupManager @Inject constructor(
             }
         }
 
-    suspend fun restore(webDavUrl: String, username: String, password: String): Result<Int> =
+    suspend fun restore(
+        webDavUrl: String,
+        username: String,
+        password: String,
+        onProgress: ((phase: String, current: Int, total: Int) -> Unit)? = null,
+    ): Result<Int> =
         withContext(Dispatchers.IO) {
             try {
                 val baseUrl = webDavUrl.trimEnd('/')
+                onProgress?.invoke("Downloading backup...", 0, 0)
                 val jsonBytes = webDavClient.download("$baseUrl/messages.json", username, password)
+                onProgress?.invoke("Parsing backup...", 0, 0)
                 val backup = json.decodeFromString<BackupData>(String(jsonBytes))
 
                 var restored = 0
+                val totalSms = backup.smsMessages.size
+                val totalMms = backup.mmsMessages.size
 
-                // Restore SMS
+                // Pre-load all existing SMS keys into memory (one query instead of 65K)
+                onProgress?.invoke("Loading existing messages...", 0, totalSms + totalMms)
+                val existingSmsKeys = loadExistingSmsKeys()
+                Log.d("BackupManager", "Loaded ${existingSmsKeys.size} existing SMS keys, restoring $totalSms from backup")
+
+                // Pre-load all existing MMS timestamps into memory
+                val existingMmsTimestamps = loadExistingMmsTimestamps()
+                Log.d("BackupManager", "Loaded ${existingMmsTimestamps.size} existing MMS timestamps, restoring ${backup.mmsMessages.size} from backup")
+
+                // Restore SMS — in-memory duplicate check
+                var smsProcessed = 0
                 for (sms in backup.smsMessages) {
-                    if (!smsExists(sms.address, sms.timestamp)) {
+                    val key = "${sms.address}|${sms.timestamp}"
+                    if (key !in existingSmsKeys) {
                         val values = android.content.ContentValues().apply {
                             put(Telephony.Sms.ADDRESS, sms.address)
                             put(Telephony.Sms.BODY, sms.body)
@@ -117,15 +137,24 @@ class BackupManager @Inject constructor(
                             }
                         }
                         contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
+                        existingSmsKeys.add(key)
                         restored++
                     }
+                    smsProcessed++
+                    if (smsProcessed % 100 == 0) {
+                        onProgress?.invoke("SMS: $restored new / $smsProcessed of $totalSms", smsProcessed, totalSms + totalMms)
+                    }
                 }
+                onProgress?.invoke("SMS done: $restored restored. Starting MMS...", totalSms, totalSms + totalMms)
+                Log.d("BackupManager", "SMS restore done: $restored inserted")
 
-                // Restore MMS
+                // Restore MMS — in-memory duplicate check
+                var mmsProcessed = 0
                 for (mms in backup.mmsMessages) {
-                    if (!mmsExists(mms.address, mms.timestamp)) {
+                    val tsSeconds = mms.timestamp / 1000
+                    if (tsSeconds !in existingMmsTimestamps) {
                         val mmsValues = android.content.ContentValues().apply {
-                            put(Telephony.Mms.DATE, mms.timestamp / 1000) // MMS stores seconds
+                            put(Telephony.Mms.DATE, tsSeconds)
                             put(Telephony.Mms.READ, mms.read)
                             put(Telephony.Mms.MESSAGE_BOX, mms.type)
                             put(Telephony.Mms.CONTENT_TYPE, "application/vnd.wap.mms-message")
@@ -137,7 +166,7 @@ class BackupManager @Inject constructor(
                             // Add address
                             val addrValues = android.content.ContentValues().apply {
                                 put(Telephony.Mms.Addr.ADDRESS, mms.address)
-                                put(Telephony.Mms.Addr.TYPE, if (mms.type == 1) 137 else 151) // FROM or TO
+                                put(Telephony.Mms.Addr.TYPE, if (mms.type == 1) 137 else 151)
                                 put(Telephony.Mms.Addr.CHARSET, 106)
                             }
                             contentResolver.insert(
@@ -149,6 +178,7 @@ class BackupManager @Inject constructor(
                             if (mms.body.isNotBlank()) {
                                 val textPartValues = android.content.ContentValues().apply {
                                     put(Telephony.Mms.Part.CONTENT_TYPE, "text/plain")
+                                    put(Telephony.Mms.Part.CHARSET, 106) // UTF-8
                                     put(Telephony.Mms.Part.TEXT, mms.body)
                                 }
                                 contentResolver.insert(
@@ -160,13 +190,11 @@ class BackupManager @Inject constructor(
                             // Add media parts
                             for (part in mms.parts) {
                                 val bytes = when {
-                                    // New format: download from WebDAV media path
                                     part.mediaPath != null -> {
                                         try {
                                             webDavClient.download("$baseUrl/${part.mediaPath}", username, password)
                                         } catch (_: Exception) { null }
                                     }
-                                    // Legacy format: base64 in JSON
                                     part.dataBase64 != null -> Base64.decode(part.dataBase64, Base64.DEFAULT)
                                     else -> null
                                 }
@@ -186,16 +214,61 @@ class BackupManager @Inject constructor(
                                     }
                                 }
                             }
+                            existingMmsTimestamps.add(tsSeconds)
                             restored++
                         }
                     }
+                    mmsProcessed++
+                    if (mmsProcessed % 10 == 0) {
+                        onProgress?.invoke("MMS: $mmsProcessed of $totalMms", totalSms + mmsProcessed, totalSms + totalMms)
+                    }
                 }
+                onProgress?.invoke("Done! Restored $restored messages", totalSms + totalMms, totalSms + totalMms)
+                Log.d("BackupManager", "Restore complete: $restored total messages restored")
 
                 Result.success(restored)
             } catch (e: Exception) {
+                Log.e("BackupManager", "Restore failed", e)
                 Result.failure(e)
             }
         }
+
+    /**
+     * Loads all existing SMS address+timestamp keys into a HashSet for O(1) lookup.
+     * One query instead of per-message queries.
+     */
+    private fun loadExistingSmsKeys(): HashSet<String> {
+        val keys = HashSet<String>()
+        contentResolver.query(
+            Telephony.Sms.CONTENT_URI,
+            arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.DATE),
+            null, null, null,
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val address = cursor.getString(0) ?: ""
+                val timestamp = cursor.getLong(1)
+                keys.add("$address|$timestamp")
+            }
+        }
+        return keys
+    }
+
+    /**
+     * Loads all existing MMS timestamps (in seconds) into a HashSet for O(1) lookup.
+     */
+    private fun loadExistingMmsTimestamps(): HashSet<Long> {
+        val timestamps = HashSet<Long>()
+        contentResolver.query(
+            Telephony.Mms.CONTENT_URI,
+            arrayOf(Telephony.Mms.DATE),
+            null, null, null,
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                timestamps.add(cursor.getLong(0))
+            }
+        }
+        return timestamps
+    }
 
     private fun exportSms(): List<SmsBackup> {
         val messages = mutableListOf<SmsBackup>()
@@ -355,25 +428,4 @@ class BackupManager @Inject constructor(
         return parts
     }
 
-    private fun smsExists(address: String, timestamp: Long): Boolean {
-        return contentResolver.query(
-            Telephony.Sms.CONTENT_URI,
-            arrayOf(Telephony.Sms._ID),
-            "${Telephony.Sms.ADDRESS} = ? AND ${Telephony.Sms.DATE} = ?",
-            arrayOf(address, timestamp.toString()),
-            null,
-        )?.use { it.count > 0 } ?: false
-    }
-
-    private fun mmsExists(address: String, timestamp: Long): Boolean {
-        // Check by timestamp (in seconds for MMS)
-        val tsSeconds = timestamp / 1000
-        return contentResolver.query(
-            Telephony.Mms.CONTENT_URI,
-            arrayOf(Telephony.Mms._ID),
-            "${Telephony.Mms.DATE} = ?",
-            arrayOf(tsSeconds.toString()),
-            null,
-        )?.use { it.count > 0 } ?: false
-    }
 }

@@ -147,9 +147,13 @@ class SettingsViewModel @Inject constructor(
     fun restoreNow() {
         val state = _uiState.value
         if (state.webDavUrl.isBlank() || state.isRestoring) return
-        _uiState.update { it.copy(isRestoring = true, backupMessage = null) }
+        _uiState.update { it.copy(isRestoring = true, backupMessage = "Starting restore...") }
         viewModelScope.launch {
-            val result = backupManager.restore(state.webDavUrl, state.webDavUsername, state.webDavPassword)
+            val result = backupManager.restore(
+                state.webDavUrl, state.webDavUsername, state.webDavPassword,
+            ) { phase, current, total ->
+                _uiState.update { it.copy(backupMessage = phase) }
+            }
             result.onSuccess { count ->
                 _uiState.update { it.copy(isRestoring = false, backupMessage = "Restored $count messages") }
             }

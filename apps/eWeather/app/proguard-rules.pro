@@ -1,4 +1,4 @@
-# eContacts - no special rules needed
+# eWeather ProGuard rules
 
 # Tink (EncryptedSharedPreferences)
 -dontwarn com.google.errorprone.annotations.CanIgnoreReturnValue

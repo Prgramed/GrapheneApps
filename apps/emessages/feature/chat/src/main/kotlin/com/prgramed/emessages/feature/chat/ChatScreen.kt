@@ -154,7 +154,8 @@ fun ChatScreen(
                             Icon(Icons.Default.ContentCopy, contentDescription = null)
                         },
                         modifier = Modifier.clickable {
-                            clipboardManager.setText(AnnotatedString(selectedMsg.body))
+                            val clip = android.content.ClipData.newPlainText("message", selectedMsg.body)
+                            (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(clip)
                             viewModel.onMessageSelected(null)
                         },
                     )
@@ -397,6 +398,11 @@ fun ChatScreen(
                                             }
                                         } else {
                                             android.widget.Toast.makeText(context, "Already saved", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onRetryMmsDownload = { mmsId, contentLoc ->
+                                        scope.launch {
+                                            viewModel.retryMmsDownload(mmsId, contentLoc)
                                         }
                                     },
                                 )
