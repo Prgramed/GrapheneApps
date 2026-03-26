@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
 
-enum class PasswordAction { VIEW, UNLOCK, LOCK }
+enum class PasswordAction { VIEW, SET_PASSWORD, CHANGE_PASSWORD, REMOVE_PASSWORD }
 
 data class EditorUiState(
     val noteId: String = "",
@@ -32,7 +32,10 @@ data class EditorUiState(
     val isLoading: Boolean = true,
     val isSaved: Boolean = true,
     val isLocked: Boolean = false,
+    val isUnlockedInMemory: Boolean = false,
     val needsPassword: Boolean = false,
+    val needsBiometric: Boolean = false,
+    val showLockMenu: Boolean = false,
     val passwordAction: PasswordAction = PasswordAction.VIEW,
     val error: String? = null,
 )
@@ -53,19 +56,40 @@ class EditorViewModel @Inject constructor(
     private val redoStack = mutableListOf<RichTextDocument>()
     private var saveJob: Job? = null
     private var isDirty = false
+    private var autoLockJob: Job? = null
+
+    private fun startAutoLockTimer() {
+        autoLockJob?.cancel()
+        autoLockJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(10 * 60 * 1000L) // 10 minutes
+            _uiState.update {
+                if (it.isUnlockedInMemory) {
+                    val hasCached = cryptoManager.getCachedPassword(it.noteId) != null
+                    it.copy(
+                        document = RichTextDocument(),
+                        isUnlockedInMemory = false,
+                        needsBiometric = hasCached,
+                        needsPassword = !hasCached,
+                        passwordAction = PasswordAction.VIEW,
+                    )
+                } else it
+            }
+        }
+    }
 
     init {
         viewModelScope.launch {
             val note = noteRepository.getById(noteId)
             if (note != null) {
                 if (note.isLocked && note.encryptedBody != null) {
-                    // Locked — show password prompt, don't decrypt yet
+                    val hasCached = cryptoManager.getCachedPassword(note.id) != null
                     _uiState.value = EditorUiState(
                         noteId = note.id,
                         title = note.title,
                         isLoading = false,
                         isLocked = true,
-                        needsPassword = true,
+                        needsBiometric = hasCached, // try biometric if password is cached
+                        needsPassword = !hasCached, // fall back to password if not cached
                         passwordAction = PasswordAction.VIEW,
                     )
                 } else {
@@ -139,6 +163,25 @@ class EditorViewModel @Inject constructor(
             it.copy(
                 document = RichTextDocument(blocks),
                 focusedBlockId = newBlock.id,
+                isSaved = false,
+            )
+        }
+        scheduleSave()
+    }
+
+    fun onPasteLines(afterBlockId: String, lines: List<String>) {
+        pushUndo()
+        val blocks = _uiState.value.document.blocks.toMutableList()
+        val index = blocks.indexOfFirst { it.id == afterBlockId }
+        if (index < 0) return
+
+        val newBlocks = lines.map { line -> Block.Paragraph(text = line) }
+        blocks.addAll(index + 1, newBlocks)
+        val lastNew = newBlocks.lastOrNull()
+        _uiState.update {
+            it.copy(
+                document = RichTextDocument(blocks),
+                focusedBlockId = lastNew?.id,
                 isSaved = false,
             )
         }
@@ -256,59 +299,113 @@ class EditorViewModel @Inject constructor(
         scheduleSave()
     }
 
-    fun onPasswordSubmit(password: String) {
+    fun onBiometricSuccess() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            val noteId = state.noteId
+            val cached = cryptoManager.getCachedPassword(noteId)
+            if (cached != null) {
+                onPasswordSubmit(cached)
+            } else {
+                // No cached password — fall back to manual entry
+                _uiState.update { it.copy(needsBiometric = false, needsPassword = true) }
+            }
+        }
+    }
+
+    fun onBiometricFailed() {
+        _uiState.update { it.copy(needsBiometric = false, needsPassword = true) }
+    }
+
+    fun onPasswordSubmit(password: String, newPassword: String? = null) {
         viewModelScope.launch {
             val state = _uiState.value
             val note = noteRepository.getById(state.noteId) ?: return@launch
 
             when (state.passwordAction) {
                 PasswordAction.VIEW -> {
-                    // Decrypt locked note body to view
+                    // Decrypt in memory only — note stays encrypted on disk
                     val encrypted = note.encryptedBody ?: return@launch
                     try {
                         val decrypted = cryptoManager.decrypt(encrypted, password)
                         val doc = DocumentSerializer.fromJson(decrypted)
-                        _uiState.update { it.copy(document = doc, needsPassword = false, error = null) }
+                        cryptoManager.cachePassword(note.id, password)
+                        _uiState.update {
+                            it.copy(document = doc, isUnlockedInMemory = true, needsPassword = false, needsBiometric = false, error = null)
+                        }
+                        startAutoLockTimer()
                     } catch (_: Exception) {
                         _uiState.update { it.copy(error = "Wrong password") }
                     }
                 }
 
-                PasswordAction.UNLOCK -> {
-                    // Permanently unlock — decrypt and save as plaintext
+                PasswordAction.SET_PASSWORD -> {
+                    // First-time lock — encrypt and save
+                    val bodyJson = DocumentSerializer.toJson(state.document)
+                    val encrypted = cryptoManager.encrypt(bodyJson, password)
+                    noteRepository.save(
+                        note.copy(isLocked = true, bodyJson = "", encryptedBody = encrypted, editedAt = System.currentTimeMillis()),
+                    )
+                    cryptoManager.cachePassword(note.id, password)
+                    _uiState.update { it.copy(isLocked = true, isUnlockedInMemory = false, needsPassword = false, error = null) }
+                }
+
+                PasswordAction.REMOVE_PASSWORD -> {
+                    // Verify old password then permanently unlock
                     val encrypted = note.encryptedBody ?: return@launch
                     try {
                         val decrypted = cryptoManager.decrypt(encrypted, password)
                         noteRepository.save(
                             note.copy(isLocked = false, bodyJson = decrypted, encryptedBody = null, editedAt = System.currentTimeMillis()),
                         )
+                        cryptoManager.clearCachedPassword(note.id)
+                        autoLockJob?.cancel()
                         val doc = DocumentSerializer.fromJson(decrypted)
-                        _uiState.update { it.copy(isLocked = false, document = doc, needsPassword = false, error = null) }
+                        _uiState.update {
+                            it.copy(isLocked = false, isUnlockedInMemory = false, document = doc, needsPassword = false, error = null)
+                        }
                     } catch (_: Exception) {
                         _uiState.update { it.copy(error = "Wrong password") }
                     }
                 }
 
-                PasswordAction.LOCK -> {
-                    // Lock note with password
-                    val bodyJson = DocumentSerializer.toJson(state.document)
-                    val encrypted = cryptoManager.encrypt(bodyJson, password)
-                    noteRepository.save(
-                        note.copy(isLocked = true, bodyJson = "", encryptedBody = encrypted, editedAt = System.currentTimeMillis()),
-                    )
-                    _uiState.update { it.copy(isLocked = true, needsPassword = false, error = null) }
+                PasswordAction.CHANGE_PASSWORD -> {
+                    // Verify old password, re-encrypt with new
+                    val encrypted = note.encryptedBody ?: return@launch
+                    val np = newPassword ?: return@launch
+                    try {
+                        val decrypted = cryptoManager.decrypt(encrypted, password)
+                        val reEncrypted = cryptoManager.encrypt(decrypted, np)
+                        noteRepository.save(
+                            note.copy(encryptedBody = reEncrypted, editedAt = System.currentTimeMillis()),
+                        )
+                        cryptoManager.cachePassword(note.id, np)
+                        _uiState.update { it.copy(needsPassword = false, error = null) }
+                    } catch (_: Exception) {
+                        _uiState.update { it.copy(error = "Wrong password") }
+                    }
                 }
             }
         }
     }
 
-    fun toggleLock() {
+    fun onLockIconTap() {
         val state = _uiState.value
-        if (state.isLocked) {
-            _uiState.update { it.copy(needsPassword = true, passwordAction = PasswordAction.UNLOCK, error = null) }
+        if (state.isLocked || state.isUnlockedInMemory) {
+            // Show menu: Change Password / Remove Password
+            _uiState.update { it.copy(showLockMenu = true) }
         } else {
-            _uiState.update { it.copy(needsPassword = true, passwordAction = PasswordAction.LOCK, error = null) }
+            // Not locked — set password
+            _uiState.update { it.copy(needsPassword = true, passwordAction = PasswordAction.SET_PASSWORD, error = null) }
         }
+    }
+
+    fun onLockMenuAction(action: PasswordAction) {
+        _uiState.update { it.copy(showLockMenu = false, needsPassword = true, passwordAction = action, error = null) }
+    }
+
+    fun dismissLockMenu() {
+        _uiState.update { it.copy(showLockMenu = false) }
     }
 
     fun dismissPasswordPrompt() {

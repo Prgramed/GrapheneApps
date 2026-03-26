@@ -5,7 +5,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
@@ -43,7 +45,10 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
+import androidx.fragment.app.FragmentActivity
+import com.grapheneapps.enotes.data.security.BiometricHelper
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -70,6 +75,29 @@ fun EditorScreen(
         }
         context.startActivity(Intent.createChooser(sendIntent, "Share note"))
         viewModel.clearShareText()
+    }
+
+    // Biometric prompt
+    LaunchedEffect(uiState.needsBiometric) {
+        if (uiState.needsBiometric) {
+            val activity = context as? FragmentActivity
+            if (activity != null) {
+                val helper = BiometricHelper()
+                if (helper.canAuthenticate(activity)) {
+                    helper.authenticate(
+                        activity = activity,
+                        title = "Unlock Note",
+                        subtitle = "Authenticate to view this note",
+                        onSuccess = { viewModel.onBiometricSuccess() },
+                        onFailed = { viewModel.onBiometricFailed() },
+                    )
+                } else {
+                    viewModel.onBiometricFailed()
+                }
+            } else {
+                viewModel.onBiometricFailed()
+            }
+        }
     }
 
     BackHandler {
@@ -109,12 +137,27 @@ fun EditorScreen(
                     }
                 },
                 actions = {
-                    // Lock/unlock button
-                    IconButton(onClick = { viewModel.toggleLock() }) {
-                        Icon(
-                            imageVector = if (uiState.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                            contentDescription = if (uiState.isLocked) "Unlock note" else "Lock note",
-                        )
+                    // Lock button with menu
+                    Box {
+                        IconButton(onClick = { viewModel.onLockIconTap() }) {
+                            Icon(
+                                imageVector = if (uiState.isLocked || uiState.isUnlockedInMemory) Icons.Default.Lock else Icons.Default.LockOpen,
+                                contentDescription = if (uiState.isLocked) "Locked" else "Lock note",
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = uiState.showLockMenu,
+                            onDismissRequest = { viewModel.dismissLockMenu() },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Change Password") },
+                                onClick = { viewModel.onLockMenuAction(PasswordAction.CHANGE_PASSWORD) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Remove Password") },
+                                onClick = { viewModel.onLockMenuAction(PasswordAction.REMOVE_PASSWORD) },
+                            )
+                        }
                     }
                     // Overflow menu
                     var showOverflow by remember { mutableStateOf(false) }
@@ -237,6 +280,7 @@ fun EditorScreen(
                         onCheckToggle = if (block is Block.ChecklistItem) {
                             { viewModel.toggleCheckbox(block.id) }
                         } else null,
+                        onPasteLines = { lines -> viewModel.onPasteLines(block.id, lines) },
                     )
                 }
             }
@@ -246,11 +290,27 @@ fun EditorScreen(
     // Password dialog
     if (uiState.needsPassword) {
         var passwordInput by remember { mutableStateOf("") }
-        val title = when (uiState.passwordAction) {
-            PasswordAction.VIEW -> "Enter password to view"
-            PasswordAction.UNLOCK -> "Enter password to unlock"
-            PasswordAction.LOCK -> "Set a password"
+        var newPasswordInput by remember { mutableStateOf("") }
+        var confirmInput by remember { mutableStateOf("") }
+
+        val action = uiState.passwordAction
+        val needsConfirm = action == PasswordAction.SET_PASSWORD || action == PasswordAction.CHANGE_PASSWORD
+        val needsNewPassword = action == PasswordAction.CHANGE_PASSWORD
+        val passwordsMatch = !needsConfirm || (if (needsNewPassword) newPasswordInput == confirmInput else passwordInput == confirmInput)
+
+        val title = when (action) {
+            PasswordAction.VIEW -> "Enter password"
+            PasswordAction.SET_PASSWORD -> "Set a password"
+            PasswordAction.CHANGE_PASSWORD -> "Change password"
+            PasswordAction.REMOVE_PASSWORD -> "Remove password"
         }
+
+        val canSubmit = when (action) {
+            PasswordAction.VIEW, PasswordAction.REMOVE_PASSWORD -> passwordInput.isNotBlank()
+            PasswordAction.SET_PASSWORD -> passwordInput.isNotBlank() && confirmInput.isNotBlank() && passwordInput == confirmInput
+            PasswordAction.CHANGE_PASSWORD -> passwordInput.isNotBlank() && newPasswordInput.isNotBlank() && confirmInput.isNotBlank() && newPasswordInput == confirmInput
+        }
+
         AlertDialog(
             onDismissRequest = { viewModel.dismissPasswordPrompt() },
             title = { Text(title) },
@@ -259,32 +319,52 @@ fun EditorScreen(
                     OutlinedTextField(
                         value = passwordInput,
                         onValueChange = { passwordInput = it },
-                        placeholder = { Text("Password") },
+                        placeholder = { Text(if (needsNewPassword) "Current password" else "Password") },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                     )
+                    if (needsNewPassword) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = newPasswordInput,
+                            onValueChange = { newPasswordInput = it },
+                            placeholder = { Text("New password") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                        )
+                    }
+                    if (needsConfirm) {
+                        Spacer(Modifier.height(8.dp))
+                        val confirmTarget = if (needsNewPassword) newPasswordInput else passwordInput
+                        OutlinedTextField(
+                            value = confirmInput,
+                            onValueChange = { confirmInput = it },
+                            placeholder = { Text("Confirm password") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            isError = confirmInput.isNotBlank() && confirmInput != confirmTarget,
+                        )
+                        if (confirmInput.isNotBlank() && confirmInput != confirmTarget) {
+                            Text("Passwords don't match", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                     val errorMsg = uiState.error
                     if (errorMsg != null) {
-                        Text(
-                            errorMsg,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                        Text(errorMsg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             },
             confirmButton = {
                 TextButton(
-                    onClick = { viewModel.onPasswordSubmit(passwordInput) },
-                    enabled = passwordInput.isNotBlank(),
-                ) {
-                    Text("OK")
-                }
+                    onClick = {
+                        if (needsNewPassword) viewModel.onPasswordSubmit(passwordInput, newPasswordInput)
+                        else viewModel.onPasswordSubmit(passwordInput)
+                    },
+                    enabled = canSubmit,
+                ) { Text("OK") }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.dismissPasswordPrompt() }) {
-                    Text("Cancel")
-                }
+                TextButton(onClick = { viewModel.dismissPasswordPrompt() }) { Text("Cancel") }
             },
         )
     }

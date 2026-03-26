@@ -575,7 +575,7 @@ class MessageRepositoryImpl @Inject constructor(
                         id = cursor.getLong(idIdx),
                         threadId = cursor.getLong(threadIdx),
                         address = cursor.getString(addressIdx) ?: "",
-                        body = cursor.getString(bodyIdx) ?: "",
+                        body = (cursor.getString(bodyIdx) ?: "").replace("\uFFFC", "").trim(),
                         timestamp = cursor.getLong(dateIdx),
                         type = type.toMessageType(),
                         isRead = cursor.getInt(readIdx) == 1,
@@ -639,7 +639,7 @@ class MessageRepositoryImpl @Inject constructor(
                 // MMS date is in seconds, not milliseconds
                 val date = cursor.getLong(dateIdx) * 1000
 
-                val body = loadMmsBody(mmsId)
+                val body = loadMmsBody(mmsId).replace("\uFFFC", "").trim()
                 val attachments = loadMmsAttachments(mmsId)
                 val address = loadMmsAddress(mmsId)
                 val contentLoc = if (clIdx >= 0) cursor.getString(clIdx) else null

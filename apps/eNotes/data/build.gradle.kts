@@ -20,4 +20,5 @@ dependencies {
     implementation(libs.androidx.hilt.work)
     implementation(libs.timber)
     implementation(libs.androidx.biometric)
+    implementation(libs.androidx.security.crypto)
 }

@@ -44,6 +44,9 @@ class EMusicApp : Application(), SingletonImageLoader.Factory, Configuration.Pro
                 add(coil3.network.okhttp.OkHttpNetworkFetcherFactory(callFactory = { okHttpClient }))
             }
             .crossfade(true)
+            .diskCachePolicy(coil3.request.CachePolicy.ENABLED)
+            .memoryCachePolicy(coil3.request.CachePolicy.ENABLED)
+            .networkCachePolicy(coil3.request.CachePolicy.ENABLED)
             .memoryCache {
                 MemoryCache.Builder()
                     .maxSizePercent(context, 0.15)

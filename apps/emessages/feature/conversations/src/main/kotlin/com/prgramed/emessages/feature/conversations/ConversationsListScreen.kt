@@ -192,6 +192,7 @@ fun ConversationsListScreen(
                             val currentIsUnread by rememberUpdatedState(isUnread)
                             var swipeHandled by remember { mutableStateOf(false) }
                             val dismissState = rememberSwipeToDismissBoxState(
+                                positionalThreshold = { totalDistance -> totalDistance * 0.6f },
                                 confirmValueChange = { value ->
                                     when (value) {
                                         SwipeToDismissBoxValue.StartToEnd -> {

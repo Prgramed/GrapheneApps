@@ -151,15 +151,63 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val result = backupManager.restore(
                 state.webDavUrl, state.webDavUsername, state.webDavPassword,
-            ) { phase, current, total ->
-                _uiState.update { it.copy(backupMessage = phase) }
-            }
+                onProgress = { phase, _, _ -> _uiState.update { it.copy(backupMessage = phase) } },
+            )
             result.onSuccess { count ->
                 _uiState.update { it.copy(isRestoring = false, backupMessage = "Restored $count messages") }
             }
             result.onFailure { e ->
                 _uiState.update { it.copy(isRestoring = false, backupMessage = "Restore failed: ${e.message}") }
             }
+        }
+    }
+
+    fun forceRestoreSms() {
+        val state = _uiState.value
+        if (state.webDavUrl.isBlank() || state.isRestoring) return
+        _uiState.update { it.copy(isRestoring = true, backupMessage = "Force restoring SMS...") }
+        viewModelScope.launch {
+            val result = backupManager.restore(
+                state.webDavUrl, state.webDavUsername, state.webDavPassword,
+                onProgress = { phase, _, _ -> _uiState.update { it.copy(backupMessage = phase) } },
+                force = true,
+                type = BackupManager.RestoreType.SMS_ONLY,
+            )
+            result.onSuccess { count ->
+                _uiState.update { it.copy(isRestoring = false, backupMessage = "Force restored $count SMS") }
+            }
+            result.onFailure { e ->
+                _uiState.update { it.copy(isRestoring = false, backupMessage = "Restore failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun forceRestoreMms() {
+        val state = _uiState.value
+        if (state.webDavUrl.isBlank() || state.isRestoring) return
+        _uiState.update { it.copy(isRestoring = true, backupMessage = "Force restoring MMS...") }
+        viewModelScope.launch {
+            val result = backupManager.restore(
+                state.webDavUrl, state.webDavUsername, state.webDavPassword,
+                onProgress = { phase, _, _ -> _uiState.update { it.copy(backupMessage = phase) } },
+                force = true,
+                type = BackupManager.RestoreType.MMS_ONLY,
+            )
+            result.onSuccess { count ->
+                _uiState.update { it.copy(isRestoring = false, backupMessage = "Force restored $count MMS") }
+            }
+            result.onFailure { e ->
+                _uiState.update { it.copy(isRestoring = false, backupMessage = "Restore failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun deleteOldSms() {
+        _uiState.update { it.copy(backupMessage = "Deleting old SMS...") }
+        viewModelScope.launch {
+            val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L // older than 24h
+            val count = backupManager.deleteOldSms(cutoff)
+            _uiState.update { it.copy(backupMessage = "Deleted $count old SMS") }
         }
     }
 

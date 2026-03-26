@@ -238,8 +238,9 @@ class ConversationRepositoryImpl @Inject constructor(
                 Telephony.Sms.DATE,
                 Telephony.Sms.READ,
             ),
-            "${Telephony.Sms.THREAD_ID} IS NOT NULL", null,
-            "${Telephony.Sms.DATE} DESC LIMIT 500",
+            "${Telephony.Sms.THREAD_ID} IS NOT NULL",
+            null,
+            "${Telephony.Sms.DATE} DESC",
         )?.use { cursor ->
             val threadIdx = cursor.getColumnIndex(Telephony.Sms.THREAD_ID)
             val addrIdx = cursor.getColumnIndex(Telephony.Sms.ADDRESS)
@@ -255,7 +256,7 @@ class ConversationRepositoryImpl @Inject constructor(
 
                 val info = threads.getOrPut(threadId) {
                     ThreadInfo(
-                        snippet = if (bodyIdx >= 0) cursor.getString(bodyIdx) ?: "" else "",
+                        snippet = if (bodyIdx >= 0) (cursor.getString(bodyIdx) ?: "").replace("\uFFFC", "").trim() else "",
                         timestamp = if (dateIdx >= 0) cursor.getLong(dateIdx) else 0L,
                         address = if (addrIdx >= 0) cursor.getString(addrIdx) ?: "" else "",
                     )

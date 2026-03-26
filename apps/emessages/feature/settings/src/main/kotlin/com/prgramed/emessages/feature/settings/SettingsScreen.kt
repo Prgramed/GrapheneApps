@@ -1,7 +1,10 @@
 package com.prgramed.emessages.feature.settings
 
 import androidx.compose.foundation.clickable
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -270,6 +273,46 @@ fun SettingsScreen(
                 } else {
                     Text("Restore from Backup")
                 }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Force restore buttons
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = { viewModel.forceRestoreSms() },
+                    enabled = uiState.webDavUrl.isNotBlank() && !uiState.isRestoring,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Force Restore SMS", style = MaterialTheme.typography.labelSmall)
+                }
+                OutlinedButton(
+                    onClick = { viewModel.forceRestoreMms() },
+                    enabled = uiState.webDavUrl.isNotBlank() && !uiState.isRestoring,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Force Restore MMS", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            OutlinedButton(
+                onClick = { viewModel.deleteOldSms() },
+                enabled = !uiState.isRestoring,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+            ) {
+                Text("Delete Old SMS (before today)", style = MaterialTheme.typography.labelSmall)
             }
 
             Spacer(Modifier.height(48.dp))

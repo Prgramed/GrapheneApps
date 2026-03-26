@@ -161,7 +161,8 @@ class ContactRepositoryImpl @Inject constructor(
                     .build(),
             )
 
-            // Delete existing data rows, then re-insert
+            // Delete existing data rows from ALL raw contacts for this contact
+            val allRawIds = getAllRawContactIds(contact.id)
             val mimeTypes = listOf(
                 CommonDataKinds.Phone.CONTENT_ITEM_TYPE,
                 CommonDataKinds.Email.CONTENT_ITEM_TYPE,
@@ -172,14 +173,16 @@ class ContactRepositoryImpl @Inject constructor(
                 CommonDataKinds.StructuredPostal.CONTENT_ITEM_TYPE,
                 CommonDataKinds.Website.CONTENT_ITEM_TYPE,
             )
-            mimeTypes.forEach { mime ->
-                ops.add(
-                    ContentProviderOperation.newDelete(Data.CONTENT_URI)
-                        .withSelection(
-                            "${Data.RAW_CONTACT_ID} = ? AND ${Data.MIMETYPE} = ?",
-                            arrayOf(rawContactId.toString(), mime),
-                        ).build(),
-                )
+            for (rid in allRawIds) {
+                mimeTypes.forEach { mime ->
+                    ops.add(
+                        ContentProviderOperation.newDelete(Data.CONTENT_URI)
+                            .withSelection(
+                                "${Data.RAW_CONTACT_ID} = ? AND ${Data.MIMETYPE} = ?",
+                                arrayOf(rid.toString(), mime),
+                            ).build(),
+                    )
+                }
             }
 
             contact.phoneNumbers.forEach { phone ->
@@ -663,6 +666,19 @@ class ContactRepositoryImpl @Inject constructor(
             photoUri = cursor.getString(photoIdx),
             starred = cursor.getInt(starredIdx) == 1,
         )
+    }
+
+    private fun getAllRawContactIds(contactId: Long): List<Long> = try {
+        val ids = mutableListOf<Long>()
+        contentResolver.query(
+            ContactsContract.RawContacts.CONTENT_URI, arrayOf(ContactsContract.RawContacts._ID),
+            "${ContactsContract.RawContacts.CONTACT_ID} = ?", arrayOf(contactId.toString()), null,
+        )?.use { cursor ->
+            while (cursor.moveToNext()) ids.add(cursor.getLong(0))
+        }
+        ids
+    } catch (e: Exception) { Timber.w(e, "ContactRepository")
+        emptyList()
     }
 
     private fun getRawContactId(contactId: Long): Long? = try {

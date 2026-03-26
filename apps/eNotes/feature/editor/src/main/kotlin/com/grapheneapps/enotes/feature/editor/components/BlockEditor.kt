@@ -48,6 +48,7 @@ fun BlockEditor(
     onEnter: () -> Unit,
     onDelete: () -> Unit,
     onCheckToggle: (() -> Unit)? = null,
+    onPasteLines: ((List<String>) -> Unit)? = null,
 ) {
     val focusRequester = remember { FocusRequester() }
 
@@ -141,9 +142,17 @@ fun BlockEditor(
                     }
                     raw.contains('\n') -> {
                         val clean = raw.removePrefix(sentinel)
-                        val beforeNewline = clean.substringBefore('\n')
-                        onTextChanged(beforeNewline)
-                        onEnter()
+                        val lines = clean.split('\n')
+                        if (lines.size > 2 && onPasteLines != null) {
+                            // Multi-line paste — first line updates current block, rest create new blocks
+                            onTextChanged(lines.first())
+                            onPasteLines(lines.drop(1))
+                        } else {
+                            // Single Enter key press
+                            val beforeNewline = clean.substringBefore('\n')
+                            onTextChanged(beforeNewline)
+                            onEnter()
+                        }
                     }
                     else -> {
                         tfv = newValue

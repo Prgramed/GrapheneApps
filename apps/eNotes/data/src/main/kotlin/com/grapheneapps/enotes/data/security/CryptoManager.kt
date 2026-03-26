@@ -1,6 +1,10 @@
 package com.grapheneapps.enotes.data.security
 
+import android.content.Context
 import android.util.Base64
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKeys
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
@@ -18,7 +22,30 @@ import javax.inject.Singleton
  * Format: Base64(salt[16] + iv[12] + ciphertext+tag[n])
  */
 @Singleton
-class CryptoManager @Inject constructor() {
+class CryptoManager @Inject constructor(
+    @ApplicationContext private val context: Context,
+) {
+    private val cachedPasswords by lazy {
+        try {
+            val masterKey = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+            EncryptedSharedPreferences.create(
+                "enotes_pw_cache", masterKey, context,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        } catch (_: Exception) { null }
+    }
+
+    fun cachePassword(noteId: String, password: String) {
+        cachedPasswords?.edit()?.putString(noteId, password)?.apply()
+    }
+
+    fun getCachedPassword(noteId: String): String? =
+        cachedPasswords?.getString(noteId, null)
+
+    fun clearCachedPassword(noteId: String) {
+        cachedPasswords?.edit()?.remove(noteId)?.apply()
+    }
 
     companion object {
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
