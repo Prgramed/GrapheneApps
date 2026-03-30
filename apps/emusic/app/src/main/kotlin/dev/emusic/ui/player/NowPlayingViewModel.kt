@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 data class NowPlayingUiState(
@@ -184,7 +185,11 @@ class NowPlayingViewModel @Inject constructor(
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            controller?.let { syncStateFromPlayer(it) }
+            controller?.let { mc ->
+                syncStateFromPlayer(mc)
+                // Bug fix: immediately update position so slider resets on track change
+                _uiState.update { it.copy(positionMs = mc.currentPosition, durationMs = mc.duration.coerceAtLeast(0)) }
+            }
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {
@@ -349,18 +354,26 @@ class NowPlayingViewModel @Inject constructor(
 
     fun toggleShuffle() {
         controller?.let { mc ->
-            mc.shuffleModeEnabled = !mc.shuffleModeEnabled
-        }
+            val newShuffle = !mc.shuffleModeEnabled
+            mc.shuffleModeEnabled = newShuffle
+            // Immediately update UI (don't wait for listener callback)
+            _uiState.update { it.copy(shuffleEnabled = newShuffle) }
+            Timber.d("Shuffle toggled: $newShuffle")
+        } ?: Timber.w("toggleShuffle: controller not ready")
     }
 
     fun cycleRepeatMode() {
         controller?.let { mc ->
-            mc.repeatMode = when (mc.repeatMode) {
+            val newMode = when (mc.repeatMode) {
                 Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
                 Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
                 else -> Player.REPEAT_MODE_OFF
             }
-        }
+            mc.repeatMode = newMode
+            // Immediately update UI
+            _uiState.update { it.copy(repeatMode = newMode) }
+            Timber.d("Repeat mode: $newMode")
+        } ?: Timber.w("cycleRepeatMode: controller not ready")
     }
 
     override fun onCleared() {

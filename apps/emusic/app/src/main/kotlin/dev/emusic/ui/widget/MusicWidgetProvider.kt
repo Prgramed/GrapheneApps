@@ -164,7 +164,7 @@ class MusicWidgetProvider : AppWidgetProvider() {
                     .data(url)
                     .size(128)
                     .build()
-                val result = ImageLoader(context).execute(request)
+                val result = coil3.SingletonImageLoader.get(context).execute(request)
                 val bitmap: Bitmap? = try { result.image?.toBitmap() } catch (_: Exception) { null }
                 if (bitmap != null) {
                     views.setImageViewBitmap(R.id.widget_art, bitmap)

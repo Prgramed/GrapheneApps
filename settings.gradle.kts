@@ -83,3 +83,6 @@ include(":apps:eweather:app")
 
 // eCalendar app
 include(":apps:ecalendar:app")
+
+// eGallery app
+include(":apps:egallery:app")

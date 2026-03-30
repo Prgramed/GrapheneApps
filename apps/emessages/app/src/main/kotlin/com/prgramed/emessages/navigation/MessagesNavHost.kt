@@ -20,17 +20,21 @@ fun MessagesNavHost(
     modifier: Modifier = Modifier,
     sendToAddress: String? = null,
     sharedMessageText: String? = null,
+    sharedAttachmentUri: String? = null,
     onSendToHandled: () -> Unit = {},
 ) {
     val navController = rememberNavController()
 
-    LaunchedEffect(sendToAddress, sharedMessageText) {
+    LaunchedEffect(sendToAddress, sharedMessageText, sharedAttachmentUri) {
         if (sendToAddress != null) {
             val route = buildString {
                 append(MessagesDestinations.NEW_MESSAGE)
                 append("?address=${sendToAddress}")
                 if (sharedMessageText != null) {
                     append("&body=${java.net.URLEncoder.encode(sharedMessageText, "UTF-8")}")
+                }
+                if (sharedAttachmentUri != null) {
+                    append("&attachment=${java.net.URLEncoder.encode(sharedAttachmentUri, "UTF-8")}")
                 }
             }
             navController.navigate(route)
@@ -71,13 +75,17 @@ fun MessagesNavHost(
             )
         }
         composable(
-            "${MessagesDestinations.NEW_MESSAGE}?address={address}&body={body}",
+            "${MessagesDestinations.NEW_MESSAGE}?address={address}&body={body}&attachment={attachment}",
             arguments = listOf(
                 navArgument("address") {
                     type = NavType.StringType
                     defaultValue = ""
                 },
                 navArgument("body") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("attachment") {
                     type = NavType.StringType
                     defaultValue = ""
                 },

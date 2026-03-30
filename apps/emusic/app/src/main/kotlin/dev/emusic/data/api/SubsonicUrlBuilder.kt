@@ -16,7 +16,18 @@ class SubsonicUrlBuilder @Inject constructor(
             "&v=${SubsonicAuthInterceptor.API_VERSION}&c=${SubsonicAuthInterceptor.CLIENT_NAME}&f=json"
     }
 
+    /**
+     * Cover art URL WITHOUT auth — used by Coil (auth added by SubsonicAuthInterceptor).
+     * Stable URL = Coil cache hit on every call for the same album.
+     */
     fun getCoverArtUrl(id: String, size: Int = 300): String =
+        "${baseUrl()}/rest/getCoverArt?id=$id&size=$size"
+
+    /**
+     * Cover art URL WITH auth baked in — for Media3 notification/BrowseTree artwork
+     * which loads via its own HTTP client (not our OkHttp interceptor).
+     */
+    fun getCoverArtUrlWithAuth(id: String, size: Int = 300): String =
         "${baseUrl()}/rest/getCoverArt?id=$id&size=$size&${authParams()}"
 
     fun getStreamUrl(id: String, maxBitRate: Int = 0, format: String? = null): String {

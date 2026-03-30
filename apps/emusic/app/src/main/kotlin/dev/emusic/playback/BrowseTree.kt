@@ -119,7 +119,7 @@ class BrowseTree @Inject constructor(
             .setIsBrowsable(true)
             .setIsPlayable(false)
             .setMediaType(mediaType)
-        artworkId?.let { meta.setArtworkUri(Uri.parse(urlBuilder.getCoverArtUrl(it))) }
+        artworkId?.let { meta.setArtworkUri(Uri.parse(urlBuilder.getCoverArtUrlWithAuth(it))) }
         return MediaItem.Builder()
             .setMediaId(id)
             .setMediaMetadata(meta.build())
@@ -140,7 +140,7 @@ class BrowseTree @Inject constructor(
             .setIsBrowsable(false)
             .setIsPlayable(true)
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-        albumId?.let { meta.setArtworkUri(Uri.parse(urlBuilder.getCoverArtUrl(it))) }
+        albumId?.let { meta.setArtworkUri(Uri.parse(urlBuilder.getCoverArtUrlWithAuth(it))) }
         return MediaItem.Builder()
             .setMediaId(id)
             .setMediaMetadata(meta.build())

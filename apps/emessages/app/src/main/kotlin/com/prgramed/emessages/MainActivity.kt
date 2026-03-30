@@ -19,6 +19,7 @@ class MainActivity : ComponentActivity() {
 
     private var sendToAddress by mutableStateOf<String?>(null)
     private var sharedMessageText by mutableStateOf<String?>(null)
+    private var sharedAttachmentUri by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,9 +31,11 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     sendToAddress = sendToAddress,
                     sharedMessageText = sharedMessageText,
+                    sharedAttachmentUri = sharedAttachmentUri,
                     onSendToHandled = {
                         sendToAddress = null
                         sharedMessageText = null
+                        sharedAttachmentUri = null
                     },
                 )
             }
@@ -54,11 +57,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
             Intent.ACTION_SEND -> {
-                // Shared text from other apps — open new message with the text pre-filled
                 val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
-                if (!sharedText.isNullOrBlank()) {
+                val streamUri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+                if (streamUri != null) {
+                    sharedAttachmentUri = streamUri.toString()
+                    sharedMessageText = sharedText // may be null, that's fine
+                    sendToAddress = "" // trigger new message screen
+                } else if (!sharedText.isNullOrBlank()) {
                     sharedMessageText = sharedText
                     sendToAddress = "" // trigger new message screen
+                }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val uris = intent.getParcelableArrayListExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+                val firstUri = uris?.firstOrNull()
+                if (firstUri != null) {
+                    sharedAttachmentUri = firstUri.toString()
+                    sendToAddress = ""
                 }
             }
         }

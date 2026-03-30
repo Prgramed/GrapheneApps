@@ -55,6 +55,10 @@ class NewMessageViewModel @Inject constructor(
         if (body.isNotBlank()) {
             _uiState.update { it.copy(messageText = body) }
         }
+        val attachment = savedStateHandle.get<String>("attachment") ?: ""
+        if (attachment.isNotBlank()) {
+            _uiState.update { it.copy(attachmentUri = java.net.URLDecoder.decode(attachment, "UTF-8")) }
+        }
         loadSims()
     }
 
