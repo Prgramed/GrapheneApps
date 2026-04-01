@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.ecalendar.data.db.dao.EventDao
 import dev.ecalendar.data.db.entity.toDomain
@@ -11,6 +12,7 @@ import dev.ecalendar.ical.ICalParser
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.absoluteValue
 
 @Singleton
 class EventAlarmScheduler @Inject constructor(
@@ -33,7 +35,7 @@ class EventAlarmScheduler @Inject constructor(
             if (triggerAt <= now) return@forEach
 
             val intent = buildReminderIntent(uid, instanceStart, title, location, mins)
-            val requestCode = "$uid$instanceStart$mins".hashCode()
+            val requestCode = "$uid$instanceStart$mins".hashCode().absoluteValue
             val pendingIntent = PendingIntent.getBroadcast(
                 context, requestCode, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
@@ -47,7 +49,7 @@ class EventAlarmScheduler @Inject constructor(
             val intent = Intent(context, EventAlarmReceiver::class.java).apply {
                 action = EventAlarmReceiver.ACTION_EVENT_REMINDER
             }
-            val requestCode = "$uid$instanceStart$mins".hashCode()
+            val requestCode = "$uid$instanceStart$mins".hashCode().absoluteValue
             val pendingIntent = PendingIntent.getBroadcast(
                 context, requestCode, intent,
                 PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
@@ -55,6 +57,18 @@ class EventAlarmScheduler @Inject constructor(
             if (pendingIntent != null) {
                 alarmManager.cancel(pendingIntent)
             }
+        }
+        // Also cancel any snooze alarm for this event
+        val snoozeIntent = Intent(context, EventAlarmReceiver::class.java).apply {
+            action = EventAlarmReceiver.ACTION_EVENT_REMINDER
+        }
+        val snoozeRequestCode = "${uid}snooze$instanceStart".hashCode().absoluteValue
+        val snoozePending = PendingIntent.getBroadcast(
+            context, snoozeRequestCode, snoozeIntent,
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+        )
+        if (snoozePending != null) {
+            alarmManager.cancel(snoozePending)
         }
     }
 
@@ -67,7 +81,7 @@ class EventAlarmScheduler @Inject constructor(
     ) {
         val triggerAt = System.currentTimeMillis() + delayMins * 60_000L
         val intent = buildReminderIntent(uid, instanceStart, title, location, 0)
-        val requestCode = "${uid}snooze$instanceStart".hashCode()
+        val requestCode = "${uid}snooze$instanceStart".hashCode().absoluteValue
         val pendingIntent = PendingIntent.getBroadcast(
             context, requestCode, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
@@ -109,6 +123,7 @@ class EventAlarmScheduler @Inject constructor(
                     location = domain.location,
                 )
                 scheduled++
+                if (scheduled % 50 == 0) kotlinx.coroutines.yield()
             }
         }
         Timber.d("rescheduleAll: scheduled alarms for $scheduled events")
@@ -126,12 +141,22 @@ class EventAlarmScheduler @Inject constructor(
     }
 
     private fun scheduleExact(triggerAt: Long, pendingIntent: PendingIntent, uid: String, mins: Int) {
-        try {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-            Timber.d("Scheduled alarm for $uid at $triggerAt ($mins min before)")
-        } catch (_: SecurityException) {
+        val canScheduleExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            alarmManager.canScheduleExactAlarms()
+        } else {
+            true
+        }
+        if (canScheduleExact) {
+            try {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                Timber.d("Scheduled alarm for $uid at $triggerAt ($mins min before)")
+            } catch (_: SecurityException) {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                Timber.w("Exact alarm not permitted, using inexact for $uid")
+            }
+        } else {
             alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-            Timber.w("Exact alarm not permitted, using inexact for $uid")
+            Timber.d("Scheduled inexact alarm for $uid (exact not permitted)")
         }
     }
 }

@@ -21,7 +21,7 @@ import dev.ecalendar.data.db.entity.SyncQueueEntity
         CalendarEventEntity::class,
         SyncQueueEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

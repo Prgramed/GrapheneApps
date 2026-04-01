@@ -82,6 +82,7 @@ class OfflineQueueProcessor @Inject constructor(
             } else {
                 syncQueueDao.incrementRetry(item.id)
             }
+            kotlinx.coroutines.delay(500)
         }
     }
 
@@ -96,29 +97,25 @@ class OfflineQueueProcessor @Inject constructor(
         val eventUrl = "${calendarUrl.trimEnd('/')}/$uid.ics"
 
         return try {
-            val response = client.put(eventUrl, icsPayload, etag = null)
-            when (response.code) {
-                201, 204 -> {
-                    // Success — mark as synced
-                    val etag = response.header("ETag")?.trim('"') ?: ""
-                    val series = eventDao.getSeriesByUid(uid)
-                    if (series != null) {
-                        eventDao.upsertSeries(series.copy(isLocal = false, etag = etag, serverUrl = eventUrl))
+            client.put(eventUrl, icsPayload, etag = null).use { response ->
+                when (response.code) {
+                    201, 204 -> {
+                        val etag = response.header("ETag")?.trim('"') ?: ""
+                        val series = eventDao.getSeriesByUid(uid)
+                        if (series != null) {
+                            eventDao.upsertSeries(series.copy(isLocal = false, etag = etag, serverUrl = eventUrl))
+                        }
+                        Timber.d("CREATE pushed: $uid")
+                        true
                     }
-                    response.close()
-                    Timber.d("CREATE pushed: $uid")
-                    true
-                }
-                412 -> {
-                    // UID conflict — already exists on server
-                    response.close()
-                    Timber.w("CREATE conflict for $uid (412), skipping")
-                    true // Remove from queue — server has it
-                }
-                else -> {
-                    Timber.w("CREATE failed: ${response.code} for $uid")
-                    response.close()
-                    false
+                    412 -> {
+                        Timber.w("CREATE conflict for $uid (412), skipping")
+                        true
+                    }
+                    else -> {
+                        Timber.w("CREATE failed: ${response.code} for $uid")
+                        false
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -139,25 +136,22 @@ class OfflineQueueProcessor @Inject constructor(
         if (serverUrl.isBlank()) return true
 
         return try {
-            val response = client.put(serverUrl, icsPayload, etag = series.etag)
-            when (response.code) {
-                200, 201, 204 -> {
-                    val newEtag = response.header("ETag")?.trim('"') ?: ""
-                    eventDao.upsertSeries(series.copy(etag = newEtag, rawIcs = icsPayload))
-                    response.close()
-                    Timber.d("UPDATE pushed: $uid")
-                    true
-                }
-                412 -> {
-                    // ETag conflict — last-write-wins: discard local, re-fetch later
-                    response.close()
-                    Timber.w("UPDATE conflict for $uid (412), discarding local change")
-                    true // Remove from queue
-                }
-                else -> {
-                    Timber.w("UPDATE failed: ${response.code} for $uid")
-                    response.close()
-                    false
+            client.put(serverUrl, icsPayload, etag = series.etag).use { response ->
+                when (response.code) {
+                    200, 201, 204 -> {
+                        val newEtag = response.header("ETag")?.trim('"') ?: ""
+                        eventDao.upsertSeries(series.copy(etag = newEtag, rawIcs = icsPayload))
+                        Timber.d("UPDATE pushed: $uid")
+                        true
+                    }
+                    412 -> {
+                        Timber.w("UPDATE conflict for $uid (412), discarding local change")
+                        true
+                    }
+                    else -> {
+                        Timber.w("UPDATE failed: ${response.code} for $uid")
+                        false
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -176,23 +170,20 @@ class OfflineQueueProcessor @Inject constructor(
 
         return try {
             val etag = series.etag.ifBlank { "*" }
-            val response = client.delete(serverUrl, etag)
-            when (response.code) {
-                204, 200 -> {
-                    response.close()
-                    Timber.d("DELETE pushed: $uid")
-                    true
-                }
-                404 -> {
-                    // Already deleted on server
-                    response.close()
-                    Timber.d("DELETE: $uid already gone (404)")
-                    true
-                }
-                else -> {
-                    Timber.w("DELETE failed: ${response.code} for $uid")
-                    response.close()
-                    false
+            client.delete(serverUrl, etag).use { response ->
+                when (response.code) {
+                    204, 200 -> {
+                        Timber.d("DELETE pushed: $uid")
+                        true
+                    }
+                    404 -> {
+                        Timber.d("DELETE: $uid already gone (404)")
+                        true
+                    }
+                    else -> {
+                        Timber.w("DELETE failed: ${response.code} for $uid")
+                        false
+                    }
                 }
             }
         } catch (e: Exception) {

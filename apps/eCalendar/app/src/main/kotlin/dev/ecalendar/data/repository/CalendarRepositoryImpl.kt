@@ -79,11 +79,12 @@ class CalendarRepositoryImpl @Inject constructor(
             }
         }
 
-        // Enqueue for sync
+        // Enqueue for sync (only if calendar source exists)
+        if (source == null) return 0L
         return syncQueueDao.enqueue(
             SyncQueueEntity(
-                accountId = source?.accountId ?: 0,
-                calendarUrl = source?.calDavUrl ?: "",
+                accountId = source.accountId,
+                calendarUrl = source.calDavUrl,
                 eventUid = series.uid,
                 operation = SyncOp.CREATE.name,
                 icsPayload = icsString,
@@ -132,12 +133,12 @@ class CalendarRepositoryImpl @Inject constructor(
             }
         }
 
-        // Enqueue sync
-        val source = calendarDao.getById(existingSeries.calendarSourceId)
+        // Enqueue sync (only if calendar source exists)
+        val source = calendarDao.getById(existingSeries.calendarSourceId) ?: return
         syncQueueDao.enqueue(
             SyncQueueEntity(
-                accountId = source?.accountId ?: 0,
-                calendarUrl = source?.calDavUrl ?: "",
+                accountId = source.accountId,
+                calendarUrl = source.calDavUrl,
                 eventUid = uid,
                 operation = SyncOp.UPDATE.name,
                 icsPayload = icsString,
@@ -152,11 +153,11 @@ class CalendarRepositoryImpl @Inject constructor(
         eventDao.deleteEventsByUid(uid)
         eventDao.deleteSeriesByUid(uid)
 
-        // Enqueue sync
-        val source = calendarDao.getById(series.calendarSourceId)
+        // Enqueue sync (only if calendar source exists)
+        val source = calendarDao.getById(series.calendarSourceId) ?: return
         syncQueueDao.enqueue(
             SyncQueueEntity(
-                accountId = source?.accountId ?: 0,
+                accountId = source.accountId,
                 calendarUrl = series.serverUrl,
                 eventUid = uid,
                 operation = SyncOp.DELETE.name,

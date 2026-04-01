@@ -169,9 +169,10 @@ class EventEditViewModel @Inject constructor(
                     calendarRepository.updateEvent(editUid!!, editable, EditScope.ALL)
                 }
                 // Schedule alarms
-                if (editable.alarms.isNotEmpty()) {
+                val alarmUid = editable.uid ?: editUid
+                if (editable.alarms.isNotEmpty() && !alarmUid.isNullOrBlank()) {
                     alarmScheduler.scheduleForEvent(
-                        uid = editable.uid ?: editUid ?: "",
+                        uid = alarmUid,
                         instanceStart = editable.startMillis,
                         alarmMins = editable.alarms,
                         title = editable.title,

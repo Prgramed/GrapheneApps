@@ -67,8 +67,8 @@ fun DayScreen(
     val activeDate by viewModel.activeDate.collectAsStateWithLifecycle()
     val activeView by viewModel.activeView.collectAsStateWithLifecycle()
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
-    val today = remember { LocalDate.now() }
-    val baseDate = remember { today }
+    val today = LocalDate.now()
+    val baseDate = remember { LocalDate.now() }
 
     val pagerState = rememberPagerState(
         initialPage = INITIAL_PAGE,
@@ -211,7 +211,7 @@ private fun DayPage(
                     .height(totalHeight)
                     .padding(start = HOUR_LABEL_WIDTH, end = 8.dp),
             ) {
-                if (timedEvents.isEmpty()) {
+                if (timedEvents.isEmpty() && allDayEvents.isEmpty()) {
                     // Friendly empty state centered in working hours
                     val workStart = 8 * HOUR_HEIGHT.value
                     val workEnd = 20 * HOUR_HEIGHT.value

@@ -60,7 +60,7 @@ fun MonthScreen(
     val activeView by viewModel.activeView.collectAsStateWithLifecycle()
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
 
-    val today = remember { LocalDate.now() }
+    val today = LocalDate.now()
     val baseMonth = remember { YearMonth.from(today) }
 
     val pagerState = rememberPagerState(
@@ -86,7 +86,7 @@ fun MonthScreen(
                 val offset = page - INITIAL_PAGE
                 val month = baseMonth.plusMonths(offset.toLong())
                 val newDate = if (YearMonth.from(activeDate) != month) {
-                    month.atDay(1)
+                    month.atDay(activeDate.dayOfMonth.coerceAtMost(month.lengthOfMonth()))
                 } else {
                     activeDate
                 }

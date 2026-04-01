@@ -11,6 +11,7 @@ import androidx.room.PrimaryKey
         Index("instanceEnd"),
         Index("calendarSourceId"),
         Index("uid"),
+        Index("uid", "instanceStart", unique = true),
     ],
 )
 data class CalendarEventEntity(

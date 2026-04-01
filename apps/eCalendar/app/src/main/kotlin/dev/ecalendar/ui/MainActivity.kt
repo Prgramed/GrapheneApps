@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -13,6 +14,7 @@ import com.grapheneapps.core.designsystem.theme.GrapheneAppsTheme
 import dagger.hilt.android.AndroidEntryPoint
 import dev.ecalendar.data.preferences.AppPreferencesRepository
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
@@ -53,14 +55,16 @@ class MainActivity : ComponentActivity() {
     private fun handleIcsIntent(intent: Intent?) {
         if (intent?.action != Intent.ACTION_VIEW) return
         val uri = intent.data ?: return
-        try {
-            val icsContent = contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
-            if (icsContent != null && icsContent.contains("VCALENDAR")) {
-                _pendingIcsContent.value = icsContent
-                Timber.d("ICS intent: read ${icsContent.length} chars from $uri")
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val icsContent = contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
+                if (icsContent != null && icsContent.contains("VCALENDAR")) {
+                    _pendingIcsContent.value = icsContent
+                    Timber.d("ICS intent: read ${icsContent.length} chars from $uri")
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to read ICS from intent URI: $uri")
             }
-        } catch (e: Exception) {
-            Timber.w(e, "Failed to read ICS from intent URI: $uri")
         }
     }
 }

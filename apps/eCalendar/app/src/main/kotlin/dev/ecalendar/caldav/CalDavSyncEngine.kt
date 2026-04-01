@@ -33,6 +33,7 @@ object CalDavSyncEngine {
         source: CalendarSource,
         eventDao: EventDao,
         calendarDao: CalendarDao,
+        serverCtag: String? = null,
     ) {
         val now = LocalDate.now()
         val rangeStart = now.minusYears(1)
@@ -42,18 +43,16 @@ object CalDavSyncEngine {
         val endStr = rangeEnd.atStartOfDay().atOffset(ZoneOffset.UTC).format(UTC_FORMAT)
 
         val reportBody = buildReportBody(startStr, endStr)
-        val response = client.report(source.calDavUrl, reportBody)
-
-        if (!response.isSuccessful && response.code != 207) {
-            Timber.w("fullSync REPORT failed: ${response.code} for ${source.calDavUrl}")
-            response.close()
-            return
+        val (body, contentType) = client.report(source.calDavUrl, reportBody).use { response ->
+            if (!response.isSuccessful && response.code != 207) {
+                Timber.w("fullSync REPORT failed: ${response.code} for ${source.calDavUrl}")
+                return
+            }
+            val b = response.body?.string() ?: return
+            b to response.header("Content-Type")
         }
 
-        val body = response.body?.string() ?: return
-        response.close()
-
-        if (!isXmlResponse(response, body)) {
+        if (!isXmlBody(contentType, body)) {
             Timber.w("fullSync: non-XML response from ${source.displayName}: ${body.take(200)}")
             logZohoError(body)
             return
@@ -99,7 +98,7 @@ object CalDavSyncEngine {
             }
         }
 
-        // Update ctag (if server provides one, we'd parse it from PROPFIND — for now use timestamp)
+        // Store real server CTAG if available, otherwise fallback to timestamp
         calendarDao.upsert(
             dev.ecalendar.data.db.entity.CalendarSourceEntity(
                 id = source.id,
@@ -107,7 +106,7 @@ object CalDavSyncEngine {
                 calDavUrl = source.calDavUrl,
                 displayName = source.displayName,
                 colorHex = source.colorHex,
-                ctag = System.currentTimeMillis().toString(),
+                ctag = serverCtag ?: System.currentTimeMillis().toString(),
                 isReadOnly = source.isReadOnly,
                 isVisible = source.isVisible,
                 isMirror = source.isMirror,
@@ -116,7 +115,9 @@ object CalDavSyncEngine {
     }
 
     /**
-     * Smart sync: uses quickSync if ctag exists and < 7 days old, otherwise fullSync.
+     * Smart sync: fetches server CTAG via PROPFIND depth=0.
+     * If CTAG matches stored value, skip sync entirely.
+     * If CTAG differs or unavailable, use quickSync (if we have a stored ctag) or fullSync.
      */
     suspend fun sync(
         client: CalDavClient,
@@ -124,25 +125,70 @@ object CalDavSyncEngine {
         eventDao: EventDao,
         calendarDao: CalendarDao,
     ) {
-        val hasCtag = source.ctag != null
-        val ctagAge = source.ctag?.toLongOrNull()?.let { System.currentTimeMillis() - it } ?: Long.MAX_VALUE
-        val sevenDays = 7L * 24 * 60 * 60 * 1000
+        // Fetch server CTAG to decide if sync is needed
+        val serverCtag = fetchCtag(client, source.calDavUrl)
+        if (serverCtag != null && serverCtag == source.ctag) {
+            Timber.d("sync: CTAG unchanged for ${source.displayName}, skipping")
+            return
+        }
 
-        if (hasCtag && ctagAge < sevenDays) {
-            quickSync(client, source, eventDao, calendarDao)
+        if (source.ctag != null) {
+            quickSync(client, source, eventDao, calendarDao, serverCtag)
         } else {
-            fullSync(client, source, eventDao, calendarDao)
+            fullSync(client, source, eventDao, calendarDao, serverCtag)
+        }
+    }
+
+    /**
+     * Fetches the CTAG (getctag) for a calendar via PROPFIND depth=0.
+     * Returns null if the server doesn't support CTAG.
+     */
+    private suspend fun fetchCtag(client: CalDavClient, calUrl: String): String? {
+        return try {
+            val body = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <d:propfind xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/">
+                  <d:prop><cs:getctag/></d:prop>
+                </d:propfind>
+            """.trimIndent()
+            val response = client.propfind(calUrl, 0, body)
+            val xml = response.body?.string()
+            response.close()
+            if (xml == null) return null
+            // Parse getctag from response
+            val parser = Xml.newPullParser()
+            parser.setInput(StringReader(xml))
+            var currentTag = ""
+            var eventType = parser.eventType
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                when (eventType) {
+                    XmlPullParser.START_TAG -> currentTag = parser.name ?: ""
+                    XmlPullParser.TEXT -> {
+                        if (currentTag == "getctag") {
+                            val ctag = parser.text?.trim()
+                            if (!ctag.isNullOrBlank()) return ctag
+                        }
+                    }
+                    XmlPullParser.END_TAG -> currentTag = ""
+                }
+                eventType = parser.next()
+            }
+            null
+        } catch (e: Exception) {
+            Timber.d("fetchCtag: failed for $calUrl: ${e.message}")
+            null
         }
     }
 
     /**
      * Delta sync: PROPFIND depth=1 for ETags only, compare with Room, fetch only changed.
      */
-    suspend fun quickSync(
+    private suspend fun quickSync(
         client: CalDavClient,
         source: CalendarSource,
         eventDao: EventDao,
         calendarDao: CalendarDao,
+        serverCtag: String? = null,
     ) {
         val propfindBody = """
             <?xml version="1.0" encoding="utf-8"?>
@@ -151,18 +197,17 @@ object CalDavSyncEngine {
             </d:propfind>
         """.trimIndent()
 
-        val response = client.propfind(source.calDavUrl, 1, propfindBody)
-        if (!response.isSuccessful && response.code != 207) {
-            Timber.w("quickSync PROPFIND failed: ${response.code}, falling back to fullSync")
-            response.close()
-            fullSync(client, source, eventDao, calendarDao)
-            return
+        val (body, contentType) = client.propfind(source.calDavUrl, 1, propfindBody).use { response ->
+            if (!response.isSuccessful && response.code != 207) {
+                Timber.w("quickSync PROPFIND failed: ${response.code}, falling back to fullSync")
+                fullSync(client, source, eventDao, calendarDao)
+                return
+            }
+            val b = response.body?.string() ?: return
+            b to response.header("Content-Type")
         }
 
-        val body = response.body?.string() ?: return
-        response.close()
-
-        if (!isXmlResponse(response, body)) {
+        if (!isXmlBody(contentType, body)) {
             Timber.w("quickSync: non-XML response from ${source.displayName}: ${body.take(200)}")
             logZohoError(body)
             fullSync(client, source, eventDao, calendarDao)
@@ -184,23 +229,20 @@ object CalDavSyncEngine {
             if (localEtag == null || localEtag != serverEtag) {
                 // New or changed — fetch full ICS
                 try {
-                    val getResponse = client.get(href)
-                    if (getResponse.isSuccessful) {
-                        val icsData = getResponse.body?.string() ?: continue
-                        getResponse.close()
+                    val icsData = client.get(href).use { getResponse ->
+                        if (!getResponse.isSuccessful) return@use null
+                        getResponse.body?.string()
+                    } ?: continue
 
-                        val series = ICalParser.parseEventSeries(icsData, source.id, serverEtag, href)
-                        val events = RecurrenceExpander.expand(series, rangeStart, rangeEnd)
+                    val series = ICalParser.parseEventSeries(icsData, source.id, serverEtag, href)
+                    val events = RecurrenceExpander.expand(series, rangeStart, rangeEnd)
 
-                        eventDao.deleteEventsByUid(series.uid)
-                        eventDao.upsertSeries(series.toEntity())
-                        for (event in events) {
-                            eventDao.upsertEvent(event.toEntity())
-                        }
-                        fetchCount++
-                    } else {
-                        getResponse.close()
+                    eventDao.deleteEventsByUid(series.uid)
+                    eventDao.upsertSeries(series.toEntity())
+                    for (event in events) {
+                        eventDao.upsertEvent(event.toEntity())
                     }
+                    fetchCount++
                 } catch (e: Exception) {
                     Timber.w(e, "quickSync: failed to fetch $href")
                 }
@@ -222,12 +264,12 @@ object CalDavSyncEngine {
 
         Timber.d("quickSync: fetched $fetchCount changed events for ${source.displayName}")
 
-        // Update ctag
+        // Store real server CTAG if available, otherwise fallback to timestamp
         calendarDao.upsert(
             dev.ecalendar.data.db.entity.CalendarSourceEntity(
                 id = source.id, accountId = source.accountId,
                 calDavUrl = source.calDavUrl, displayName = source.displayName,
-                colorHex = source.colorHex, ctag = System.currentTimeMillis().toString(),
+                colorHex = source.colorHex, ctag = serverCtag ?: System.currentTimeMillis().toString(),
                 isReadOnly = source.isReadOnly, isVisible = source.isVisible, isMirror = source.isMirror,
             ),
         )
@@ -352,12 +394,14 @@ object CalDavSyncEngine {
         return baseUri.resolve(path).toString()
     }
 
-    private fun isXmlResponse(response: okhttp3.Response, body: String): Boolean {
-        val ct = response.header("Content-Type") ?: return body.trimStart().startsWith("<?xml") || body.trimStart().startsWith("<")
-        if (ct.contains("xml", ignoreCase = true)) return true
-        if (ct.contains("text/calendar", ignoreCase = true)) return true
+    private fun isXmlBody(contentType: String?, body: String): Boolean {
+        if (contentType != null) {
+            if (contentType.contains("xml", ignoreCase = true)) return true
+            if (contentType.contains("text/calendar", ignoreCase = true)) return true
+        }
         // Zoho sometimes returns text/plain with valid XML — check body
-        return body.trimStart().startsWith("<?xml") || body.trimStart().startsWith("<d:") || body.trimStart().startsWith("<D:")
+        val trimmed = body.trimStart()
+        return trimmed.startsWith("<?xml") || trimmed.startsWith("<d:") || trimmed.startsWith("<D:") || trimmed.startsWith("<")
     }
 
     private fun logZohoError(body: String) {

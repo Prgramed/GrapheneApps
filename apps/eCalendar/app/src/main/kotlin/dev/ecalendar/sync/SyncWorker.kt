@@ -23,7 +23,7 @@ class SyncWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        if (runAttemptCount > 3) return Result.failure()
+        if (runAttemptCount > 5) return Result.failure()
 
         return try {
             syncCoordinator.syncAll()
@@ -37,7 +37,7 @@ class SyncWorker @AssistedInject constructor(
     companion object {
         const val WORK_NAME = "ecalendar_sync"
 
-        fun schedule(context: Context, intervalHours: Int = 1) {
+        fun schedule(context: Context, intervalHours: Int = 6) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .setRequiresBatteryNotLow(true)

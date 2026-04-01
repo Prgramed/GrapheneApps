@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -208,6 +209,16 @@ fun CalendarScaffold(
         composable("ics/rsvp") {
             val originalIcs = RsvpDataHolder.originalIcs
             if (originalIcs != null) {
+                DisposableEffect(Unit) {
+                    onDispose {
+                        // Clear holder when leaving RSVP screen (back navigation, etc.)
+                        RsvpDataHolder.originalIcs = null
+                        RsvpDataHolder.organizer = null
+                        RsvpDataHolder.title = ""
+                        RsvpDataHolder.startMillis = 0L
+                        RsvpDataHolder.myEmail = ""
+                    }
+                }
                 RsvpScreen(
                     originalIcs = originalIcs,
                     organizer = RsvpDataHolder.organizer,
@@ -215,7 +226,6 @@ fun CalendarScaffold(
                     startMillis = RsvpDataHolder.startMillis,
                     myEmail = RsvpDataHolder.myEmail,
                     onDone = {
-                        RsvpDataHolder.originalIcs = null
                         navController.popBackStack("calendar", inclusive = false)
                     },
                 )

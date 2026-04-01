@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -274,6 +275,7 @@ private fun WeekPage(
                     val dayEvents = eventsByDay[date] ?: emptyList()
                     Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                         dayEvents.forEach { event ->
+                            key(event.uid, event.instanceStart) {
                             val startMinutes = java.time.Instant.ofEpochMilli(event.instanceStart)
                                 .atZone(zone).toLocalTime().let { it.hour * 60 + it.minute }
                             val endMinutes = java.time.Instant.ofEpochMilli(event.instanceEnd)
@@ -316,6 +318,7 @@ private fun WeekPage(
                                         )
                                     }
                                 }
+                            }
                             }
                         }
                     }

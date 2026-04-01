@@ -78,11 +78,11 @@ object CalDavDiscovery {
             </d:propfind>
         """.trimIndent()
 
-        val response = client.propfind(baseUrl, 0, body)
-        if (response.code == 401) throw Exception("401")
-        if (!response.isSuccessful && response.code != 207) return null
-
-        val xml = response.body?.string() ?: return null
+        val xml = client.propfind(baseUrl, 0, body).use { response ->
+            if (response.code == 401) throw Exception("401")
+            if (!response.isSuccessful && response.code != 207) return null
+            response.body?.string() ?: return null
+        }
         return extractHref(xml, "current-user-principal")?.let { resolveUrl(baseUrl, it) }
     }
 
@@ -96,10 +96,10 @@ object CalDavDiscovery {
             </d:propfind>
         """.trimIndent()
 
-        val response = client.propfind(principalUrl, 0, body)
-        if (!response.isSuccessful && response.code != 207) return null
-
-        val xml = response.body?.string() ?: return null
+        val xml = client.propfind(principalUrl, 0, body).use { response ->
+            if (!response.isSuccessful && response.code != 207) return null
+            response.body?.string() ?: return null
+        }
         return extractHref(xml, "calendar-home-set")?.let { resolveUrl(principalUrl, it) }
     }
 
@@ -116,10 +116,10 @@ object CalDavDiscovery {
             </d:propfind>
         """.trimIndent()
 
-        val response = client.propfind(homeUrl, 1, body)
-        if (!response.isSuccessful && response.code != 207) return emptyList()
-
-        val xml = response.body?.string() ?: return emptyList()
+        val xml = client.propfind(homeUrl, 1, body).use { response ->
+            if (!response.isSuccessful && response.code != 207) return emptyList()
+            response.body?.string() ?: return emptyList()
+        }
         return parseCalendarList(xml, homeUrl)
     }
 

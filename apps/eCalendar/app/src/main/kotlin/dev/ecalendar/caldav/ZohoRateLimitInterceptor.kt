@@ -15,6 +15,7 @@ class ZohoRateLimitInterceptor : Interceptor {
     private val lock = Any()
 
     override fun intercept(chain: Interceptor.Chain): Response {
+        var waitMs = 0L
         synchronized(lock) {
             val now = System.currentTimeMillis()
             val windowStart = now - WINDOW_MS
@@ -26,17 +27,23 @@ class ZohoRateLimitInterceptor : Interceptor {
 
             if (requestLog.size >= MAX_REQUESTS) {
                 val oldestInWindow = requestLog.first()
-                val waitMs = (oldestInWindow + WINDOW_MS) - now + 1000L
+                waitMs = ((oldestInWindow + WINDOW_MS) - now + 1000L).coerceAtLeast(100L)
                 Timber.w("Zoho rate limit: ${requestLog.size}/$MAX_REQUESTS requests in window, pausing ${waitMs / 1000}s")
-                Thread.sleep(waitMs.coerceAtLeast(100L))
-                // Re-prune after wait
-                val afterWait = System.currentTimeMillis()
-                while (requestLog.isNotEmpty() && requestLog.first() < afterWait - WINDOW_MS) {
-                    requestLog.removeFirst()
-                }
             }
+        }
 
-            requestLog.addLast(System.currentTimeMillis())
+        // Sleep outside synchronized block so other threads aren't blocked
+        if (waitMs > 0) {
+            Thread.sleep(waitMs)
+        }
+
+        synchronized(lock) {
+            // Re-prune and log after potential wait
+            val now = System.currentTimeMillis()
+            while (requestLog.isNotEmpty() && requestLog.first() < now - WINDOW_MS) {
+                requestLog.removeFirst()
+            }
+            requestLog.addLast(now)
         }
 
         return chain.proceed(chain.request())

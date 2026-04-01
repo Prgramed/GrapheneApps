@@ -71,33 +71,34 @@ object ICalSubscriptionSyncer {
             )
         }
 
-        // 4. Fetch existing event hrefs in the mirror calendar
-        val existingHrefs = fetchExistingEventHrefs(synoClient, mirrorCalUrl)
-        Timber.d("iCal subscription: ${existingHrefs.size} existing events in mirror")
-
-        // 5. Delete all existing events
-        for (href in existingHrefs) {
-            try {
-                synoClient.delete(href, etag = "*")
-            } catch (e: Exception) {
-                Timber.w(e, "iCal subscription: failed to delete $href")
-            }
-        }
-
-        // 6. PUT each subscription event
+        // 4. Build map of new event URLs
+        val newEventUrls = mutableSetOf<String>()
         var putCount = 0
         for (vevent in vevents) {
             try {
                 val uid = vevent.uid?.value ?: UUID.randomUUID().toString()
                 val icsPayload = wrapInVCalendar(vevent)
                 val eventUrl = "${mirrorCalUrl.trimEnd('/')}/${uid}.ics"
-                val response = synoClient.put(eventUrl, icsPayload, etag = null)
-                if (response.isSuccessful || response.code == 201 || response.code == 204) {
-                    putCount++
+                newEventUrls.add(eventUrl)
+                synoClient.put(eventUrl, icsPayload, etag = null).use { response ->
+                    if (response.isSuccessful || response.code == 201 || response.code == 204) {
+                        putCount++
+                    }
                 }
-                response.close()
             } catch (e: Exception) {
                 Timber.w(e, "iCal subscription: failed to PUT event")
+            }
+        }
+
+        // 5. Delete events that are no longer in the subscription (diff-based)
+        val existingHrefs = fetchExistingEventHrefs(synoClient, mirrorCalUrl)
+        for (href in existingHrefs) {
+            if (href !in newEventUrls) {
+                try {
+                    synoClient.delete(href, etag = "*")
+                } catch (e: Exception) {
+                    Timber.w(e, "iCal subscription: failed to delete $href")
+                }
             }
         }
         Timber.d("iCal subscription: mirrored $putCount/${vevents.size} events to $mirrorCalUrl")
@@ -107,15 +108,13 @@ object ICalSubscriptionSyncer {
         return try {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 val request = Request.Builder().url(url).get().build()
-                val response = client.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    Timber.w("iCal subscription: GET failed with ${response.code} for $url")
-                    response.close()
-                    return@withContext null
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Timber.w("iCal subscription: GET failed with ${response.code} for $url")
+                        return@withContext null
+                    }
+                    response.body?.string()
                 }
-                val body = response.body?.string()
-                response.close()
-                body
             }
         } catch (e: Exception) {
             Timber.w(e, "iCal subscription: fetch failed for $url")
@@ -141,24 +140,21 @@ object ICalSubscriptionSyncer {
     ) {
         // Try PROPFIND first to check if it exists
         try {
-            val response = client.propfind(calUrl, 0, """
+            client.propfind(calUrl, 0, """
                 <?xml version="1.0" encoding="utf-8"?>
                 <d:propfind xmlns:d="DAV:">
                   <d:prop><d:displayname/></d:prop>
                 </d:propfind>
-            """.trimIndent())
-            if (response.isSuccessful || response.code == 207) {
-                response.close()
-                return // Calendar exists
+            """.trimIndent()).use { response ->
+                if (response.isSuccessful || response.code == 207) return
             }
-            response.close()
         } catch (_: Exception) {}
 
         // Create via MKCALENDAR
         try {
-            val response = client.mkcalendar(calUrl, displayName, "#7986CB")
-            Timber.d("iCal subscription: MKCALENDAR ${response.code} for $calUrl")
-            response.close()
+            client.mkcalendar(calUrl, displayName, "#7986CB").use { response ->
+                Timber.d("iCal subscription: MKCALENDAR ${response.code} for $calUrl")
+            }
         } catch (e: Exception) {
             Timber.w(e, "iCal subscription: MKCALENDAR failed for $calUrl")
         }
@@ -178,13 +174,10 @@ object ICalSubscriptionSyncer {
         """.trimIndent()
 
         return try {
-            val response = client.report(calUrl, reportBody)
-            if (!response.isSuccessful && response.code != 207) {
-                response.close()
-                return emptyList()
+            val xml = client.report(calUrl, reportBody).use { response ->
+                if (!response.isSuccessful && response.code != 207) return emptyList()
+                response.body?.string() ?: return emptyList()
             }
-            val xml = response.body?.string() ?: return emptyList()
-            response.close()
             parseHrefs(xml, calUrl)
         } catch (e: Exception) {
             Timber.w(e, "iCal subscription: failed to fetch existing hrefs")

@@ -77,7 +77,7 @@ fun AgendaScreen(
     val activeView by viewModel.activeView.collectAsStateWithLifecycle()
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
     val calendars by viewModel.calendars.collectAsStateWithLifecycle()
-    val today = remember { LocalDate.now() }
+    val today = LocalDate.now()
     val zone = ZoneId.systemDefault()
 
     var rangeStart by remember { mutableStateOf(activeDate.minusDays(LOAD_DAYS.toLong())) }

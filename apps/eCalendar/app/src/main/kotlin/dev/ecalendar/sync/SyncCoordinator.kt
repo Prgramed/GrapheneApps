@@ -14,6 +14,8 @@ import dev.ecalendar.data.db.entity.toDomain
 import dev.ecalendar.domain.model.AccountType
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -89,6 +91,7 @@ class SyncCoordinator @Inject constructor(
             }
 
             coroutineScope {
+                val semaphore = Semaphore(3)
                 for (account in caldavAccounts) {
 
                     val password = credentialStore.getPassword(account.id) ?: ""
@@ -100,11 +103,13 @@ class SyncCoordinator @Inject constructor(
 
                     for (source in sources) {
                         async {
-                            try {
-                                CalDavSyncEngine.sync(client, source, eventDao, calendarDao)
-                            } catch (e: Exception) {
-                                errors++
-                                Timber.w(e, "Sync failed for ${source.displayName}")
+                            semaphore.withPermit {
+                                try {
+                                    CalDavSyncEngine.sync(client, source, eventDao, calendarDao)
+                                } catch (e: Exception) {
+                                    errors++
+                                    Timber.w(e, "Sync failed for ${source.displayName}")
+                                }
                             }
                         }
                     }

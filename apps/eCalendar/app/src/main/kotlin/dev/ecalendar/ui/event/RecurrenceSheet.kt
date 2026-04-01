@@ -420,10 +420,10 @@ private val REVERSE_DAY_MAP = mapOf(
 private fun parseRRule(rrule: String?, eventDate: LocalDate): ParsedRRule {
     if (rrule.isNullOrBlank()) return ParsedRRule()
 
-    val parts = rrule.split(";").associate {
-        val (k, v) = it.split("=", limit = 2)
-        k to v
-    }
+    val parts = rrule.split(";").mapNotNull {
+        val split = it.split("=", limit = 2)
+        if (split.size == 2 && split[0].isNotBlank()) split[0] to split[1] else null
+    }.toMap()
 
     val freq = when (parts["FREQ"]) {
         "DAILY" -> Frequency.DAILY

@@ -1,11 +1,15 @@
 package dev.ecalendar.alarm
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.ecalendar.ui.MainActivity
 import java.time.Instant
@@ -55,7 +59,7 @@ class EventNotificationManager @Inject constructor(
     ) {
         val timeStr = Instant.ofEpochMilli(instanceStart)
             .atZone(ZoneId.systemDefault())
-            .format(DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()))
+            .format(DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).withLocale(Locale.getDefault()))
 
         val contentText = buildString {
             append(timeStr)
@@ -97,6 +101,9 @@ class EventNotificationManager @Inject constructor(
             .addAction(0, "Snooze 10min", snoozePending)
             .build()
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
         notificationManager.notify(notifId, notification)
     }
 
@@ -118,6 +125,9 @@ class EventNotificationManager @Inject constructor(
             .setContentIntent(tapPending)
             .build()
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
         notificationManager.notify("syncerr$eventUid".hashCode(), notification)
     }
 

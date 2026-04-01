@@ -183,7 +183,7 @@ private fun AccountCard(
                     maxLines = 1,
                 )
                 val syncText = if (account.lastSyncedAt != null) {
-                    val ago = (System.currentTimeMillis() - account.lastSyncedAt) / 60_000
+                    val ago = ((System.currentTimeMillis() - account.lastSyncedAt) / 60_000).coerceAtLeast(0)
                     when {
                         ago < 1 -> "Synced just now"
                         ago < 60 -> "Synced ${ago}m ago"

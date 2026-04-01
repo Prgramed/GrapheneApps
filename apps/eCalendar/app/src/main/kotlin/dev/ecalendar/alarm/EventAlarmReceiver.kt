@@ -58,7 +58,11 @@ class EventAlarmReceiver : BroadcastReceiver() {
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        alarmScheduler.rescheduleAll()
+                        kotlinx.coroutines.withTimeout(25_000) {
+                            alarmScheduler.rescheduleAll()
+                        }
+                    } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                        Timber.w("Boot alarm reschedule timed out after 25s")
                     } catch (e: Exception) {
                         Timber.w(e, "Failed to reschedule alarms on boot")
                     } finally {

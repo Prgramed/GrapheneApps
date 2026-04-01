@@ -28,10 +28,10 @@ class CredentialStore @Inject constructor(
         prefs.getString("password_$accountId", null)
 
     fun setPassword(accountId: Long, password: String) {
-        prefs.edit().putString("password_$accountId", password).apply()
+        prefs.edit().putString("password_$accountId", password).commit()
     }
 
     fun deletePassword(accountId: Long) {
-        prefs.edit().remove("password_$accountId").apply()
+        prefs.edit().remove("password_$accountId").commit()
     }
 }
