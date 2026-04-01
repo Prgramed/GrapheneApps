@@ -60,7 +60,8 @@ class AppPreferencesRepository @Inject constructor(
     }
 
     suspend fun updateServerUrl(url: String) {
-        dataStore.edit { it[Keys.SERVER_URL] = url }
+        val trimmed = url.trim().trimEnd('/')
+        dataStore.edit { it[Keys.SERVER_URL] = trimmed }
     }
 
     suspend fun updateUsername(username: String) {

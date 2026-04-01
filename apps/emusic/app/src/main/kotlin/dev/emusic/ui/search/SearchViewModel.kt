@@ -66,7 +66,7 @@ class SearchViewModel @Inject constructor(
     private suspend fun performSearch(q: String) {
         _uiState.value = _uiState.value.copy(isLoading = true)
 
-        coroutineScope {
+        try { coroutineScope {
             val ftsQuery = escapeFtsQuery(q) + "*"
             val ftsResult = async {
                 try {
@@ -100,6 +100,10 @@ class SearchViewModel @Inject constructor(
                 isLoading = false,
                 hasSearched = true,
             )
+        }
+        } catch (e: Exception) {
+            _uiState.value = _uiState.value.copy(isLoading = false)
+            timber.log.Timber.w(e, "Search failed for: $q")
         }
     }
 

@@ -60,6 +60,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -215,6 +216,10 @@ private fun NowPlayingContent(
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surface
     var dominantColor by remember { mutableStateOf(surfaceColor) }
+    // Reset to surface when track changes so color re-extracts from new artwork
+    LaunchedEffect(state.track?.id) {
+        dominantColor = surfaceColor
+    }
     val animatedColor by animateColorAsState(
         targetValue = dominantColor,
         animationSpec = tween(durationMillis = 300),

@@ -107,10 +107,11 @@ class DownloadsViewModel @Inject constructor(
     }
 
     private fun refreshStorageInfo() {
-        val downloadsDir = File(context.filesDir, "downloads")
-        _storageUsed.value = downloadsDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
-
-        val stat = StatFs(context.filesDir.absolutePath)
-        _storageAvailable.value = stat.availableBytes
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val downloadsDir = File(context.filesDir, "downloads")
+            _storageUsed.value = downloadsDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+            val stat = StatFs(context.filesDir.absolutePath)
+            _storageAvailable.value = stat.availableBytes
+        }
     }
 }

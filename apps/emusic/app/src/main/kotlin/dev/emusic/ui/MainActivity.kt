@@ -72,11 +72,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val initialPrefs = remember {
-                kotlinx.coroutines.runBlocking { preferencesRepository.preferencesFlow.first() }
-            }
             val prefs by preferencesRepository.preferencesFlow.collectAsState(
-                initial = initialPrefs
+                initial = dev.emusic.data.preferences.AppPreferences()
             )
             val darkTheme = when (prefs.themeMode) {
                 1 -> false
@@ -107,9 +104,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Poll playback progress
+                // Poll playback progress — only when playing
                 androidx.compose.runtime.LaunchedEffect(controller, isPlaying) {
-                    while (true) {
+                    while (isPlaying) {
                         controller?.let { mc ->
                             val duration = mc.duration
                             if (duration > 0) {

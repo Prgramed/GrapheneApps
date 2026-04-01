@@ -1,5 +1,6 @@
 package dev.emusic.data.repository
 
+import kotlinx.coroutines.ensureActive
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
@@ -112,6 +113,7 @@ class LibraryRepositoryImpl @Inject constructor(
         var search3Works = true
 
         while (search3Works) {
+            kotlin.coroutines.coroutineContext.ensureActive()
             try {
                 val response = api.search3(
                     query = "",
@@ -140,6 +142,7 @@ class LibraryRepositoryImpl @Inject constructor(
         if (!search3Works) {
             val albumIds = albumDao.getAllIds()
             for ((index, albumId) in albumIds.withIndex()) {
+                kotlin.coroutines.coroutineContext.ensureActive()
                 for (attempt in 1..3) {
                     try {
                         syncAlbumTracks(albumId)

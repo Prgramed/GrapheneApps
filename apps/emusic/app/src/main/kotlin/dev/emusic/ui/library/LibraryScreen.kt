@@ -51,12 +51,14 @@ fun LibraryScreen(
     val artistCount by viewModel.artistCount.collectAsStateWithLifecycle()
     val albumCount by viewModel.albumCount.collectAsStateWithLifecycle()
     val trackCount by viewModel.trackCount.collectAsStateWithLifecycle()
-    val tabs = listOf(
-        if (artistCount > 0) "Artists ($artistCount)" else "Artists",
-        if (albumCount > 0) "Albums ($albumCount)" else "Albums",
-        if (trackCount > 0) "Tracks ($trackCount)" else "Tracks",
-        "Playlists",
-    )
+    val tabs = remember(artistCount, albumCount, trackCount) {
+        listOf(
+            if (artistCount > 0) "Artists ($artistCount)" else "Artists",
+            if (albumCount > 0) "Albums ($albumCount)" else "Albums",
+            if (trackCount > 0) "Tracks ($trackCount)" else "Tracks",
+            "Playlists",
+        )
+    }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val syncProgress by viewModel.syncProgress.collectAsStateWithLifecycle()
     val albumSort by viewModel.albumSort.collectAsStateWithLifecycle()

@@ -76,16 +76,6 @@ class NowPlayingViewModel @Inject constructor(
             val mc = controllerFuture.get()
             controller = mc
             syncStateFromPlayer(mc)
-            // Force-sync current track in case QueueManager already has it
-            val track = queueManager.currentTrack.value
-            if (track != null) {
-                _uiState.update {
-                    it.copy(
-                        track = track,
-                        coverArtUrl = track.albumId?.let { id -> libraryRepository.getCoverArtUrl(id) },
-                    )
-                }
-            }
             mc.addListener(playerListener)
         }, MoreExecutors.directExecutor())
 
@@ -161,20 +151,20 @@ class NowPlayingViewModel @Inject constructor(
             }
         }
 
-        // Position polling — works for both local and cast playback
+        // Position polling — only active when playing or casting
         viewModelScope.launch {
             while (true) {
-                delay(1000)
-                controller?.let { mc ->
-                    // When casting, local player is muted but still playing — track position from it
-                    if (mc.isPlaying || castManager.isCasting) {
-                        _uiState.update {
-                            it.copy(
-                                positionMs = mc.currentPosition,
-                                durationMs = mc.duration.coerceAtLeast(0),
-                            )
-                        }
+                val mc = controller
+                if (mc != null && (mc.isPlaying || castManager.isCasting)) {
+                    _uiState.update {
+                        it.copy(
+                            positionMs = mc.currentPosition,
+                            durationMs = mc.duration.coerceAtLeast(0),
+                        )
                     }
+                    delay(1000)
+                } else {
+                    delay(3000) // Slow poll when paused
                 }
             }
         }
