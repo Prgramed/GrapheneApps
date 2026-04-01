@@ -188,6 +188,18 @@ class NowPlayingViewModel @Inject constructor(
             controller?.let { mc ->
                 syncStateFromPlayer(mc)
             }
+            // Force-read current track so UI updates immediately on skip
+            val track = queueManager.currentTrack.value
+            if (track != null && track.id != _uiState.value.track?.id) {
+                _uiState.update {
+                    it.copy(
+                        track = track,
+                        coverArtUrl = libraryRepository.getCoverArtUrl(track.coverArtId ?: track.albumId),
+                        lyrics = null,
+                    )
+                }
+                viewModelScope.launch { loadLyrics(track) }
+            }
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {

@@ -464,6 +464,8 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    private var fullQueueLoaded = false
+
     private suspend fun loadQueueIntoPlayer() {
         if (queueManager.isLiveStream.value) return
         val exoPlayer = player ?: return
@@ -471,15 +473,12 @@ class PlaybackService : MediaLibraryService() {
         val currentIndex = queueManager.currentIndex.value
         val maxBitRate = batteryAwareQualityManager.maxBitRate.value
 
-        val mediaItems = tracks.map { track -> track.toMediaItem(maxBitRate) }
-
-        val currentPosition = exoPlayer.currentPosition
-        val wasPlaying = exoPlayer.playWhenReady
-
-        if (mediaItems.isEmpty()) {
+        if (tracks.isEmpty()) {
             exoPlayer.clearMediaItems()
             return
         }
+
+        val mediaItems = tracks.map { track -> track.toMediaItem(maxBitRate) }
 
         if (!mediaItemsMatch(exoPlayer, mediaItems)) {
             val startPosition = if (!hasRestoredPosition) {
@@ -488,13 +487,37 @@ class PlaybackService : MediaLibraryService() {
             } else {
                 0L
             }
-            exoPlayer.setMediaItems(mediaItems, currentIndex.coerceAtLeast(0), startPosition)
-            exoPlayer.shuffleModeEnabled = queueManager.restoredShuffle
-            exoPlayer.repeatMode = queueManager.restoredRepeat
-            exoPlayer.prepare()
-            if (isInitialQueueLoad) {
+
+            if (isInitialQueueLoad && tracks.size > 20) {
+                // Fast cold start: load only a window around current track, then backfill
                 isInitialQueueLoad = false
+                fullQueueLoaded = false
+                val windowStart = (currentIndex - 5).coerceAtLeast(0)
+                val windowEnd = (currentIndex + 15).coerceAtMost(tracks.size)
+                val windowItems = mediaItems.subList(windowStart, windowEnd)
+                val adjustedIndex = currentIndex - windowStart
+
+                exoPlayer.setMediaItems(windowItems, adjustedIndex.coerceAtLeast(0), startPosition)
+                exoPlayer.shuffleModeEnabled = queueManager.restoredShuffle
+                exoPlayer.repeatMode = queueManager.restoredRepeat
+                exoPlayer.prepare()
+                // Don't auto-play on cold start
+
+                // Backfill full queue in background
+                serviceScope.launch {
+                    kotlinx.coroutines.delay(1000)
+                    val p = player ?: return@launch
+                    val pos = p.currentPosition
+                    p.setMediaItems(mediaItems, currentIndex.coerceAtLeast(0), pos)
+                    fullQueueLoaded = true
+                }
             } else {
+                isInitialQueueLoad = false
+                fullQueueLoaded = true
+                exoPlayer.setMediaItems(mediaItems, currentIndex.coerceAtLeast(0), startPosition)
+                exoPlayer.shuffleModeEnabled = queueManager.restoredShuffle
+                exoPlayer.repeatMode = queueManager.restoredRepeat
+                exoPlayer.prepare()
                 exoPlayer.play()
             }
         }
