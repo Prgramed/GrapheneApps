@@ -190,9 +190,18 @@ class ConversationsListViewModel @Inject constructor(
                     _uiState.update { it.copy(isLoading = false, error = e.message) }
                 }
                 .collect { conversations ->
+                    // Resolve contact names inline before updating UI
+                    val resolved = withContext(Dispatchers.IO) {
+                        conversations.map { conv ->
+                            val resolvedRecipients = conv.recipients.map { r ->
+                                if (r.contactName == null) contactLookup.lookupContact(r.address) else r
+                            }
+                            conv.copy(recipients = resolvedRecipients)
+                        }
+                    }
                     val pinned = _uiState.value.pinnedThreadIds
-                    val sorted = if (pinned.isEmpty()) conversations else {
-                        val (pinnedConvs, unpinned) = conversations.partition { it.threadId in pinned }
+                    val sorted = if (pinned.isEmpty()) resolved else {
+                        val (pinnedConvs, unpinned) = resolved.partition { it.threadId in pinned }
                         pinnedConvs + unpinned
                     }
                     _uiState.update {
@@ -202,36 +211,9 @@ class ConversationsListViewModel @Inject constructor(
                             error = null,
                         )
                     }
-                    // Re-apply pending overrides on every reload
                     applyReadOverrides()
-                    resolveContactNames(sorted)
                 }
         }
     }
 
-    private var resolveJob: kotlinx.coroutines.Job? = null
-
-    private fun resolveContactNames(conversations: List<Conversation>) {
-        resolveJob?.cancel()
-        resolveJob = viewModelScope.launch {
-            val resolvedMap = withContext(Dispatchers.IO) {
-                conversations.associate { conv ->
-                    conv.threadId to conv.recipients.map { r ->
-                        if (r.contactName == null) {
-                            contactLookup.lookupContact(r.address)
-                        } else r
-                    }
-                }
-            }
-            // Only update recipients on the CURRENT state — preserve unreadCount etc.
-            _uiState.update { state ->
-                state.copy(
-                    conversations = state.conversations.map { conv ->
-                        val resolved = resolvedMap[conv.threadId]
-                        if (resolved != null) conv.copy(recipients = resolved) else conv
-                    },
-                )
-            }
-        }
-    }
 }
