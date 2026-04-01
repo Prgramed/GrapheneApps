@@ -245,6 +245,7 @@ class ContactEditViewModel @Inject constructor(
     }
 
     fun save() {
+        _uiState.update { it.copy(error = null) }
         val state = _uiState.value
         if (state.displayName.isBlank() && state.phoneNumbers.all { it.number.isBlank() }) {
             _uiState.update { it.copy(error = "Name or phone number required") }

@@ -231,7 +231,7 @@ class CardDavSyncEngine @Inject constructor(
                                             contactId = newId,
                                             remoteHref = resource.href,
                                             etag = resource.etag,
-                                            uid = parsedContact.uid ?: "",
+                                            uid = parsedContact.uid ?: java.util.UUID.randomUUID().toString(),
                                             lastSynced = System.currentTimeMillis(),
                                         ),
                                     )

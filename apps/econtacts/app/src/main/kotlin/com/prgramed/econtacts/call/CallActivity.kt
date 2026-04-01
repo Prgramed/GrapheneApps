@@ -143,7 +143,7 @@ class CallActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         proximityWakeLock?.let { lock ->
-            if (!lock.isHeld) lock.acquire(30 * 60 * 1000L)
+            if (!lock.isHeld) lock.acquire(4 * 60 * 60 * 1000L)
         }
     }
 

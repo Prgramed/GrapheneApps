@@ -53,7 +53,7 @@ object VCardParser {
                     if (address.isNotBlank()) emails.add(Email(address, type))
                 }
                 line.startsWith("NOTE", ignoreCase = true) -> {
-                    note = extractValue(line).replace("\\n", "\n").replace("\\,", ",")
+                    note = extractValue(line)
                 }
                 line.startsWith("ORG", ignoreCase = true) -> {
                     val value = extractValue(line)
@@ -110,8 +110,11 @@ object VCardParser {
 
     private fun extractValue(line: String): String {
         val colonIndex = line.indexOf(':')
-        return if (colonIndex >= 0) line.substring(colonIndex + 1).trim() else ""
+        return if (colonIndex >= 0) unescapeValue(line.substring(colonIndex + 1).trim()) else ""
     }
+
+    private fun unescapeValue(value: String): String =
+        value.replace("\\n", "\n").replace("\\,", ",").replace("\\;", ";").replace("\\\\", "\\")
 
     private fun containsParam(line: String, param: String): Boolean {
         val paramPart = line.substringBefore(':')

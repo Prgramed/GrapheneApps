@@ -17,7 +17,8 @@ object CardDavXmlBuilder {
         append("""<card:addressbook-multiget xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">""")
         append("<d:prop><d:getetag/><card:address-data/></d:prop>")
         hrefs.forEach { href ->
-            append("<d:href>$href</d:href>")
+            val escaped = href.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            append("<d:href>$escaped</d:href>")
         }
         append("</card:addressbook-multiget>")
     }
