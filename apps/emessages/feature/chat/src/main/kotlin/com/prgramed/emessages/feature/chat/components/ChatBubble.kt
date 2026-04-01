@@ -46,6 +46,7 @@ import coil3.compose.AsyncImage
 import com.prgramed.emessages.domain.model.Attachment
 import com.prgramed.emessages.domain.model.LinkPreview
 import com.prgramed.emessages.domain.model.Message
+import com.prgramed.emessages.domain.model.MessageStatus
 import com.prgramed.emessages.domain.model.MessageType
 import java.util.Date
 import java.util.regex.Pattern
@@ -403,6 +404,13 @@ fun ChatBubble(
                 )
                 if (isSent) {
                     MessageStatusIndicator(status = message.status)
+                    if (message.status == MessageStatus.DELIVERED) {
+                        Text(
+                            text = "Delivered",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        )
+                    }
                 }
             }
         }

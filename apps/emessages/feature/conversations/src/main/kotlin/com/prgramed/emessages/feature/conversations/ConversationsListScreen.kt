@@ -12,6 +12,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -352,8 +354,10 @@ private fun ConversationRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Avatar with contact photo
-        if (photoUri != null) {
+        // Avatar — stacked for groups, single for 1:1
+        if (conversation.isGroup && conversation.recipients.size > 1) {
+            GroupAvatar(recipients = conversation.recipients)
+        } else if (photoUri != null) {
             AsyncImage(
                 model = photoUri,
                 contentDescription = null,
@@ -437,6 +441,48 @@ private fun ConversationRow(
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupAvatar(
+    recipients: List<com.prgramed.emessages.domain.model.Recipient>,
+    modifier: Modifier = Modifier,
+) {
+    val display = recipients.take(3)
+    val miniSize = 30.dp
+    Box(modifier = modifier.size(48.dp)) {
+        display.forEachIndexed { index, recipient ->
+            val initials = (recipient.contactName ?: recipient.address).take(1).uppercase()
+            if (recipient.contactPhotoUri != null) {
+                AsyncImage(
+                    model = recipient.contactPhotoUri,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(miniSize)
+                        .offset(x = (index * 10).dp, y = (index * 6).dp)
+                        .clip(CircleShape)
+                        .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(miniSize)
+                        .offset(x = (index * 10).dp, y = (index * 6).dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = initials,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
             }
         }
     }
