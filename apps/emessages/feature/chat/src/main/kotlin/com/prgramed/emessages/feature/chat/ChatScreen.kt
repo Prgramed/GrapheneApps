@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.filled.Forward
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -309,6 +310,21 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    // Call button
+                    if (uiState.recipientAddress.isNotBlank()) {
+                        IconButton(onClick = {
+                            val callIntent = android.content.Intent(
+                                android.content.Intent.ACTION_DIAL,
+                                android.net.Uri.parse("tel:${uiState.recipientAddress}"),
+                            )
+                            context.startActivity(callIntent)
+                        }) {
+                            Icon(
+                                Icons.Default.Phone,
+                                contentDescription = "Call",
+                            )
+                        }
+                    }
                     Box {
                         IconButton(onClick = { showOverflowMenu = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "More")
@@ -377,6 +393,7 @@ fun ChatScreen(
                                         ?.displayName
                                 } else null
                                 ChatBubble(
+                                    modifier = Modifier.animateItem(),
                                     message = item.message,
                                     isSent = item.message.type == MessageType.SENT,
                                     isLastInGroup = item.isLastInGroup,
