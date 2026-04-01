@@ -1,6 +1,10 @@
 package com.prgramed.emessages.feature.conversations
 
 import android.util.Log
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prgramed.emessages.domain.model.Conversation
@@ -15,13 +19,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
+private val KEY_PINNED_THREADS = stringSetPreferencesKey("pinned_threads")
+
 data class ConversationsListUiState(
     val conversations: List<Conversation> = emptyList(),
+    val pinnedThreadIds: Set<Long> = emptySet(),
     val searchQuery: String = "",
     val isLoading: Boolean = true,
     val error: String? = null,
@@ -34,6 +42,7 @@ class ConversationsListViewModel @Inject constructor(
     private val conversationRepository: ConversationRepository,
     private val simRepository: SimRepository,
     private val contactLookup: ContactLookupRepository,
+    private val dataStore: DataStore<Preferences>,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ConversationsListUiState())
@@ -54,7 +63,25 @@ class ConversationsListViewModel @Inject constructor(
                 }
             }
         }
+        viewModelScope.launch {
+            val prefs = dataStore.data.first()
+            val pinned = prefs[KEY_PINNED_THREADS]?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
+            _uiState.update { it.copy(pinnedThreadIds = pinned) }
+        }
     }
+
+    fun togglePin(threadId: Long) {
+        val current = _uiState.value.pinnedThreadIds
+        val updated = if (threadId in current) current - threadId else current + threadId
+        _uiState.update { it.copy(pinnedThreadIds = updated) }
+        viewModelScope.launch {
+            dataStore.edit { prefs ->
+                prefs[KEY_PINNED_THREADS] = updated.map { it.toString() }.toSet()
+            }
+        }
+    }
+
+    fun isPinned(threadId: Long): Boolean = threadId in _uiState.value.pinnedThreadIds
 
     private var permissionGranted = false
 
@@ -163,16 +190,21 @@ class ConversationsListViewModel @Inject constructor(
                     _uiState.update { it.copy(isLoading = false, error = e.message) }
                 }
                 .collect { conversations ->
+                    val pinned = _uiState.value.pinnedThreadIds
+                    val sorted = if (pinned.isEmpty()) conversations else {
+                        val (pinnedConvs, unpinned) = conversations.partition { it.threadId in pinned }
+                        pinnedConvs + unpinned
+                    }
                     _uiState.update {
                         it.copy(
-                            conversations = conversations,
+                            conversations = sorted,
                             isLoading = false,
                             error = null,
                         )
                     }
                     // Re-apply pending overrides on every reload
                     applyReadOverrides()
-                    resolveContactNames(conversations)
+                    resolveContactNames(sorted)
                 }
         }
     }

@@ -12,4 +12,5 @@ dependencies {
     implementation(projects.apps.emessages.data)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.androidx.datastore.preferences)
 }

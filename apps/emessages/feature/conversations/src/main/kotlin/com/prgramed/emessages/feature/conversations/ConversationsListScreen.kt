@@ -10,7 +10,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +30,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
@@ -307,6 +311,8 @@ fun ConversationsListScreen(
                                 ConversationRow(
                                     conversation = conversation,
                                     simLabel = simLabel,
+                                    isPinned = conversation.threadId in uiState.pinnedThreadIds,
+                                    onTogglePin = { viewModel.togglePin(conversation.threadId) },
                                     onClick = { onConversationClick(conversation.threadId) },
                                 )
                             }
@@ -318,12 +324,15 @@ fun ConversationsListScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationRow(
     conversation: Conversation,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     simLabel: String? = null,
+    isPinned: Boolean = false,
+    onTogglePin: () -> Unit = {},
 ) {
     val recipient = conversation.recipients.firstOrNull()
     val displayName = recipient?.let { it.contactName ?: it.address } ?: "Unknown"
@@ -335,7 +344,10 @@ private fun ConversationRow(
         modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onTogglePin,
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -398,11 +410,22 @@ private fun ConversationRow(
                     color = MaterialTheme.colorScheme.outline,
                 )
             }
-            Text(
-                text = formatRelativeTimestamp(conversation.timestamp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isPinned) {
+                    Icon(
+                        Icons.Default.PushPin,
+                        contentDescription = "Pinned",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(
+                    text = formatRelativeTimestamp(conversation.timestamp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             AnimatedVisibility(
                 visible = isUnread,
                 enter = fadeIn(),

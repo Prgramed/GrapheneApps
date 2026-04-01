@@ -45,6 +45,7 @@ data class ChatUiState(
     val sendError: String? = null,
     val isLoadingMore: Boolean = false,
     val isSending: Boolean = false,
+    val replyToMessage: Message? = null,
 )
 
 @HiltViewModel
@@ -137,7 +138,12 @@ class ChatViewModel @Inject constructor(
     }
 
     fun sendMessage() {
-        val text = _uiState.value.messageText.trim()
+        val replyTo = _uiState.value.replyToMessage
+        val rawText = _uiState.value.messageText.trim()
+        val text = if (replyTo != null && rawText.isNotBlank()) {
+            val quotedLine = replyTo.body.lines().first().take(80)
+            "> $quotedLine\n\n$rawText"
+        } else rawText
         val address = _uiState.value.recipientAddress
         val attachment = _uiState.value.attachmentUri
 
@@ -151,6 +157,7 @@ class ChatViewModel @Inject constructor(
                 attachmentUri = null,
                 segmentInfo = null,
                 isSending = true,
+                replyToMessage = null,
                 scrollToBottomEvent = it.scrollToBottomEvent + 1,
             )
         }
@@ -176,6 +183,14 @@ class ChatViewModel @Inject constructor(
 
     fun dismissSendError() {
         _uiState.update { it.copy(sendError = null) }
+    }
+
+    fun onReplyToMessage(message: Message) {
+        _uiState.update { it.copy(replyToMessage = message) }
+    }
+
+    fun cancelReply() {
+        _uiState.update { it.copy(replyToMessage = null) }
     }
 
     fun onSimSelected(sim: SimInfo) {
