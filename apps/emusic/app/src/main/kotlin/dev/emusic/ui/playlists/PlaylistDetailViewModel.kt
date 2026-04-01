@@ -18,6 +18,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -42,8 +45,18 @@ class PlaylistDetailViewModel @Inject constructor(
     private val _playlist = MutableStateFlow<Playlist?>(null)
     val playlist: StateFlow<Playlist?> = _playlist.asStateFlow()
 
-    private val _tracks = MutableStateFlow<List<Track>>(emptyList())
-    val tracks: StateFlow<List<Track>> = _tracks.asStateFlow()
+    private val _allTracks = MutableStateFlow<List<Track>>(emptyList())
+    val trackFilter = MutableStateFlow("")
+
+    @OptIn(FlowPreview::class)
+    val tracks: StateFlow<List<Track>> = combine(_allTracks, trackFilter.debounce(300)) { all, q ->
+        if (q.isBlank()) all
+        else all.filter {
+            it.title.contains(q, ignoreCase = true) || it.artist.contains(q, ignoreCase = true)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allTracks: StateFlow<List<Track>> = _allTracks.asStateFlow()
 
     init {
         if (isSmart) {
@@ -65,7 +78,7 @@ class PlaylistDetailViewModel @Inject constructor(
             viewModelScope.launch {
                 // Observe Room for reactive updates
                 playlistRepository.observePlaylistTracks(playlistId).collect {
-                    _tracks.value = it
+                    _allTracks.value = it
                 }
             }
             viewModelScope.launch {
@@ -92,7 +105,7 @@ class PlaylistDetailViewModel @Inject constructor(
                 "smart_never_played" -> trackDao.observeNeverPlayed().first().map { it.toDomain() }
                 else -> emptyList()
             }
-            _tracks.value = tracks
+            _allTracks.value = tracks
         }
     }
 
@@ -100,7 +113,7 @@ class PlaylistDetailViewModel @Inject constructor(
         libraryRepository.getCoverArtUrl(id, size)
 
     fun playFromTrack(index: Int) {
-        val trackList = _tracks.value
+        val trackList = _allTracks.value
         if (trackList.isNotEmpty()) {
             queueManager.play(trackList, index)
         }
@@ -139,7 +152,7 @@ class PlaylistDetailViewModel @Inject constructor(
             playlistDao.setPinned(playlistId, !current)
             if (current) {
                 // Unpinning — cancel pending downloads for this playlist's tracks
-                val tracks = _tracks.value
+                val tracks = _allTracks.value
                 for (track in tracks) {
                     downloadManager.cancel(track.id)
                 }
@@ -152,7 +165,7 @@ class PlaylistDetailViewModel @Inject constructor(
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             // Unpin first
             playlistDao.setPinned(playlistId, false)
-            val tracks = _tracks.value
+            val tracks = _allTracks.value
             for (track in tracks) {
                 val entity = trackDao.getById(track.id) ?: continue
                 val path = entity.localPath ?: continue
@@ -164,7 +177,7 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     fun shufflePlay() {
-        val trackList = _tracks.value.ifEmpty { return }
+        val trackList = _allTracks.value.ifEmpty { return }
         queueManager.play(trackList.shuffled(), 0)
     }
 
@@ -176,32 +189,32 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     fun removeTrack(index: Int) {
-        val previous = _tracks.value
+        val previous = _allTracks.value
         // Optimistic UI update
-        _tracks.value = previous.toMutableList().apply { removeAt(index) }
+        _allTracks.value = previous.toMutableList().apply { removeAt(index) }
         viewModelScope.launch {
             try {
                 playlistRepository.removeTrackFromPlaylist(playlistId, index)
             } catch (_: Exception) {
                 // Rollback on failure
-                _tracks.value = previous
+                _allTracks.value = previous
             }
         }
     }
 
     fun moveTrack(from: Int, to: Int) {
-        val previous = _tracks.value
+        val previous = _allTracks.value
         val current = previous.toMutableList()
         if (from !in current.indices || to !in current.indices) return
         val item = current.removeAt(from)
         current.add(to, item)
-        _tracks.value = current
+        _allTracks.value = current
         viewModelScope.launch {
             try {
                 playlistRepository.reorderPlaylistTracks(playlistId, current.map { it.id })
             } catch (_: Exception) {
                 // Rollback to previous order on failure
-                _tracks.value = previous
+                _allTracks.value = previous
             }
         }
     }

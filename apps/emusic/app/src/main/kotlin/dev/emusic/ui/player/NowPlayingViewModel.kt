@@ -188,18 +188,6 @@ class NowPlayingViewModel @Inject constructor(
             controller?.let { mc ->
                 syncStateFromPlayer(mc)
             }
-            // Immediately read the new track from queueManager so we don't wait for flow
-            val track = queueManager.currentTrack.value
-            _uiState.update {
-                it.copy(
-                    track = track,
-                    coverArtUrl = track?.let { t -> libraryRepository.getCoverArtUrl(t.coverArtId ?: t.albumId) },
-                    lyrics = null,
-                )
-            }
-            if (track != null) {
-                viewModelScope.launch { loadLyrics(track) }
-            }
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {

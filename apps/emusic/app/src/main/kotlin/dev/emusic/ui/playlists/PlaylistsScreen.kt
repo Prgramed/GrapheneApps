@@ -15,8 +15,16 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -52,9 +60,13 @@ fun PlaylistsScreen(
 ) {
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     val smartPlaylists by viewModel.smartPlaylists.collectAsStateWithLifecycle()
+    val sort by viewModel.sort.collectAsStateWithLifecycle()
+    val filter by viewModel.filter.collectAsStateWithLifecycle()
     var showCreateDialog by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<Playlist?>(null) }
     var deleteTarget by remember { mutableStateOf<Playlist?>(null) }
+    var showSortMenu by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
 
     // Create dialog
     if (showCreateDialog) {
@@ -144,9 +156,49 @@ fun PlaylistsScreen(
             }
         },
     ) { innerPadding ->
+        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            // Search + sort toolbar
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                if (showSearch) {
+                    OutlinedTextField(
+                        value = filter,
+                        onValueChange = { viewModel.filter.value = it },
+                        placeholder = { Text("Search playlists...") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        trailingIcon = {
+                            IconButton(onClick = { viewModel.filter.value = ""; showSearch = false }) {
+                                Icon(Icons.Default.Clear, "Close search")
+                            }
+                        },
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                IconButton(onClick = { showSearch = !showSearch; if (!showSearch) viewModel.filter.value = "" }) {
+                    Icon(Icons.Default.Search, "Search")
+                }
+                Box {
+                    IconButton(onClick = { showSortMenu = true }) {
+                        Icon(Icons.Default.Sort, "Sort")
+                    }
+                    DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                        PlaylistSort.entries.forEach { s ->
+                            DropdownMenuItem(
+                                text = { Text(s.label) },
+                                onClick = { viewModel.setSort(s); showSortMenu = false },
+                            )
+                        }
+                    }
+                }
+            }
+
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
-            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 8.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
         ) {
             // Smart playlists
             if (smartPlaylists.isNotEmpty()) {
@@ -278,4 +330,5 @@ fun PlaylistsScreen(
                 }
             }
         }
+        } // Column
     }

@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.PlayArrow
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -57,7 +60,9 @@ fun PlaylistDetailScreen(
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
     val isPinned by viewModel.isPinned.collectAsStateWithLifecycle()
     val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle()
+    val trackFilter by viewModel.trackFilter.collectAsStateWithLifecycle()
     var showRemoveDialog by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
 
     if (showRemoveDialog) {
         androidx.compose.material3.AlertDialog(
@@ -198,7 +203,36 @@ fun PlaylistDetailScreen(
             }
         }
 
-        // Track list — simple rows (no drag reorder for performance with large playlists)
+        // Search within playlist
+        item {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            ) {
+                if (showSearch) {
+                    OutlinedTextField(
+                        value = trackFilter,
+                        onValueChange = { viewModel.trackFilter.value = it },
+                        placeholder = { Text("Search tracks...") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        trailingIcon = {
+                            IconButton(onClick = { viewModel.trackFilter.value = ""; showSearch = false }) {
+                                Icon(Icons.Default.Close, "Close")
+                            }
+                        },
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { showSearch = true }) {
+                        Icon(Icons.Default.Search, "Search tracks")
+                    }
+                }
+            }
+        }
+
+        // Track list
         items(tracks.size, key = { "${tracks[it].id}_$it" }) { index ->
             val track = tracks[index]
             val coverUrl = remember(track.coverArtId, track.albumId) { viewModel.getCoverArtUrl(track.coverArtId ?: track.albumId, 100) }

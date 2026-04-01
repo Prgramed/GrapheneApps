@@ -63,6 +63,9 @@ interface PlaylistDao {
     )
     fun observePlaylistTracks(playlistId: String): Flow<List<TrackEntity>>
 
+    @Query("UPDATE playlists SET trackCount = :count WHERE id = :id")
+    suspend fun updateTrackCount(id: String, count: Int)
+
     @Query("UPDATE playlists SET pinned = :pinned WHERE id = :id")
     suspend fun setPinned(id: String, pinned: Boolean)
 

@@ -177,7 +177,7 @@ fun AlbumDetailScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Button(
-                    onClick = { viewModel.playAlbumFromTrack(0) },
+                    onClick = { tracks.firstOrNull()?.id?.let { viewModel.playAlbumFromTrack(it) } },
                     modifier = Modifier.weight(1f),
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null)
@@ -233,7 +233,7 @@ fun AlbumDetailScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .combinedClickable(
-                        onClick = { viewModel.playAlbumFromTrack(index) },
+                        onClick = { viewModel.playAlbumFromTrack(track.id) },
                         onLongClick = { contextTrack = track },
                     )
                     .padding(horizontal = 16.dp, vertical = 10.dp),

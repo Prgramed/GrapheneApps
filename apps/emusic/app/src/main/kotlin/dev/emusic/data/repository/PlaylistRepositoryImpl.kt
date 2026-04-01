@@ -66,6 +66,7 @@ class PlaylistRepositoryImpl @Inject constructor(
             )
         }
         playlistDao.replacePlaylistTracks(playlistId, refs)
+        playlistDao.updateTrackCount(playlistId, refs.size)
     }
 
     override fun observePlaylists(): Flow<List<Playlist>> =

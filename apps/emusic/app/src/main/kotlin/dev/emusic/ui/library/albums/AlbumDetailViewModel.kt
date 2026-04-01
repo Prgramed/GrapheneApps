@@ -89,8 +89,9 @@ class AlbumDetailViewModel @Inject constructor(
     fun getCoverArtUrl(id: String, size: Int = 300): String =
         libraryRepository.getCoverArtUrl(id, size)
 
-    fun playAlbumFromTrack(index: Int) {
+    fun playAlbumFromTrack(trackId: String) {
         val trackList = _tracks.value
+        val index = trackList.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
         if (trackList.isNotEmpty()) {
             queueManager.play(trackList, index)
         }

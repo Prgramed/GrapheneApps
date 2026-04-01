@@ -9,9 +9,11 @@ import dev.emusic.domain.model.Playlist
 import dev.emusic.domain.repository.LibraryRepository
 import dev.emusic.domain.repository.PlaylistRepository
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -21,6 +23,12 @@ data class SmartPlaylist(
     val trackCount: Int,
 )
 
+enum class PlaylistSort(val label: String) {
+    NAME("Name"),
+    TRACK_COUNT("Track Count"),
+    NEWEST("Newest"),
+}
+
 @HiltViewModel
 class PlaylistsViewModel @Inject constructor(
     private val playlistRepository: PlaylistRepository,
@@ -29,8 +37,21 @@ class PlaylistsViewModel @Inject constructor(
     private val scrobbleDao: ScrobbleDao,
 ) : ViewModel() {
 
-    private val _playlists = MutableStateFlow<List<Playlist>>(emptyList())
-    val playlists: StateFlow<List<Playlist>> = _playlists.asStateFlow()
+    private val _allPlaylists = MutableStateFlow<List<Playlist>>(emptyList())
+
+    private val _sort = MutableStateFlow(PlaylistSort.NAME)
+    val sort: StateFlow<PlaylistSort> = _sort.asStateFlow()
+
+    val filter = MutableStateFlow("")
+
+    val playlists: StateFlow<List<Playlist>> = combine(_allPlaylists, _sort, filter) { all, sort, q ->
+        val filtered = if (q.isBlank()) all else all.filter { it.name.contains(q, ignoreCase = true) }
+        when (sort) {
+            PlaylistSort.NAME -> filtered.sortedBy { it.name.lowercase() }
+            PlaylistSort.TRACK_COUNT -> filtered.sortedByDescending { it.trackCount }
+            PlaylistSort.NEWEST -> filtered.sortedByDescending { it.changedAt ?: it.createdAt ?: "" }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _smartPlaylists = MutableStateFlow<List<SmartPlaylist>>(emptyList())
     val smartPlaylists: StateFlow<List<SmartPlaylist>> = _smartPlaylists.asStateFlow()
@@ -38,7 +59,7 @@ class PlaylistsViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             playlistRepository.observePlaylists().collect {
-                _playlists.value = it
+                _allPlaylists.value = it
             }
         }
         viewModelScope.launch {
@@ -57,6 +78,8 @@ class PlaylistsViewModel @Inject constructor(
             }.collect { _smartPlaylists.value = it }
         }
     }
+
+    fun setSort(sort: PlaylistSort) { _sort.value = sort }
 
     fun getCoverArtUrl(id: String): String =
         libraryRepository.getCoverArtUrl(id)

@@ -255,9 +255,24 @@ class PlaybackService : MediaLibraryService() {
         serviceScope.launch {
             loadQueueIntoPlayer()
 
-            // React to queue changes
+            // React to queue changes (full reload)
             queueManager.queue.collect { _ ->
                 loadQueueIntoPlayer()
+            }
+        }
+        // React to index changes (seek only — no rebuild)
+        serviceScope.launch {
+            var prevIndex = queueManager.currentIndex.value
+            queueManager.currentIndex.collect { newIndex ->
+                if (newIndex != prevIndex) {
+                    prevIndex = newIndex
+                    val exoPlayer = player ?: return@collect
+                    if (queueManager.isLiveStream.value) return@collect
+                    if (newIndex in 0 until exoPlayer.mediaItemCount && exoPlayer.currentMediaItemIndex != newIndex) {
+                        exoPlayer.seekTo(newIndex, 0)
+                        exoPlayer.play()
+                    }
+                }
             }
         }
     }
@@ -466,19 +481,17 @@ class PlaybackService : MediaLibraryService() {
             return
         }
 
-        // Only rebuild if the items actually changed
         if (!mediaItemsMatch(exoPlayer, mediaItems)) {
             val startPosition = if (!hasRestoredPosition) {
                 hasRestoredPosition = true
                 queueManager.restoredPositionMs
             } else {
-                0L // New queue always starts from the beginning
+                0L
             }
             exoPlayer.setMediaItems(mediaItems, currentIndex.coerceAtLeast(0), startPosition)
             exoPlayer.shuffleModeEnabled = queueManager.restoredShuffle
             exoPlayer.repeatMode = queueManager.restoredRepeat
             exoPlayer.prepare()
-            // Don't auto-play on initial queue restore (cold start)
             if (isInitialQueueLoad) {
                 isInitialQueueLoad = false
             } else {
