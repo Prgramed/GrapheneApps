@@ -46,6 +46,11 @@ class MmsDownloadedReceiver : BroadcastReceiver() {
             return
         }
 
+        if (file.length() > 10 * 1024 * 1024) {
+            android.util.Log.w("MmsDownload", "MMS PDU too large (${file.length()} bytes), skipping")
+            file.delete()
+            return
+        }
         val pduData = file.readBytes()
         file.delete()
 

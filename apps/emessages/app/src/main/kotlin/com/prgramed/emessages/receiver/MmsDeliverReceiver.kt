@@ -26,7 +26,7 @@ class MmsDeliverReceiver : BroadcastReceiver() {
 
         // Create temp file for download output
         val downloadFile = File(context.cacheDir, "mms_${System.currentTimeMillis()}.pdu")
-        downloadFile.createNewFile()
+        if (!downloadFile.createNewFile()) return
 
         val downloadUri = FileProvider.getUriForFile(
             context, "${context.packageName}.provider", downloadFile,

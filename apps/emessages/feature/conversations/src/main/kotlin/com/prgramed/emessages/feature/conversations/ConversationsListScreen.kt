@@ -348,7 +348,7 @@ private fun ConversationRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val draftText = com.prgramed.emessages.domain.model.DraftStore.get(conversation.threadId)
+            val draftText = remember(conversation.threadId) { com.prgramed.emessages.domain.model.DraftStore.get(conversation.threadId) }
             Text(
                 text = if (draftText != null) "Draft: $draftText" else conversation.snippet,
                 style = MaterialTheme.typography.bodySmall,

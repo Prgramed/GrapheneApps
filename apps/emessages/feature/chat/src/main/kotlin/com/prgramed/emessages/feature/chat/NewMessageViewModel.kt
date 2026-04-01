@@ -151,7 +151,7 @@ class NewMessageViewModel @Inject constructor(
             val results = withContext(Dispatchers.IO) {
                 contactLookup.searchContacts(query)
             }
-            _uiState.update { it.copy(contactResults = results) }
+            _uiState.update { it.copy(contactResults = results.take(50)) }
         }
     }
 

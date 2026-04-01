@@ -177,8 +177,11 @@ class ConversationsListViewModel @Inject constructor(
         }
     }
 
+    private var resolveJob: kotlinx.coroutines.Job? = null
+
     private fun resolveContactNames(conversations: List<Conversation>) {
-        viewModelScope.launch {
+        resolveJob?.cancel()
+        resolveJob = viewModelScope.launch {
             val resolvedMap = withContext(Dispatchers.IO) {
                 conversations.associate { conv ->
                     conv.threadId to conv.recipients.map { r ->

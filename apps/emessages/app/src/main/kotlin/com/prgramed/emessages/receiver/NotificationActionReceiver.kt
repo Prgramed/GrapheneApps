@@ -8,6 +8,9 @@ import android.provider.Telephony
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
 import com.prgramed.emessages.data.notification.MessageNotificationManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class NotificationActionReceiver : BroadcastReceiver() {
 
@@ -18,9 +21,8 @@ class NotificationActionReceiver : BroadcastReceiver() {
         when (intent.action) {
             MessageNotificationManager.ACTION_MARK_READ -> {
                 val pendingResult = goAsync()
-                Thread {
+                CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        // Mark all SMS in thread as read
                         val values = ContentValues().apply { put(Telephony.Sms.READ, 1) }
                         context.contentResolver.update(
                             Telephony.Sms.CONTENT_URI,
@@ -28,13 +30,12 @@ class NotificationActionReceiver : BroadcastReceiver() {
                             "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0",
                             arrayOf(threadId.toString()),
                         )
-                        // Cancel the notification
                         NotificationManagerCompat.from(context).cancel(threadId.toInt())
                     } catch (_: Exception) {
                     } finally {
                         pendingResult.finish()
                     }
-                }.start()
+                }
             }
             MessageNotificationManager.ACTION_REPLY -> {
                 val remoteInput = RemoteInput.getResultsFromIntent(intent)
@@ -44,9 +45,8 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 if (replyText.isNullOrBlank()) return
 
                 val pendingResult = goAsync()
-                Thread {
+                CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        // Find the address for this thread
                         val address = context.contentResolver.query(
                             Telephony.Sms.CONTENT_URI,
                             arrayOf(Telephony.Sms.ADDRESS),
@@ -58,7 +58,6 @@ class NotificationActionReceiver : BroadcastReceiver() {
                         }
 
                         if (address != null) {
-                            // Send the reply
                             val smsManager = android.telephony.SmsManager.getDefault()
                             val parts = smsManager.divideMessage(replyText)
                             if (parts.size == 1) {
@@ -67,7 +66,6 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                 smsManager.sendMultipartTextMessage(address, null, parts, null, null)
                             }
 
-                            // Write to sent messages
                             val sentValues = ContentValues().apply {
                                 put(Telephony.Sms.ADDRESS, address)
                                 put(Telephony.Sms.BODY, replyText)
@@ -78,7 +76,6 @@ class NotificationActionReceiver : BroadcastReceiver() {
                             }
                             context.contentResolver.insert(Telephony.Sms.CONTENT_URI, sentValues)
 
-                            // Mark thread as read and cancel notification
                             val readValues = ContentValues().apply { put(Telephony.Sms.READ, 1) }
                             context.contentResolver.update(
                                 Telephony.Sms.CONTENT_URI,
@@ -92,7 +89,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     } finally {
                         pendingResult.finish()
                     }
-                }.start()
+                }
             }
         }
     }

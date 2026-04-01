@@ -240,7 +240,7 @@ class ConversationRepositoryImpl @Inject constructor(
             ),
             "${Telephony.Sms.THREAD_ID} IS NOT NULL",
             null,
-            "${Telephony.Sms.DATE} DESC",
+            "${Telephony.Sms.DATE} DESC LIMIT 5000",
         )?.use { cursor ->
             val threadIdx = cursor.getColumnIndex(Telephony.Sms.THREAD_ID)
             val addrIdx = cursor.getColumnIndex(Telephony.Sms.ADDRESS)

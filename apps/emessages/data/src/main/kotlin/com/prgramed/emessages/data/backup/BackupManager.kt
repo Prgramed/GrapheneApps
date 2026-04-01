@@ -184,7 +184,7 @@ class BackupManager @Inject constructor(
                         val mmsUri = contentResolver.insert(Telephony.Mms.CONTENT_URI, mmsValues)
                         Log.d("BackupManager", "MMS insert URI=$mmsUri for ts=${mms.timestamp} addr=${mms.address} parts=${mms.parts.size}")
                         if (mmsUri != null) {
-                            val mmsId = mmsUri.lastPathSegment
+                            val mmsId = mmsUri.lastPathSegment ?: continue
                             Log.d("BackupManager", "MMS id=$mmsId, inserting addr + ${mms.parts.size} parts")
 
                             // Add address

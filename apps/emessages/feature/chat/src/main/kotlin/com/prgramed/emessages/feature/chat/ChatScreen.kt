@@ -349,8 +349,9 @@ fun ChatScreen(
                     CircularProgressIndicator()
                 }
             } else {
-                val reversedMessages = uiState.messages.reversed()
-                val groupedMessages = groupMessagesWithDates(reversedMessages)
+                val groupedMessages = remember(uiState.messages) {
+                    groupMessagesWithDates(uiState.messages.reversed())
+                }
 
                 LazyColumn(
                     state = listState,

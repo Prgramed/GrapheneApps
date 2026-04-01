@@ -82,6 +82,12 @@ class MessageRepositoryImpl @Inject constructor(
         body: String,
         subscriptionId: Int?,
     ): Long = withContext(Dispatchers.IO) {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.SEND_SMS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            throw SecurityException("SEND_SMS permission not granted")
+        }
         try {
             val smsManager = if (subscriptionId != null) {
                 context.getSystemService(SmsManager::class.java)
@@ -121,6 +127,7 @@ class MessageRepositoryImpl @Inject constructor(
 
             try {
                 val parts = smsManager.divideMessage(body)
+                if (parts.isNullOrEmpty()) throw Exception("Failed to split message")
                 if (parts.size > 1) {
                     val sentIntents = ArrayList(parts.map { sentIntent })
                     val deliveryIntents = if (deliveryIntent != null) {
@@ -184,7 +191,7 @@ class MessageRepositoryImpl @Inject constructor(
             val sentIntent = android.app.PendingIntent.getBroadcast(
                 context,
                 pduFile.name.hashCode(),
-                android.content.Intent("dev.emusic.MMS_SENT").setPackage(context.packageName),
+                android.content.Intent("com.prgramed.emessages.MMS_SENT").setPackage(context.packageName),
                 android.app.PendingIntent.FLAG_IMMUTABLE,
             )
             val smsManager = context.getSystemService(SmsManager::class.java)
@@ -308,7 +315,7 @@ class MessageRepositoryImpl @Inject constructor(
 
                 // Create temp file for download
                 val downloadFile = java.io.File(context.cacheDir, "mms_retry_${System.currentTimeMillis()}.pdu")
-                downloadFile.createNewFile()
+                if (!downloadFile.createNewFile()) throw Exception("Failed to create MMS download file")
                 val downloadUri = androidx.core.content.FileProvider.getUriForFile(
                     context, "${context.packageName}.provider", downloadFile,
                 )
@@ -345,7 +352,7 @@ class MessageRepositoryImpl @Inject constructor(
         }
         return PendingIntent.getBroadcast(
             context,
-            messageId.toInt(),
+            (messageId and 0x7FFFFFFF).toInt(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -361,7 +368,7 @@ class MessageRepositoryImpl @Inject constructor(
         }
         return PendingIntent.getBroadcast(
             context,
-            (messageId + 10000).toInt(),
+            ((messageId + 10000) and 0x7FFFFFFF).toInt(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -369,15 +376,24 @@ class MessageRepositoryImpl @Inject constructor(
 
     private fun compressImageForMms(uri: Uri): Pair<String, ByteArray>? {
         val maxBytes = 550_000 // ~550KB leaving room for headers/SMIL within 600KB carrier limit
+
+        // Decode bounds first to calculate sample size (avoids OOM on large images)
+        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, options) }
+        val maxDim = 1920
+        val longestSide = maxOf(options.outWidth, options.outHeight)
+        var sampleSize = 1
+        while (longestSide / sampleSize > maxDim * 2) sampleSize *= 2
+
+        val decodeOptions = android.graphics.BitmapFactory.Options().apply { inSampleSize = sampleSize }
         val input = context.contentResolver.openInputStream(uri) ?: return null
-        val original = android.graphics.BitmapFactory.decodeStream(input)
+        val original = android.graphics.BitmapFactory.decodeStream(input, null, decodeOptions)
         input.close()
         if (original == null) return null
 
-        // Scale down to max 1920px on longest side (high quality but reasonable)
-        val maxDim = 1920
-        val longestSide = maxOf(original.width, original.height)
-        val scale = if (longestSide > maxDim) maxDim.toFloat() / longestSide else 1f
+        // Scale down to max dimension on longest side (high quality but reasonable)
+        val actualLongest = maxOf(original.width, original.height)
+        val scale = if (actualLongest > maxDim) maxDim.toFloat() / actualLongest else 1f
         val scaled = if (scale < 1f) {
             android.graphics.Bitmap.createScaledBitmap(
                 original,

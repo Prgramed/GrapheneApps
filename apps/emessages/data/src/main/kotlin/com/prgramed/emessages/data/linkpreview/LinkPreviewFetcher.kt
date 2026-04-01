@@ -40,7 +40,13 @@ class LinkPreviewFetcher @Inject constructor() {
                     .build()
 
                 val response = client.newCall(request).execute()
-                val body = response.body?.string()?.take(200_000) // Limit to 200KB
+                // Read at most 200KB at the stream level (avoids downloading entire page)
+                val body = response.body?.let { rb ->
+                    val buf = CharArray(200_000)
+                    val read = rb.charStream().buffered().read(buf)
+                    rb.close()
+                    if (read > 0) String(buf, 0, read) else null
+                }
                 response.close()
 
                 if (body == null) {

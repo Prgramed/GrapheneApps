@@ -44,6 +44,7 @@ data class ChatUiState(
     val scrollToBottomEvent: Int = 0,
     val sendError: String? = null,
     val isLoadingMore: Boolean = false,
+    val isSending: Boolean = false,
 )
 
 @HiltViewModel
@@ -142,12 +143,14 @@ class ChatViewModel @Inject constructor(
 
         if (text.isBlank() && attachment == null) return
         if (address.isBlank()) return
+        if (_uiState.value.isSending) return // Guard against double-send
 
         _uiState.update {
             it.copy(
                 messageText = "",
                 attachmentUri = null,
                 segmentInfo = null,
+                isSending = true,
                 scrollToBottomEvent = it.scrollToBottomEvent + 1,
             )
         }
@@ -163,7 +166,10 @@ class ChatViewModel @Inject constructor(
                     messageRepository.sendSms(address, text, _uiState.value.activeSim?.subscriptionId)
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(sendError = "Failed to send: ${e.message}") }
+                // Restore message text so user doesn't lose it
+                _uiState.update { it.copy(messageText = text, attachmentUri = attachment, sendError = "Failed to send: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSending = false) }
             }
         }
     }
@@ -262,7 +268,7 @@ class ChatViewModel @Inject constructor(
 
     private fun fetchLinkPreviews(messages: List<Message>) {
         val current = _linkPreviews.value
-        messages.forEach { message ->
+        messages.takeLast(10).forEach { message ->
             if (message.id in current) return@forEach
             val matcher = urlPattern.matcher(message.body)
             if (matcher.find()) {
