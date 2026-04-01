@@ -42,8 +42,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.prgramed.econtacts.domain.model.CallType
 import com.prgramed.econtacts.domain.model.RecentCall
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -180,7 +178,9 @@ private fun CallRow(
     }
 
     val timeText = remember(call.timestamp) {
-        callDateFormat.format(Date(call.timestamp))
+        java.time.Instant.ofEpochMilli(call.timestamp)
+            .atZone(java.time.ZoneId.systemDefault())
+            .format(callDateFormat)
     }
 
     val displayName = call.name?.takeIf { it.isNotBlank() } ?: call.number.ifBlank { "Unknown" }
@@ -221,4 +221,4 @@ private fun CallRow(
     )
 }
 
-private val callDateFormat = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
+private val callDateFormat = java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.getDefault())

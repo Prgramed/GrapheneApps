@@ -240,20 +240,20 @@ fun ContactsListScreen(
                     )
                 }
                 else -> {
-                    val grouped = uiState.filteredContacts.groupBy {
-                        it.displayName.firstOrNull()?.uppercaseChar()?.toString() ?: "#"
-                    }
                     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
                     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
-                    // Build index: letter → item position
-                    val letterPositions = remember(grouped) {
+                    val (grouped, letterPositions) = remember(uiState.filteredContacts) {
+                        val g = uiState.filteredContacts.groupBy {
+                            it.displayName.firstOrNull()?.uppercaseChar()?.toString() ?: "#"
+                        }
                         var pos = 0
-                        grouped.keys.associateWith { letter ->
+                        val lp = g.keys.associateWith { letter ->
                             val p = pos
-                            pos += 1 + (grouped[letter]?.size ?: 0) // 1 header + contacts
+                            pos += 1 + (g[letter]?.size ?: 0)
                             p
                         }
+                        g to lp
                     }
 
                     Box(modifier = Modifier.fillMaxSize()) {

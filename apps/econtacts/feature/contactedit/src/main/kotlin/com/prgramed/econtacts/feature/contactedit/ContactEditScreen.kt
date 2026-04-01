@@ -37,6 +37,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -65,6 +66,15 @@ fun ContactEditScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    // Clean up old camera temp files on screen entry
+    DisposableEffect(Unit) {
+        onDispose {
+            context.cacheDir.listFiles()?.filter {
+                it.name.startsWith("contact_photo_") && it.name.endsWith(".jpg")
+            }?.forEach { it.delete() }
+        }
+    }
 
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
 
