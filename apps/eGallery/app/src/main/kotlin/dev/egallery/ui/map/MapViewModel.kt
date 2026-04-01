@@ -3,61 +3,67 @@ package dev.egallery.ui.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.egallery.api.ImmichPhotoService
+import dev.egallery.api.dto.ImmichMapMarker
 import dev.egallery.data.CredentialStore
-import dev.egallery.data.db.dao.MediaDao
-import dev.egallery.data.repository.toDomain
-import dev.egallery.domain.model.MediaItem
 import dev.egallery.util.ThumbnailUrlBuilder
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 data class PhotoCluster(
     val lat: Double,
     val lng: Double,
-    val items: List<MediaItem>,
+    val markers: List<ImmichMapMarker>,
 ) {
-    val count: Int get() = items.size
-    val isSingle: Boolean get() = items.size == 1
+    val count: Int get() = markers.size
+    val isSingle: Boolean get() = markers.size == 1
 }
 
 @HiltViewModel
 class MapViewModel @Inject constructor(
-    private val mediaDao: MediaDao,
+    private val immichApi: ImmichPhotoService,
     private val credentialStore: CredentialStore,
 ) : ViewModel() {
 
-    private val _geoItems = MutableStateFlow<List<MediaItem>>(emptyList())
-    val geoItems: StateFlow<List<MediaItem>> = _geoItems.asStateFlow()
+    private val _markers = MutableStateFlow<List<ImmichMapMarker>>(emptyList())
+    val markers: StateFlow<List<ImmichMapMarker>> = _markers.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     init {
         viewModelScope.launch {
-            _geoItems.value = mediaDao.getWithLocation().map { it.toDomain() }
+            try {
+                val markers = kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+                    immichApi.getMapMarkers()
+                }
+                _markers.value = markers ?: emptyList()
+                Timber.d("Loaded ${_markers.value.size} map markers")
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to load map markers")
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
-    fun clusterItems(items: List<MediaItem>, zoomLevel: Double): List<PhotoCluster> {
-        if (items.isEmpty()) return emptyList()
-
-        // Grid-based clustering: cell size decreases with zoom
-        val cellSize = 360.0 / (1 shl zoomLevel.toInt().coerceIn(1, 20))
-
-        val groups = items.groupBy { item ->
-            val latCell = ((item.lat ?: 0.0) / cellSize).toInt()
-            val lngCell = ((item.lng ?: 0.0) / cellSize).toInt()
+    fun cluster(markers: List<ImmichMapMarker>, precision: Int = 3): List<PhotoCluster> {
+        val groups = markers.groupBy { marker ->
+            val latCell = (marker.lat * Math.pow(10.0, precision.toDouble())).toInt()
+            val lngCell = (marker.lon * Math.pow(10.0, precision.toDouble())).toInt()
             latCell to lngCell
         }
-
-        return groups.map { (_, groupItems) ->
-            val avgLat = groupItems.mapNotNull { it.lat }.average()
-            val avgLng = groupItems.mapNotNull { it.lng }.average()
-            PhotoCluster(lat = avgLat, lng = avgLng, items = groupItems)
+        return groups.map { (_, groupMarkers) ->
+            val avgLat = groupMarkers.map { it.lat }.average()
+            val avgLng = groupMarkers.map { it.lon }.average()
+            PhotoCluster(lat = avgLat, lng = avgLng, markers = groupMarkers)
         }
     }
 
-    fun thumbnailUrl(nasId: String, cacheKey: String, isSharedSpace: Boolean = false): String {
-        return ThumbnailUrlBuilder.thumbnail(credentialStore.serverUrl, nasId)
-    }
+    fun thumbnailUrl(assetId: String): String =
+        ThumbnailUrlBuilder.thumbnail(credentialStore.serverUrl, assetId)
 }

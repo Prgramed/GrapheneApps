@@ -22,8 +22,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,14 +55,30 @@ fun FolderScreen(
     val breadcrumbs by viewModel.breadcrumbs.collectAsState()
     val photosFlow by viewModel.photos.collectAsState()
     val loading by viewModel.loading.collectAsState()
+    val showIgnored by viewModel.showIgnored.collectAsState()
+    val isRoot = breadcrumbs.size <= 1
 
-    // Back gesture navigates to parent folder instead of popping to Timeline
     androidx.activity.compose.BackHandler(enabled = breadcrumbs.size > 1) {
         viewModel.navigateUp()
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Breadcrumb bar — only show when navigated past root
+        // Header row with filter toggle (only at root)
+        if (isRoot) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                IconButton(onClick = { viewModel.toggleShowIgnored() }) {
+                    Icon(
+                        imageVector = if (showIgnored) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        contentDescription = if (showIgnored) "Hide app folders" else "Show app folders",
+                        tint = if (showIgnored) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
         if (breadcrumbs.size > 1) {
             BreadcrumbBar(
                 breadcrumbs = breadcrumbs,
@@ -72,7 +91,6 @@ fun FolderScreen(
                 CircularProgressIndicator()
             }
         } else {
-            // Folder list
             if (folders.isNotEmpty()) {
                 LazyColumn(
                     modifier = Modifier
@@ -98,7 +116,6 @@ fun FolderScreen(
                 }
             }
 
-            // Photos in current folder
             PhotoGrid(
                 photosFlow = photosFlow,
                 viewModel = viewModel,

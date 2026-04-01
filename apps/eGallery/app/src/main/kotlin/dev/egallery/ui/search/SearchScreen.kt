@@ -2,52 +2,59 @@ package dev.egallery.ui.search
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SearchBar
-import androidx.compose.material3.SearchBarDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     onBack: () -> Unit,
@@ -56,155 +63,245 @@ fun SearchScreen(
 ) {
     val query by viewModel.query.collectAsState()
     val results by viewModel.results.collectAsState()
-    val searching by viewModel.searching.collectAsState()
-    val recentSearches by viewModel.recentSearches.collectAsState()
-    val availableTags by viewModel.availableTags.collectAsState()
-    val selectedTagId by viewModel.selectedTagId.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
+    val resultCount by viewModel.resultCount.collectAsState()
     val selectedMediaType by viewModel.selectedMediaType.collectAsState()
-    var expanded by rememberSaveable { mutableStateOf(true) }
+    val selectedCountry by viewModel.selectedCountry.collectAsState()
+    val selectedCity by viewModel.selectedCity.collectAsState()
+    val countrySuggestions by viewModel.countrySuggestions.collectAsState()
+    val citySuggestions by viewModel.citySuggestions.collectAsState()
+    val recentSearches by viewModel.recentSearches.collectAsState()
+    val fromDate by viewModel.fromDate.collectAsState()
+    val toDate by viewModel.toDate.collectAsState()
+
+    var showDatePicker by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        SearchBar(
-            inputField = {
-                SearchBarDefaults.InputField(
-                    query = query,
-                    onQueryChange = { viewModel.query.value = it },
-                    onSearch = {
-                        viewModel.saveRecentSearch(it)
-                        expanded = false
-                    },
-                    expanded = expanded,
-                    onExpandedChange = { expanded = it },
-                    placeholder = { Text("Search photos…") },
-                    leadingIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.Default.ArrowBack, "Back")
-                        }
-                    },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.query.value = "" }) {
-                                Icon(Icons.Default.Clear, "Clear")
-                            }
-                        }
-                    },
-                )
+        // Top bar with search field
+        TopAppBar(
+            title = {},
+            navigationIcon = {
+                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
             },
-            expanded = expanded,
-            onExpandedChange = { expanded = it },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            // Recent searches dropdown
-            if (query.isEmpty() && recentSearches.isNotEmpty()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    TextButton(onClick = { viewModel.clearRecentSearches() }) {
-                        Text("Clear recent searches")
-                    }
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        recentSearches.forEach { recent ->
-                            AssistChip(
-                                onClick = {
-                                    viewModel.query.value = recent
-                                    expanded = false
-                                },
-                                label = { Text(recent) },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.History,
-                                        contentDescription = null,
-                                        modifier = Modifier.padding(0.dp),
-                                    )
-                                },
-                            )
-                        }
+        )
+
+        // Search input
+        OutlinedTextField(
+            value = query,
+            onValueChange = { viewModel.query.value = it },
+            placeholder = { Text("Search photos (AI-powered)...") },
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = {
+                if (query.isNotBlank()) {
+                    IconButton(onClick = { viewModel.query.value = "" }) {
+                        Icon(Icons.Default.Clear, "Clear")
                     }
                 }
-            }
-        }
-
-        // Filter chips
-        FlowRow(
+            },
+            singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp),
+                .padding(horizontal = 16.dp),
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        // Filter chips row
+        Row(
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // Photo/Video type filter
+            // Media type filters
             FilterChip(
-                selected = selectedMediaType == "PHOTO",
-                onClick = { viewModel.setMediaTypeFilter(if (selectedMediaType == "PHOTO") null else "PHOTO") },
+                selected = selectedMediaType == null,
+                onClick = { viewModel.setMediaTypeFilter(null) },
+                label = { Text("All") },
+            )
+            FilterChip(
+                selected = selectedMediaType == "IMAGE",
+                onClick = { viewModel.setMediaTypeFilter(if (selectedMediaType == "IMAGE") null else "IMAGE") },
                 label = { Text("Photos") },
-                leadingIcon = { Icon(Icons.Default.Photo, null, modifier = Modifier.size(18.dp)) },
             )
             FilterChip(
                 selected = selectedMediaType == "VIDEO",
                 onClick = { viewModel.setMediaTypeFilter(if (selectedMediaType == "VIDEO") null else "VIDEO") },
                 label = { Text("Videos") },
-                leadingIcon = { Icon(Icons.Default.Videocam, null, modifier = Modifier.size(18.dp)) },
             )
-            // Tag filter chips (show first 10)
-            availableTags.take(10).forEach { tag ->
+
+            // Date range
+            FilterChip(
+                selected = fromDate != null || toDate != null,
+                onClick = { showDatePicker = true },
+                label = {
+                    if (fromDate != null || toDate != null) {
+                        val fmt = java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.getDefault())
+                        val from = fromDate?.let { fmt.format(java.util.Date(it)) } ?: "..."
+                        val to = toDate?.let { fmt.format(java.util.Date(it)) } ?: "..."
+                        Text("$from - $to")
+                    } else {
+                        Text("Date")
+                    }
+                },
+            )
+
+            // Country filter
+            var showCountryMenu by remember { mutableStateOf(false) }
+            Box {
                 FilterChip(
-                    selected = selectedTagId == tag.id,
-                    onClick = { viewModel.setTagFilter(if (selectedTagId == tag.id) null else tag.id) },
-                    label = { Text(tag.name) },
+                    selected = selectedCountry != null,
+                    onClick = { showCountryMenu = true },
+                    label = { Text(selectedCountry ?: "Country") },
+                )
+                DropdownMenu(expanded = showCountryMenu, onDismissRequest = { showCountryMenu = false }) {
+                    DropdownMenuItem(text = { Text("All countries") }, onClick = {
+                        viewModel.setCountryFilter(null)
+                        showCountryMenu = false
+                    })
+                    countrySuggestions.forEach { country ->
+                        DropdownMenuItem(text = { Text(country) }, onClick = {
+                            viewModel.setCountryFilter(country)
+                            showCountryMenu = false
+                        })
+                    }
+                }
+            }
+
+            // City filter (only if country selected)
+            if (selectedCountry != null && citySuggestions.isNotEmpty()) {
+                var showCityMenu by remember { mutableStateOf(false) }
+                Box {
+                    FilterChip(
+                        selected = selectedCity != null,
+                        onClick = { showCityMenu = true },
+                        label = { Text(selectedCity ?: "City") },
+                    )
+                    DropdownMenu(expanded = showCityMenu, onDismissRequest = { showCityMenu = false }) {
+                        DropdownMenuItem(text = { Text("All cities") }, onClick = {
+                            viewModel.setCityFilter(null)
+                            showCityMenu = false
+                        })
+                        citySuggestions.forEach { city ->
+                            DropdownMenuItem(text = { Text(city) }, onClick = {
+                                viewModel.setCityFilter(city)
+                                showCityMenu = false
+                            })
+                        }
+                    }
+                }
+            }
+
+            // Clear all filters
+            if (selectedMediaType != null || selectedCountry != null || fromDate != null) {
+                FilterChip(
+                    selected = false,
+                    onClick = { viewModel.clearFilters() },
+                    label = { Text("Clear") },
                 )
             }
         }
 
-        if (searching) {
+        Spacer(Modifier.height(4.dp))
+
+        // Progress / result count
+        if (isSearching) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
+        if (resultCount > 0) {
+            Text(
+                text = "$resultCount results",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
 
-        if (results.isEmpty() && query.length >= 2 && !searching) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = null,
-                        modifier = Modifier.padding(bottom = 16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    )
+        // Results grid or recent searches
+        if (results.isEmpty() && query.isBlank() && !isSearching) {
+            // Show recent searches
+            if (recentSearches.isNotEmpty()) {
+                Text(
+                    text = "Recent searches",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                recentSearches.forEach { recent ->
                     Text(
-                        text = "No results for \"$query\"",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = recent,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                viewModel.query.value = recent
+                                viewModel.saveRecentSearch(recent)
+                            }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
                     )
                 }
+                TextButton(
+                    onClick = { viewModel.clearRecentSearches() },
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) {
+                    Text("Clear recent")
+                }
+            }
+        } else if (results.isEmpty() && !isSearching && query.isNotBlank()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No results", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else if (results.isNotEmpty()) {
+            // Results grid
+            val context = LocalContext.current
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
-                modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 items(results, key = { it.nasId }) { item ->
-                    Box(
+                    AsyncImage(
+                        model = remember(item.nasId) {
+                            ImageRequest.Builder(context)
+                                .data(viewModel.thumbnailUrl(item.nasId))
+                                .size(360)
+                                .memoryCacheKey("thumb_${item.nasId}")
+                                .diskCacheKey("thumb_${item.nasId}")
+                                .build()
+                        },
+                        contentDescription = item.filename,
+                        contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .aspectRatio(1f)
-                            .clickable { onPhotoClick(item.nasId) },
-                    ) {
-                        AsyncImage(
-                            model = remember(item.nasId, item.cacheKey) {
-                                viewModel.thumbnailUrl(item.nasId, item.cacheKey)
-                            },
-                            contentDescription = item.filename,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                        )
-                    }
+                            .clickable { onPhotoClick(item.nasId) }
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                    )
                 }
             }
+        }
+    }
+
+    // Date range picker dialog
+    if (showDatePicker) {
+        val state = rememberDateRangePickerState()
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.setDateRange(state.selectedStartDateMillis, state.selectedEndDateMillis)
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.setDateRange(null, null)
+                    showDatePicker = false
+                }) { Text("Clear") }
+            },
+        ) {
+            DateRangePicker(state = state, modifier = Modifier.height(500.dp))
         }
     }
 }

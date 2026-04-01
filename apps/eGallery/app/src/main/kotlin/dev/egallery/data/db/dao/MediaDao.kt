@@ -9,6 +9,12 @@ import androidx.room.Upsert
 import dev.egallery.data.db.entity.MediaEntity
 import kotlinx.coroutines.flow.Flow
 
+data class LocalHashCacheEntry(
+    val localPath: String,
+    val nasHash: String,
+    val localFileModifiedAt: Long?,
+)
+
 @Dao
 interface MediaDao {
 
@@ -191,6 +197,12 @@ interface MediaDao {
 
     @Query("UPDATE media SET nasHash = :hash WHERE nasId = :nasId")
     suspend fun updateHash(nasId: String, hash: String)
+
+    @Query("SELECT localPath, nasHash, localFileModifiedAt FROM media WHERE localPath IS NOT NULL AND nasHash IS NOT NULL")
+    suspend fun getLocalHashCache(): List<LocalHashCacheEntry>
+
+    @Query("UPDATE media SET nasHash = :hash, localFileModifiedAt = :modifiedAt WHERE nasId = :nasId")
+    suspend fun updateHashAndModifiedAt(nasId: String, hash: String, modifiedAt: Long)
 
     @Query("SELECT * FROM media WHERE storageStatus = :status")
     suspend fun getByStorageStatus(status: String): List<MediaEntity>

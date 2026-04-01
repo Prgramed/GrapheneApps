@@ -7,6 +7,10 @@ import androidx.paging.cachedIn
 import androidx.paging.insertSeparators
 import androidx.paging.map
 import android.content.Context
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import androidx.work.Constraints
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
@@ -110,16 +114,13 @@ class TimelineViewModel @Inject constructor(
             .cachedIn(viewModelScope)
 
     fun syncNow() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _syncState.value = SyncState.Syncing
-
-            // Device scan only — NAS sync is done from Settings
             try {
-                deviceMediaScanner.forceRescan()
+                deviceMediaScanner.quickScanRecentFiles()
             } catch (e: Exception) {
-                Timber.w(e, "Device scan failed")
+                Timber.w(e, "Quick scan failed")
             }
-
             _syncState.value = SyncState.Idle(System.currentTimeMillis())
             _photoCount.value = mediaRepository.getCount()
         }
@@ -225,6 +226,22 @@ class TimelineViewModel @Inject constructor(
         WorkManager.getInstance(appContext).enqueue(request)
     }
 
+    // Auto-detect new photos/videos while app is open
+    private val mediaObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        private var pendingJob: kotlinx.coroutines.Job? = null
+        override fun onChange(selfChange: Boolean) {
+            // Debounce: wait 1.5s after last change before scanning
+            pendingJob?.cancel()
+            pendingJob = viewModelScope.launch(Dispatchers.IO) {
+                kotlinx.coroutines.delay(1500)
+                try {
+                    val count = deviceMediaScanner.quickScanRecentFiles()
+                    if (count > 0) _photoCount.value = mediaRepository.getCount()
+                } catch (_: Exception) { }
+            }
+        }
+    }
+
     init {
         viewModelScope.launch { _photoCount.value = mediaRepository.getCount() }
         viewModelScope.launch {
@@ -235,5 +252,18 @@ class TimelineViewModel @Inject constructor(
                 _photoCount.value = mediaRepository.getCount()
             }
         }
+
+        // Register ContentObserver for MediaStore changes
+        appContext.contentResolver.registerContentObserver(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mediaObserver,
+        )
+        appContext.contentResolver.registerContentObserver(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, mediaObserver,
+        )
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        appContext.contentResolver.unregisterContentObserver(mediaObserver)
     }
 }

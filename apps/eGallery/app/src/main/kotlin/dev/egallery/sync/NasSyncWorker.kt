@@ -19,9 +19,14 @@ class NasSyncWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        Timber.d("Post-upload sync: starting full sync to pick up new items")
-        syncEngine.startFullSync()
-        return Result.success()
+        Timber.d("Post-upload sync: starting quick sync (delta first)")
+        return try {
+            syncEngine.doQuickSyncSuspend()
+            Result.success()
+        } catch (e: Exception) {
+            Timber.e(e, "Post-upload sync failed")
+            Result.retry()
+        }
     }
 
     companion object {

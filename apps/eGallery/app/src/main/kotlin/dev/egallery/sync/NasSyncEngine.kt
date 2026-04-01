@@ -1,11 +1,12 @@
 package dev.egallery.sync
 
-import android.content.ContentUris
 import android.content.Context
 import android.provider.MediaStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dev.egallery.api.ImmichPhotoMapper
 import dev.egallery.api.ImmichPhotoMapper.toDomainList
 import dev.egallery.api.ImmichPhotoService
+import dev.egallery.api.dto.DeltaSyncRequest
 import dev.egallery.data.CredentialStore
 import dev.egallery.data.db.dao.AlbumDao
 import dev.egallery.data.db.dao.AlbumMediaDao
@@ -26,15 +27,22 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
-import java.security.MessageDigest
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
@@ -46,6 +54,7 @@ data class LocalPhoto(
     val captureDate: Long,
     val size: Long,
     val isVideo: Boolean,
+    val dateModified: Long = 0L,
 )
 
 @Singleton
@@ -93,7 +102,18 @@ class NasSyncEngine @Inject constructor(
         syncJob = syncScope.launch {
             _isRunning.value = true
             try {
-                doQuickSync()
+                // Try delta sync first (fast path)
+                val deltaOk = try {
+                    doDeltaSync()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.w(e, "Delta sync failed, falling back to quick sync")
+                    false
+                }
+                if (!deltaOk) {
+                    doQuickSync()
+                }
             } catch (e: CancellationException) {
                 _progress.value = "Cancelled"
             } catch (e: Exception) {
@@ -105,21 +125,107 @@ class NasSyncEngine @Inject constructor(
         }
     }
 
+    /** Suspending version for WorkManager — runs inline, doesn't return until done. */
+    suspend fun doQuickSyncSuspend() {
+        _isRunning.value = true
+        try {
+            val deltaOk = try {
+                doDeltaSync()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Delta sync failed, falling back to quick sync")
+                false
+            }
+            if (!deltaOk) {
+                doQuickSync()
+            }
+        } finally {
+            _isRunning.value = false
+        }
+    }
+
     fun cancelSync() {
         syncJob?.cancel()
         _progress.value = "Cancelled"
         _isRunning.value = false
     }
 
+    // ── Delta Sync: instant server changes via /api/sync/delta-sync ──
+
+    private suspend fun doDeltaSync(): Boolean {
+        val lastSyncMs = preferencesRepository.getLastSyncAtOnce()
+        if (lastSyncMs == 0L) return false // No baseline — need full sync
+
+        _progress.value = "Delta sync..."
+
+        val isoTimestamp = Instant.ofEpochMilli(lastSyncMs)
+            .atOffset(ZoneOffset.UTC)
+            .format(DateTimeFormatter.ISO_DATE_TIME)
+
+        val response = immichApi.deltaSync(DeltaSyncRequest(updatedAfter = isoTimestamp))
+
+        if (response.needsFullSync) {
+            Timber.d("Server requires full sync")
+            return false
+        }
+
+        // Process upserts — these include checksums
+        var upserted = 0
+        if (response.upserted.isNotEmpty()) {
+            val items = response.upserted.mapNotNull { asset ->
+                ImmichPhotoMapper.run { asset.toDomain() }
+            }
+            val entities = items.map { item ->
+                val existing = mediaDao.getByNasId(item.nasId)
+                if (existing != null && existing.storageStatus != "NAS_ONLY") {
+                    item.copy(
+                        storageStatus = dev.egallery.domain.model.StorageStatus.valueOf(existing.storageStatus),
+                        localPath = existing.localPath,
+                    ).toEntity()
+                } else {
+                    item.toEntity()
+                }
+            }
+            mediaDao.upsertAll(entities)
+            upserted = entities.size
+        }
+
+        // Process deletions
+        var deleted = 0
+        for (deletedId in response.deleted) {
+            val entity = mediaDao.getByNasId(deletedId) ?: continue
+            if (entity.storageStatus == "NAS_ONLY") {
+                mediaDao.deleteByNasId(deletedId)
+                deleted++
+            }
+        }
+
+        // Check for new device photos since last sync
+        _progress.value = "Checking new device photos..."
+        val newDevicePhotos = scanDevicePhotosSince(lastSyncMs)
+        val toUpload = queueNewDevicePhotosForUpload(newDevicePhotos)
+
+        _progress.value = "Syncing albums..."
+        syncAlbums()
+        _progress.value = "Syncing people..."
+        syncPeople()
+
+        preferencesRepository.setLastSyncAt(System.currentTimeMillis())
+        _progress.value = "Done: $upserted updated, $deleted removed, $toUpload to upload"
+        Timber.d("Delta sync: $upserted upserted, $deleted deleted, $toUpload to upload")
+        return true
+    }
+
     // ── Force Full Sync: hash-based phone↔server diff ───────────
 
     private suspend fun doFullSync() {
-        // Step 1: Scan all device photos
+        // Step 1: Scan all device photos (with hash caching)
         _progress.value = "Scanning device photos..."
         val devicePhotos = scanDevicePhotos()
         Timber.d("Device scan: ${devicePhotos.size} photos")
 
-        // Step 2: Fetch all server assets
+        // Step 2: Fetch all server assets (parallelized checksum fetch)
         _progress.value = "Fetching server assets..."
         val serverAssets = fetchAllServerAssets()
         Timber.d("Server assets: ${serverAssets.size}")
@@ -153,8 +259,9 @@ class NasSyncEngine @Inject constructor(
                 // Photo NOT on server — check if already queued
                 val existingQueue = mediaDao.getByLocalPath(photo.path)
                 if (existingQueue == null) {
-                    // Skip Video Boost COVER files
+                    // Skip Video Boost COVER files and third-party app directories
                     if (photo.filename.contains(".VB-01.COVER.")) continue
+                    if (!isUploadablePath(photo.path)) continue
 
                     // Create temp entity + queue for upload
                     val tempId = java.util.UUID.randomUUID().toString()
@@ -169,6 +276,7 @@ class NasSyncEngine @Inject constructor(
                         localPath = photo.path,
                         storageStatus = "UPLOAD_PENDING",
                         nasHash = photo.sha1Base64,
+                        localFileModifiedAt = photo.dateModified,
                     )
                     mediaDao.upsert(entity)
                     uploadQueueDao.insert(UploadQueueEntity(localPath = photo.path, targetFolderId = 0))
@@ -208,7 +316,7 @@ class NasSyncEngine @Inject constructor(
         Timber.d("Full sync: ${devicePhotos.size} device, ${serverAssets.size} server, $toUpload to upload, $linked linked, $removed removed")
     }
 
-    // ── Quick Sync: date-based ──────────────────────────────────
+    // ── Quick Sync: date-based (fallback when delta fails) ─────
 
     private suspend fun doQuickSync() {
         _progress.value = "Quick sync..."
@@ -218,14 +326,17 @@ class NasSyncEngine @Inject constructor(
         val buckets = immichApi.getTimeBuckets("MONTH")
         var newFromServer = 0
 
+        var consecutiveEmpty = 0
         for (bucket in buckets) {
             coroutineContext.job.ensureActive()
             val bucketData = immichApi.getTimeBucket(bucket.timeBucket, "MONTH")
             val items = bucketData.toDomainList()
             val newItems = items.filter { it.captureDate > lastSyncAt }
-            if (newItems.isEmpty() && items.isNotEmpty()) break
-
-            if (newItems.isNotEmpty()) {
+            if (newItems.isEmpty()) {
+                consecutiveEmpty++
+                if (consecutiveEmpty >= 3) break // Buckets are newest-first; 3 old buckets in a row = done
+            } else {
+                consecutiveEmpty = 0
                 val entities = newItems.map { item ->
                     val existing = mediaDao.getByNasId(item.nasId)
                     if (existing != null && existing.storageStatus != "NAS_ONLY") {
@@ -245,50 +356,12 @@ class NasSyncEngine @Inject constructor(
         // 2. Check for new device photos since last sync
         _progress.value = "Checking new device photos..."
         val newDevicePhotos = scanDevicePhotosSince(lastSyncAt)
-        var toUpload = 0
+        val toUpload = queueNewDevicePhotosForUpload(newDevicePhotos)
 
-        if (newDevicePhotos.isNotEmpty()) {
-            // Bulk check against Immich
-            val checksums = newDevicePhotos.map {
-                mapOf("id" to it.filename, "checksum" to it.sha1Base64)
-            }
-            // Check in batches of 100
-            for (batch in checksums.chunked(100)) {
-                coroutineContext.job.ensureActive()
-                try {
-                    val result = immichApi.bulkUploadCheck(mapOf("assets" to batch))
-                    val rejectIds = result.results
-                        .filter { it["action"] == "reject" }
-                        .mapNotNull { it["id"] }
-                        .toSet()
-
-                    for (photo in newDevicePhotos) {
-                        if (photo.filename in rejectIds) continue // Already on server
-                        if (photo.filename.contains(".VB-01.COVER.")) continue
-                        if (mediaDao.getByLocalPath(photo.path) != null) continue
-
-                        val tempId = java.util.UUID.randomUUID().toString()
-                        val entity = MediaEntity(
-                            nasId = tempId,
-                            filename = photo.filename,
-                            captureDate = photo.captureDate,
-                            fileSize = photo.size,
-                            mediaType = if (photo.isVideo) "VIDEO" else "PHOTO",
-                            folderId = 0,
-                            cacheKey = "",
-                            localPath = photo.path,
-                            storageStatus = "UPLOAD_PENDING",
-                            nasHash = photo.sha1Base64,
-                        )
-                        mediaDao.upsert(entity)
-                        uploadQueueDao.insert(UploadQueueEntity(localPath = photo.path, targetFolderId = 0))
-                        toUpload++
-                    }
-                } catch (e: Exception) {
-                    Timber.w(e, "Bulk upload check failed, skipping batch")
-                }
-            }
-        }
+        _progress.value = "Syncing albums..."
+        syncAlbums()
+        _progress.value = "Syncing people..."
+        syncPeople()
 
         preferencesRepository.setLastSyncAt(System.currentTimeMillis())
         _progress.value = if (newFromServer > 0 || toUpload > 0) {
@@ -298,13 +371,89 @@ class NasSyncEngine @Inject constructor(
         }
     }
 
-    // ── Device Photo Scanner ────────────────────────────────────
+    // ── Shared: queue new device photos for upload ──────────────
 
-    private fun scanDevicePhotos(): List<LocalPhoto> = scanMediaStore(null)
+    private suspend fun queueNewDevicePhotosForUpload(photos: List<LocalPhoto>): Int {
+        if (photos.isEmpty()) return 0
 
-    private fun scanDevicePhotosSince(sinceMs: Long): List<LocalPhoto> = scanMediaStore(sinceMs)
+        var toUpload = 0
+        val checksums = photos.map {
+            mapOf("id" to it.filename, "checksum" to it.sha1Base64)
+        }
+        for (batch in checksums.chunked(100)) {
+            coroutineContext.job.ensureActive()
+            try {
+                val result = immichApi.bulkUploadCheck(kotlinx.serialization.json.buildJsonObject {
+                    put("assets", kotlinx.serialization.json.JsonArray(batch.map { entry ->
+                        kotlinx.serialization.json.buildJsonObject {
+                            put("id", kotlinx.serialization.json.JsonPrimitive(entry["id"]!!))
+                            put("checksum", kotlinx.serialization.json.JsonPrimitive(entry["checksum"]!!))
+                        }
+                    }))
+                })
+                val rejectIds = result.results
+                    .filter { it["action"] == "reject" }
+                    .mapNotNull { it["id"] }
+                    .toSet()
 
-    private fun scanMediaStore(sinceMs: Long?): List<LocalPhoto> {
+                for (photo in photos) {
+                    if (photo.filename in rejectIds) continue
+                    if (photo.filename.contains(".VB-01.COVER.")) continue
+                    if (!isUploadablePath(photo.path)) continue
+                    if (mediaDao.getByLocalPath(photo.path) != null) continue
+
+                    val tempId = java.util.UUID.randomUUID().toString()
+                    val entity = MediaEntity(
+                        nasId = tempId,
+                        filename = photo.filename,
+                        captureDate = photo.captureDate,
+                        fileSize = photo.size,
+                        mediaType = if (photo.isVideo) "VIDEO" else "PHOTO",
+                        folderId = 0,
+                        cacheKey = "",
+                        localPath = photo.path,
+                        storageStatus = "UPLOAD_PENDING",
+                        nasHash = photo.sha1Base64,
+                        localFileModifiedAt = photo.dateModified,
+                    )
+                    mediaDao.upsert(entity)
+                    uploadQueueDao.insert(UploadQueueEntity(localPath = photo.path, targetFolderId = 0))
+                    toUpload++
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Bulk upload check failed, skipping batch")
+            }
+        }
+        return toUpload
+    }
+
+    /** Returns false for third-party app directories that should not be uploaded. */
+    private fun isUploadablePath(path: String): Boolean {
+        if (path.contains("/Android/media/")) return false
+        if (path.contains("/WhatsApp/")) return false
+        if (path.contains("/Telegram/")) return false
+        return true
+    }
+
+    // ── Device Photo Scanner (with hash caching) ───────────────
+
+    private suspend fun scanDevicePhotos(): List<LocalPhoto> = scanMediaStore(null)
+
+    private suspend fun scanDevicePhotosSince(sinceMs: Long): List<LocalPhoto> = scanMediaStore(sinceMs)
+
+    private suspend fun scanMediaStore(sinceMs: Long?): List<LocalPhoto> {
+        // Pre-load hash cache from Room: path → (hash, modifiedAt)
+        val hashCache = mutableMapOf<String, Pair<String, Long?>>()
+        try {
+            val cached = mediaDao.getLocalHashCache()
+            for (entry in cached) {
+                hashCache[entry.localPath] = entry.nasHash to entry.localFileModifiedAt
+            }
+            Timber.d("Hash cache: ${hashCache.size} entries loaded")
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to load hash cache")
+        }
+
         val photos = mutableListOf<LocalPhoto>()
 
         for (uri in listOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)) {
@@ -333,19 +482,25 @@ class NasSyncEngine @Inject constructor(
                     if (localPath.isNullOrBlank()) continue
 
                     val file = File(localPath)
-                    if (!file.exists()) continue
+                    if (!file.exists() || !file.canRead()) continue
 
                     val size = cursor.getLong(sizeCol)
                     val dateTaken = if (dateTakenCol >= 0) cursor.getLong(dateTakenCol) else 0L
-                    val dateModified = cursor.getLong(dateModCol) * 1000L
+                    val dateModifiedSec = cursor.getLong(dateModCol)
+                    val dateModified = dateModifiedSec * 1000L
                     val captureDate = if (dateTaken > 0) dateTaken else dateModified
 
-                    // Compute SHA1 (base64) to match Immich's checksum format
-                    val sha1 = try {
-                        computeSha1Base64(file)
-                    } catch (e: Exception) {
-                        Timber.w("Failed to hash $filename: ${e.message}")
-                        continue
+                    // Use cached hash if file hasn't changed
+                    val cachedEntry = hashCache[localPath]
+                    val sha1 = if (cachedEntry != null && cachedEntry.second == dateModifiedSec) {
+                        cachedEntry.first
+                    } else {
+                        try {
+                            HashUtil.sha1Base64(file)
+                        } catch (e: Exception) {
+                            Timber.w("Failed to hash $filename: ${e.message}")
+                            continue
+                        }
                     }
 
                     photos.add(LocalPhoto(
@@ -355,6 +510,7 @@ class NasSyncEngine @Inject constructor(
                         captureDate = captureDate,
                         size = size,
                         isVideo = isVideo,
+                        dateModified = dateModifiedSec,
                     ))
                 }
             }
@@ -363,19 +519,7 @@ class NasSyncEngine @Inject constructor(
         return photos
     }
 
-    private fun computeSha1Base64(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-1")
-        file.inputStream().buffered().use { input ->
-            val buffer = ByteArray(8192)
-            var read: Int
-            while (input.read(buffer).also { read = it } != -1) {
-                digest.update(buffer, 0, read)
-            }
-        }
-        return android.util.Base64.encodeToString(digest.digest(), android.util.Base64.NO_WRAP)
-    }
-
-    // ── Fetch all server assets ─────────────────────────────────
+    // ── Fetch all server assets (parallelized checksums) ───────
 
     private suspend fun fetchAllServerAssets(): List<MediaEntity> {
         val buckets = immichApi.getTimeBuckets("MONTH")
@@ -390,8 +534,6 @@ class NasSyncEngine @Inject constructor(
             val bucketData = immichApi.getTimeBucket(bucket.timeBucket, "MONTH")
             val items = bucketData.toDomainList()
 
-            // For each item, get checksum by fetching asset detail
-            // This is expensive — only do for full sync
             for (item in items) {
                 coroutineContext.job.ensureActive()
                 val existing = mediaDao.getByNasId(item.nasId)
@@ -411,28 +553,43 @@ class NasSyncEngine @Inject constructor(
             synced += items.size
         }
 
-        // Fetch checksums for items that don't have them (needed for diff)
+        // Fetch checksums in parallel for items that don't have them
         _progress.value = "Fetching checksums..."
         val needChecksum = allEntities.filter { it.nasHash.isNullOrBlank() }
-        var fetched = 0
-        for (entity in needChecksum) {
-            coroutineContext.job.ensureActive()
-            try {
-                val asset = immichApi.getAsset(entity.nasId)
-                if (asset.checksum != null) {
-                    mediaDao.updateHash(entity.nasId, asset.checksum)
-                    // Update in our list too
-                    val idx = allEntities.indexOfFirst { it.nasId == entity.nasId }
+        if (needChecksum.isNotEmpty()) {
+            Timber.d("Fetching ${needChecksum.size} checksums in parallel...")
+            val semaphore = Semaphore(20)
+            var fetched = 0
+
+            for (chunk in needChecksum.chunked(500)) {
+                coroutineContext.job.ensureActive()
+                val results = withContext(Dispatchers.IO) {
+                    chunk.map { entity ->
+                        async {
+                            semaphore.withPermit {
+                                try {
+                                    val asset = immichApi.getAsset(entity.nasId)
+                                    asset.checksum?.let { entity.nasId to it }
+                                } catch (e: Exception) {
+                                    Timber.w("Failed to get checksum for ${entity.nasId}")
+                                    null
+                                }
+                            }
+                        }
+                    }.awaitAll().filterNotNull()
+                }
+
+                // Batch update checksums in Room and in our list
+                for ((nasId, checksum) in results) {
+                    mediaDao.updateHash(nasId, checksum)
+                    val idx = allEntities.indexOfFirst { it.nasId == nasId }
                     if (idx >= 0) {
-                        allEntities[idx] = entity.copy(nasHash = asset.checksum)
+                        allEntities[idx] = allEntities[idx].copy(nasHash = checksum)
                     }
                 }
-                fetched++
-                if (fetched % 100 == 0) {
-                    _progress.value = "Fetching checksums: $fetched / ${needChecksum.size}..."
-                }
-            } catch (e: Exception) {
-                Timber.w("Failed to get checksum for ${entity.nasId}")
+
+                fetched += results.size
+                _progress.value = "Fetching checksums: $fetched / ${needChecksum.size}..."
             }
         }
 
@@ -476,7 +633,7 @@ class NasSyncEngine @Inject constructor(
             val album = immichApi.getAlbum(albumId)
             albumMediaDao.deleteByAlbum(albumId)
             album.assets?.let { assets ->
-                val items = assets.mapNotNull { dev.egallery.api.ImmichPhotoMapper.run { it.toDomain() } }
+                val items = assets.mapNotNull { ImmichPhotoMapper.run { it.toDomain() } }
                 val entities = items.map { it.toEntity() }
                 mediaDao.upsertAll(entities)
                 val joins = items.map { dev.egallery.data.db.entity.AlbumMediaEntity(albumId = albumId, nasId = it.nasId) }

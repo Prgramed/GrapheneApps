@@ -73,8 +73,8 @@ fun PeopleScreen(
         items(people, key = { it.id }) { person ->
             PersonCard(
                 person = person,
-                coverUrl = remember(person.coverPhotoId) {
-                    viewModel.coverThumbnailUrl(person.coverPhotoId)
+                coverUrl = remember(person.id) {
+                    viewModel.personThumbnailUrl(person.id)
                 },
                 onClick = { onPersonClick(person.id) },
             )

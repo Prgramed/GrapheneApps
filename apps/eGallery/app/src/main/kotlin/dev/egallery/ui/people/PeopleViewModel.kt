@@ -22,8 +22,6 @@ class PeopleViewModel @Inject constructor(
         named + unnamed
     }
 
-    fun coverThumbnailUrl(coverPhotoId: String?, isSharedSpace: Boolean = false): String? {
-        if (coverPhotoId == null) return null
-        return ThumbnailUrlBuilder.thumbnail(credentialStore.serverUrl, coverPhotoId)
-    }
+    fun personThumbnailUrl(personId: String): String =
+        "${credentialStore.serverUrl.trimEnd('/')}/api/people/$personId/thumbnail"
 }

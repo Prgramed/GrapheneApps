@@ -29,6 +29,7 @@ class EGalleryApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var okHttpClient: OkHttpClient
     @Inject lateinit var credentialStore: CredentialStore
     @Inject lateinit var mediaDao: dev.egallery.data.db.dao.MediaDao
+    @Inject lateinit var uploadQueueDao: dev.egallery.data.db.dao.UploadQueueDao
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -88,6 +89,28 @@ class EGalleryApp : Application(), Configuration.Provider, SingletonImageLoader.
                 val count = mediaDao.deleteLivePhotoMovDuplicates()
                 Timber.d("Removed $count Live Photo MOV duplicates")
                 prefs.edit().putInt("live_cleanup_v", 1).apply()
+            }
+        }
+        // One-time: clear upload queue for third-party app directories (WhatsApp, Telegram, etc.)
+        if (prefs.getInt("clear_bad_uploads_v", 0) < 2) {
+            appScope.launch {
+                var cleared = 0
+                for (pattern in listOf("/Android/media/", "/WhatsApp/", "/Telegram/")) {
+                    cleared += uploadQueueDao.deleteByPathContaining(pattern)
+                }
+                // Reset UPLOAD_FAILED/UPLOAD_PENDING to ON_DEVICE for these paths
+                for (status in listOf("UPLOAD_FAILED", "UPLOAD_PENDING")) {
+                    val items = mediaDao.getByStorageStatus(status)
+                    for (entity in items) {
+                        val path = entity.localPath ?: continue
+                        if (path.contains("/Android/media/") || path.contains("/WhatsApp/") || path.contains("/Telegram/")) {
+                            mediaDao.updateStorageStatus(entity.nasId, "ON_DEVICE", path)
+                            cleared++
+                        }
+                    }
+                }
+                Timber.d("Cleared $cleared third-party app upload entries")
+                prefs.edit().putInt("clear_bad_uploads_v", 2).apply()
             }
         }
     }

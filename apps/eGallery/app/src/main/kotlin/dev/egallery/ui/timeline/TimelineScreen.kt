@@ -264,7 +264,10 @@ fun TimelineScreen(
                 }
 
                 else -> {
-                    Box {
+                    PullToRefreshBox(
+                        isRefreshing = isSyncing,
+                        onRefresh = { viewModel.syncNow() },
+                    ) {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
                         state = gridState,
@@ -484,7 +487,7 @@ private fun PhotoGridCell(
                     .align(Alignment.TopEnd)
                     .padding(4.dp)
                     .size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                tint = Color.White.copy(alpha = 0.7f),
             )
         }
         if (item.storageStatus == StorageStatus.UPLOAD_FAILED) {
@@ -493,9 +496,23 @@ private fun PhotoGridCell(
                 contentDescription = "Upload failed",
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(4.dp)
+                    .padding(3.dp)
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(Color.Red),
+                tint = Color.White,
+            )
+        }
+        // Green check for items synced to server (real Immich UUID, not temp ID)
+        if (item.storageStatus == StorageStatus.ON_DEVICE && item.nasId.length > 10 && !item.nasId.startsWith("-")) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = "Uploaded",
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(3.dp)
                     .size(16.dp),
-                tint = MaterialTheme.colorScheme.error,
+                tint = Color(0xFF4CAF50),
             )
         }
 

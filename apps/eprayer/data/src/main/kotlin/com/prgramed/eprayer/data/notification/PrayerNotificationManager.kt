@@ -3,6 +3,7 @@ package com.prgramed.eprayer.data.notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.media.AudioAttributes
 import android.net.Uri
 import androidx.core.app.NotificationCompat
 import com.prgramed.eprayer.domain.model.AdhanSound
@@ -25,36 +26,57 @@ class PrayerNotificationManager @Inject constructor(
     private val notificationManager: NotificationManager
         get() = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-    // Cached adhan sound — updated when preferences change
     @Volatile
     private var cachedAdhanSound: AdhanSound = AdhanSound.MOHAMMED_REFAAT
 
     init {
-        // Observe preference changes and cache the sound
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             userPreferencesRepository.getUserPreferences()
                 .catch { }
                 .collect { prefs ->
-                    cachedAdhanSound = prefs.adhanSound
+                    val newSound = prefs.adhanSound
+                    if (newSound != cachedAdhanSound) {
+                        cachedAdhanSound = newSound
+                        // Recreate channel with new sound
+                        recreateNotificationChannel(newSound)
+                    }
                 }
         }
     }
 
     fun createNotificationChannel() {
+        recreateNotificationChannel(cachedAdhanSound)
+    }
+
+    private fun recreateNotificationChannel(adhanSound: AdhanSound) {
+        // Delete existing channel so we can change the sound
+        notificationManager.deleteNotificationChannel(CHANNEL_ID)
+
+        val soundUri = getAdhanSoundUri(adhanSound)
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Prayer Times",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = "Adhan notifications for prayer times"
+            if (adhanSound == AdhanSound.SILENT) {
+                setSound(null, null)
+            } else if (soundUri != null) {
+                setSound(soundUri, audioAttributes)
+            }
+            // else DEVICE_DEFAULT: leave as system default
+            enableVibration(true)
         }
         notificationManager.createNotificationChannel(channel)
     }
 
     fun showPrayerNotification(prayer: Prayer) {
         val displayName = prayer.name.lowercase().replaceFirstChar { it.uppercase() }
-        val adhanSound = cachedAdhanSound
-        val soundUri = getAdhanSoundUri(adhanSound)
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
@@ -62,12 +84,6 @@ class PrayerNotificationManager @Inject constructor(
             .setContentText("It's time for $displayName prayer")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
-
-        if (adhanSound == AdhanSound.SILENT) {
-            builder.setSilent(true)
-        } else if (soundUri != null) {
-            builder.setSound(soundUri)
-        }
 
         notificationManager.notify(prayer.ordinal, builder.build())
     }

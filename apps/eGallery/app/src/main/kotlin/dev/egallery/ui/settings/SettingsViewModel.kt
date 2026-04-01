@@ -58,6 +58,13 @@ class SettingsViewModel @Inject constructor(
     val autoEvictEnabled: StateFlow<Boolean> = preferencesRepository.autoEvictEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    val uploadConcurrency: StateFlow<Int> = preferencesRepository.uploadConcurrency
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 3)
+
+    fun setUploadConcurrency(count: Int) {
+        viewModelScope.launch { preferencesRepository.setUploadConcurrency(count) }
+    }
+
     val lastSyncAt: StateFlow<Long> = preferencesRepository.lastSyncAt
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
@@ -149,14 +156,53 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun triggerUpload() {
-        val request = androidx.work.OneTimeWorkRequestBuilder<dev.egallery.sync.UploadWorker>()
-            .setConstraints(
-                androidx.work.Constraints.Builder()
-                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
-                    .build(),
-            )
-            .build()
-        androidx.work.WorkManager.getInstance(appContext).enqueue(request)
+        androidx.work.WorkManager.getInstance(appContext).enqueueUniqueWork(
+            dev.egallery.sync.UploadWorker.WORK_NAME,
+            androidx.work.ExistingWorkPolicy.REPLACE,
+            androidx.work.OneTimeWorkRequestBuilder<dev.egallery.sync.UploadWorker>()
+                .setConstraints(
+                    androidx.work.Constraints.Builder()
+                        .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                        .build(),
+                )
+                .build(),
+        )
+    }
+
+    private val _failedPaths = MutableStateFlow<List<String>>(emptyList())
+    val failedPaths: StateFlow<List<String>> = _failedPaths.asStateFlow()
+
+    fun loadFailedPaths() {
+        viewModelScope.launch {
+            val failed = uploadQueueDao.getFailed()
+            _failedPaths.value = failed.map { java.io.File(it.localPath).name }
+        }
+    }
+
+    fun clearFailedUploads() {
+        viewModelScope.launch {
+            val failed = uploadQueueDao.getFailed()
+            for (item in failed) {
+                uploadQueueDao.delete(item.id)
+                mediaDao.getByLocalPath(item.localPath)?.let { entity ->
+                    if (entity.storageStatus == "UPLOAD_FAILED") {
+                        mediaDao.updateStorageStatus(entity.nasId, "ON_DEVICE", entity.localPath)
+                    }
+                }
+            }
+            val failedMedia = mediaDao.getByStorageStatus("UPLOAD_FAILED")
+            for (entity in failedMedia) {
+                mediaDao.updateStorageStatus(entity.nasId, "ON_DEVICE", entity.localPath)
+            }
+            _failedPaths.value = emptyList()
+        }
+    }
+
+    fun cancelUpload() {
+        androidx.work.WorkManager.getInstance(appContext)
+            .cancelUniqueWork(dev.egallery.sync.UploadWorker.WORK_NAME)
+        uploadStatus.update("Cancelled")
+        uploadStatus.setRunning(false)
     }
 
     fun retryFailedUploads() {
@@ -184,7 +230,9 @@ class SettingsViewModel @Inject constructor(
                 var filePath = entity.localPath
                 if (filePath == null || !java.io.File(filePath).exists()) {
                     // Search DCIM/Camera for the file by filename
-                    val dcim = java.io.File("/storage/emulated/0/DCIM/Camera")
+                    val dcim = android.os.Environment.getExternalStoragePublicDirectory(
+                        android.os.Environment.DIRECTORY_DCIM,
+                    ).resolve("Camera")
                     val match = dcim.listFiles()?.find { it.name == entity.filename }
                     filePath = match?.absolutePath
                 }
@@ -204,14 +252,17 @@ class SettingsViewModel @Inject constructor(
             }
 
             if (requeued > 0) {
-                val request = androidx.work.OneTimeWorkRequestBuilder<dev.egallery.sync.UploadWorker>()
-                    .setConstraints(
-                        androidx.work.Constraints.Builder()
-                            .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
-                            .build(),
-                    )
-                    .build()
-                androidx.work.WorkManager.getInstance(appContext).enqueue(request)
+                androidx.work.WorkManager.getInstance(appContext).enqueueUniqueWork(
+                    dev.egallery.sync.UploadWorker.WORK_NAME,
+                    androidx.work.ExistingWorkPolicy.REPLACE,
+                    androidx.work.OneTimeWorkRequestBuilder<dev.egallery.sync.UploadWorker>()
+                        .setConstraints(
+                            androidx.work.Constraints.Builder()
+                                .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                                .build(),
+                        )
+                        .build(),
+                )
                 timber.log.Timber.d("Retrying $requeued failed uploads")
             }
         }

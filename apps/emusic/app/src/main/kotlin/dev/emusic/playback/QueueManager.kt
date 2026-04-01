@@ -182,13 +182,31 @@ class QueueManager @Inject constructor(
         val tracks = ids.mapNotNull { id -> trackDao.getById(id)?.toDomain() }
         val index = prefs[QUEUE_INDEX_KEY] ?: 0
         restoredPositionMs = prefs[QUEUE_POSITION_KEY] ?: 0L
+        restoredShuffle = prefs[SHUFFLE_KEY] ?: false
+        restoredRepeat = prefs[REPEAT_KEY] ?: 0
         _queue.value = tracks
         _currentIndex.value = index.coerceIn(0, (tracks.size - 1).coerceAtLeast(0))
+    }
+
+    var restoredShuffle: Boolean = false
+        private set
+    var restoredRepeat: Int = 0
+        private set
+
+    fun persistShuffleRepeat(shuffle: Boolean, repeat: Int) {
+        scope.launch {
+            dataStore.edit { prefs ->
+                prefs[SHUFFLE_KEY] = shuffle
+                prefs[REPEAT_KEY] = repeat
+            }
+        }
     }
 
     companion object {
         private val QUEUE_IDS_KEY = stringPreferencesKey("queue_track_ids")
         private val QUEUE_INDEX_KEY = intPreferencesKey("queue_current_index")
         private val QUEUE_POSITION_KEY = androidx.datastore.preferences.core.longPreferencesKey("queue_position_ms")
+        private val SHUFFLE_KEY = androidx.datastore.preferences.core.booleanPreferencesKey("queue_shuffle")
+        private val REPEAT_KEY = intPreferencesKey("queue_repeat")
     }
 }

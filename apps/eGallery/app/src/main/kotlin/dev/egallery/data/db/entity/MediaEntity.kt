@@ -31,6 +31,7 @@ data class MediaEntity(
     val lat: Double? = null,
     val lng: Double? = null,
     val nasHash: String? = null,
+    val localFileModifiedAt: Long? = null,
     val lastSyncedAt: Long = 0,
     val isFavorite: Boolean = false,
     val trashedAt: Long? = null,

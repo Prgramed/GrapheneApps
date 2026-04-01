@@ -98,6 +98,29 @@ data class DeltaSyncRequest(
 )
 
 @Serializable
+data class ImmichMapMarker(
+    val id: String,
+    val lat: Double,
+    val lon: Double,
+    val city: String? = null,
+    val state: String? = null,
+    val country: String? = null,
+)
+
+@Serializable
+data class ImmichSearchResponse(
+    val assets: ImmichSearchAssets = ImmichSearchAssets(),
+)
+
+@Serializable
+data class ImmichSearchAssets(
+    val items: List<ImmichAsset> = emptyList(),
+    val total: Int = 0,
+    val count: Int = 0,
+    val nextPage: String? = null,
+)
+
+@Serializable
 data class BulkUploadCheckResponse(
     val results: List<Map<String, String>> = emptyList(),
 )

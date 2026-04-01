@@ -22,4 +22,5 @@ object PreferenceKeys {
     val FIRST_LAUNCH_DONE = booleanPreferencesKey("first_launch_done")
     val UPLOAD_FOLDER_ID = intPreferencesKey("upload_folder_id")
     val LAST_DEVICE_SCAN_AT = longPreferencesKey("last_device_scan_at")
+    val UPLOAD_CONCURRENCY = intPreferencesKey("upload_concurrency")
 }

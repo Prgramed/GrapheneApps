@@ -229,8 +229,9 @@ fun PlaylistsScreen(
                                     onLongClick = { showMenu = true },
                                 ),
                         ) {
-                            val coverUrl = remember(playlist.coverArtId) {
-                                playlist.coverArtId?.let { viewModel.getCoverArtUrl(it) }
+                            val coverUrl = remember(playlist.coverArtId, playlist.id) {
+                                val artId = playlist.coverArtId ?: "pl-${playlist.id}"
+                                viewModel.getCoverArtUrl(artId)
                             }
                             AsyncImage(
                                 model = coverUrl,

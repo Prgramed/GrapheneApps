@@ -19,7 +19,6 @@ import dev.egallery.data.db.dao.UploadQueueDao
 import dev.egallery.data.db.entity.MediaEntity
 import dev.egallery.data.db.entity.UploadQueueEntity
 import dev.egallery.data.preferences.AppPreferencesRepository
-import dev.egallery.sync.CameraWatcher
 import dev.egallery.sync.DeviceMediaScanner
 import dev.egallery.sync.EvictionScheduler
 import dev.egallery.sync.UploadWorker
@@ -33,7 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import com.grapheneapps.core.designsystem.theme.GrapheneAppsTheme
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -52,7 +51,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var preferencesRepository: AppPreferencesRepository
     @Inject lateinit var deviceMediaScanner: DeviceMediaScanner
 
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope get() = lifecycleScope
     private val tempIdCounter = AtomicInteger(-1000) // separate range from CameraWatcher
 
     // Intent-derived state
@@ -64,7 +63,7 @@ class MainActivity : ComponentActivity() {
     ) { results ->
         val anyGranted = results.values.any { it }
         if (anyGranted) {
-            scope.launch { deviceMediaScanner.scanIfNeeded() }
+            scope.launch(Dispatchers.IO) { deviceMediaScanner.scanIfNeeded() }
         }
     }
 
@@ -116,14 +115,14 @@ class MainActivity : ComponentActivity() {
                 val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
                 Timber.d("ACTION_SEND: $uri")
                 if (uri != null) {
-                    scope.launch { importSharedUri(uri) }
+                    scope.launch(Dispatchers.IO) { importSharedUri(uri) }
                 }
             }
             Intent.ACTION_SEND_MULTIPLE -> {
                 val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
                 Timber.d("ACTION_SEND_MULTIPLE: ${uris?.size} items")
                 uris?.forEach { uri ->
-                    scope.launch { importSharedUri(uri) }
+                    scope.launch(Dispatchers.IO) { importSharedUri(uri) }
                 }
             }
         }
@@ -169,14 +168,17 @@ class MainActivity : ComponentActivity() {
             // Enqueue upload worker with WiFi-only preference
             val wifiOnly = preferencesRepository.wifiOnlyUpload.first()
             val networkType = if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
-            val request = OneTimeWorkRequestBuilder<UploadWorker>()
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(networkType)
-                        .build(),
-                )
-                .build()
-            WorkManager.getInstance(this@MainActivity).enqueue(request)
+            WorkManager.getInstance(this@MainActivity).enqueueUniqueWork(
+                UploadWorker.WORK_NAME,
+                androidx.work.ExistingWorkPolicy.REPLACE,
+                OneTimeWorkRequestBuilder<UploadWorker>()
+                    .setConstraints(
+                        Constraints.Builder()
+                            .setRequiredNetworkType(networkType)
+                            .build(),
+                    )
+                    .build(),
+            )
 
             Timber.d("Imported shared file: ${destFile.name} (tempNasId=$tempNasId)")
         } catch (e: Exception) {
@@ -193,7 +195,7 @@ class MainActivity : ComponentActivity() {
         ) == PackageManager.PERMISSION_GRANTED
 
         if (hasImages && hasVideo) {
-            scope.launch { deviceMediaScanner.scanIfNeeded() }
+            scope.launch(Dispatchers.IO) { deviceMediaScanner.scanIfNeeded() }
         } else {
             mediaPermissionLauncher.launch(
                 arrayOf(
@@ -205,7 +207,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleFirstLaunch() {
-        scope.launch {
+        scope.launch(Dispatchers.IO) {
             if (preferencesRepository.isFirstLaunchDone()) return@launch
             preferencesRepository.setFirstLaunchDone()
 

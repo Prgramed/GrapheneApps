@@ -110,6 +110,14 @@ class PlaybackService : MediaLibraryService() {
                 equalizerManager.initialize(audioSessionId)
             }
 
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                queueManager.persistShuffleRepeat(shuffleModeEnabled, exoPlayer.repeatMode)
+            }
+
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                queueManager.persistShuffleRepeat(exoPlayer.shuffleModeEnabled, repeatMode)
+            }
+
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val index = exoPlayer.currentMediaItemIndex
                 queueManager.setCurrentIndex(index)
@@ -467,6 +475,8 @@ class PlaybackService : MediaLibraryService() {
                 0L // New queue always starts from the beginning
             }
             exoPlayer.setMediaItems(mediaItems, currentIndex.coerceAtLeast(0), startPosition)
+            exoPlayer.shuffleModeEnabled = queueManager.restoredShuffle
+            exoPlayer.repeatMode = queueManager.restoredRepeat
             exoPlayer.prepare()
             // Don't auto-play on initial queue restore (cold start)
             if (isInitialQueueLoad) {

@@ -1,5 +1,6 @@
 package dev.egallery.ui.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,15 +14,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Slider
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -204,6 +202,20 @@ fun SettingsScreen(
             SettingsToggle("WiFi-only uploads", wifiOnly) { viewModel.setWifiOnlyUpload(it) }
             Spacer(Modifier.height(8.dp))
 
+            val concurrency by viewModel.uploadConcurrency.collectAsState()
+            Text(
+                text = "Concurrent uploads: $concurrency",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Slider(
+                value = concurrency.toFloat(),
+                onValueChange = { viewModel.setUploadConcurrency(it.toInt()) },
+                valueRange = 1f..8f,
+                steps = 6,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+
             // Upload status
             val uploadProgress by viewModel.uploadProgress.collectAsState()
             val isUploading by viewModel.isUploading.collectAsState()
@@ -212,7 +224,7 @@ fun SettingsScreen(
                     text = "Status: $uploadProgress",
                     style = MaterialTheme.typography.bodySmall,
                     color = when {
-                        uploadProgress.contains("failed", ignoreCase = true) -> MaterialTheme.colorScheme.error
+                        uploadProgress.contains("failed", ignoreCase = true) || uploadProgress.contains("Cancelled") -> MaterialTheme.colorScheme.error
                         isUploading -> MaterialTheme.colorScheme.tertiary
                         uploadProgress.startsWith("Done") -> MaterialTheme.colorScheme.primary
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -221,16 +233,10 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
             }
 
-            // Retry button — always visible (finds orphaned UPLOAD_FAILED in media DB too)
-            OutlinedButton(onClick = { viewModel.retryFailedUploads() }) {
-                Text("Retry Failed Uploads")
-            }
-            Spacer(Modifier.height(8.dp))
-
             // Upload queue status
             val failedUploads by viewModel.failedUploadCount.collectAsState()
             val totalUploads by viewModel.totalUploadCount.collectAsState()
-            if (totalUploads == 0) {
+            if (totalUploads == 0 && !isUploading) {
                 Text(
                     text = "No uploads in queue",
                     style = MaterialTheme.typography.bodySmall,
@@ -253,12 +259,62 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { viewModel.retryFailedUploads() }) {
-                        Text("Retry Failed")
+                    if (isUploading) {
+                        OutlinedButton(onClick = { viewModel.cancelUpload() }) {
+                            Text("Cancel Upload", color = MaterialTheme.colorScheme.error)
+                        }
+                    } else {
+                        if (failedUploads > 0) {
+                            OutlinedButton(onClick = { viewModel.retryFailedUploads() }) {
+                                Text("Retry Failed")
+                            }
+                            OutlinedButton(onClick = { viewModel.clearFailedUploads() }) {
+                                Text("Clear Failed", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                        if (pendingUploads > 0) {
+                            OutlinedButton(onClick = { viewModel.triggerUpload() }) {
+                                Text("Upload Now")
+                            }
+                        }
                     }
-                    if (pendingUploads > 0) {
-                        OutlinedButton(onClick = { viewModel.triggerUpload() }) {
-                            Text("Upload Now")
+                }
+                // Show failed file names when there are failures
+                if (failedUploads > 0) {
+                    val failedPaths by viewModel.failedPaths.collectAsState()
+                    var showFailedDetails by remember { mutableStateOf(false) }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = if (showFailedDetails) "Hide details" else "Show failed files",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable {
+                                showFailedDetails = !showFailedDetails
+                                if (showFailedDetails) viewModel.loadFailedPaths()
+                            }
+                            .padding(start = 4.dp, top = 4.dp, bottom = 4.dp),
+                    )
+                    if (showFailedDetails && failedPaths.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Column {
+                            failedPaths.take(20).forEach { name ->
+                                Text(
+                                    text = name,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(start = 8.dp, bottom = 2.dp),
+                                )
+                            }
+                            if (failedPaths.size > 20) {
+                                Text(
+                                    text = "... and ${failedPaths.size - 20} more",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -320,47 +376,6 @@ private fun SettingsToggle(
     ) {
         Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SyncIntervalDropdown(
-    currentInterval: Int,
-    onIntervalSelected: (Int) -> Unit,
-) {
-    val options = listOf(0 to "Manual", 1 to "Every hour", 2 to "Every 2 hours", 6 to "Every 6 hours")
-    var expanded by remember { mutableStateOf(false) }
-    val currentLabel = options.find { it.first == currentInterval }?.second ?: "Every hour"
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-    ) {
-        OutlinedTextField(
-            value = currentLabel,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Sync interval") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            options.forEach { (hours, label) ->
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    onClick = {
-                        onIntervalSelected(hours)
-                        expanded = false
-                    },
-                )
-            }
-        }
     }
 }
 

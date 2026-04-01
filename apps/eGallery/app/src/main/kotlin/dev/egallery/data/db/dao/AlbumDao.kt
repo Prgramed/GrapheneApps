@@ -13,6 +13,9 @@ interface AlbumDao {
     @Query("SELECT * FROM albums ORDER BY name COLLATE NOCASE ASC")
     fun getAll(): Flow<List<AlbumEntity>>
 
+    @Query("SELECT * FROM albums ORDER BY name COLLATE NOCASE ASC")
+    suspend fun getAllOnce(): List<AlbumEntity>
+
     @Query("SELECT * FROM albums WHERE id = :id")
     suspend fun getById(id: String): AlbumEntity?
 

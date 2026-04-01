@@ -66,7 +66,10 @@ class EvictionWorker @AssistedInject constructor(
         // Delete from Immich server too
         if (serverDeleteIds.isNotEmpty()) {
             try {
-                immichApi.deleteAssets(mapOf("ids" to serverDeleteIds, "force" to true))
+                immichApi.deleteAssets(kotlinx.serialization.json.buildJsonObject {
+                    put("ids", kotlinx.serialization.json.JsonArray(serverDeleteIds.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+                    put("force", kotlinx.serialization.json.JsonPrimitive(true))
+                })
                 Timber.d("Deleted ${serverDeleteIds.size} items from Immich server")
             } catch (e: Exception) {
                 Timber.w(e, "Failed to delete ${serverDeleteIds.size} items from server")
@@ -79,7 +82,9 @@ class EvictionWorker @AssistedInject constructor(
         // Auto-delete Video Boost COVER files if MAIN exists and COVER is >30 days old
         val autoDeleteCovers = preferencesRepository.autoDeleteCovers.first()
         if (autoDeleteCovers) {
-            val dcim = java.io.File("/storage/emulated/0/DCIM/Camera")
+            val dcim = android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DCIM,
+            ).resolve("Camera")
             val coverFiles = dcim.listFiles()?.filter { it.name.contains(".VB-01.COVER.") } ?: emptyList()
             var deletedCovers = 0
             for (cover in coverFiles) {

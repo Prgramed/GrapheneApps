@@ -49,7 +49,10 @@ class MediaRepositoryImpl @Inject constructor(
 
     override suspend fun deleteFromNas(nasId: String): Result<Unit> {
         return try {
-            immichApi.deleteAssets(mapOf("ids" to listOf(nasId), "force" to false))
+            immichApi.deleteAssets(kotlinx.serialization.json.buildJsonObject {
+                put("ids", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(nasId))))
+                put("force", kotlinx.serialization.json.JsonPrimitive(false))
+            })
 
             // Move to trash instead of permanent delete
             mediaDao.trash(nasId, System.currentTimeMillis())

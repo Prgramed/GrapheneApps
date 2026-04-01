@@ -76,6 +76,16 @@ class NowPlayingViewModel @Inject constructor(
             val mc = controllerFuture.get()
             controller = mc
             syncStateFromPlayer(mc)
+            // Force-sync current track in case QueueManager already has it
+            val track = queueManager.currentTrack.value
+            if (track != null) {
+                _uiState.update {
+                    it.copy(
+                        track = track,
+                        coverArtUrl = track.albumId?.let { id -> libraryRepository.getCoverArtUrl(id) },
+                    )
+                }
+            }
             mc.addListener(playerListener)
         }, MoreExecutors.directExecutor())
 

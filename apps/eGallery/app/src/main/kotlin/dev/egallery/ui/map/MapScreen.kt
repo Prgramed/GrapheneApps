@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import coil3.ImageLoader
+import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.toBitmap
@@ -68,10 +68,11 @@ fun MapScreen(
     onPhotoClick: (String) -> Unit,
     viewModel: MapViewModel = hiltViewModel(),
 ) {
-    val geoItems by viewModel.geoItems.collectAsState()
+    val allMarkers by viewModel.markers.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var mapViewRef: MapView? = remember { null }
+    val mapViewRef = remember { androidx.compose.runtime.mutableStateOf<MapView?>(null) }
 
     DisposableEffect(Unit) {
         Configuration.getInstance().apply {
@@ -88,11 +89,11 @@ fun MapScreen(
         val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (granted) {
-            goToMyLocation(context, mapViewRef)
+            goToMyLocation(context, mapViewRef.value)
         }
     }
 
-    if (geoItems.isEmpty()) {
+    if (allMarkers.isEmpty() && !isLoading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
@@ -112,15 +113,15 @@ fun MapScreen(
         return
     }
 
-    // #15: filter to items with valid GPS, default to first valid photo
-    val validGeoItems = remember(geoItems) {
-        geoItems.filter { it.lat != null && it.lng != null && it.lat != 0.0 && it.lng != 0.0 }
+    val validMarkers = remember(allMarkers) {
+        allMarkers.filter { it.lat != 0.0 && it.lon != 0.0 }
     }
-    val centerItem = remember(validGeoItems) {
-        validGeoItems.maxByOrNull { it.captureDate }
-    }
-    val centerPoint = remember(centerItem) {
-        GeoPoint(centerItem?.lat ?: 51.5, centerItem?.lng ?: -0.1) // Default London if no GPS
+    val centerPoint = remember(validMarkers) {
+        if (validMarkers.isNotEmpty()) {
+            GeoPoint(validMarkers.first().lat, validMarkers.first().lon)
+        } else {
+            GeoPoint(51.5, -0.1)
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -128,7 +129,7 @@ fun MapScreen(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 MapView(ctx).apply {
-                    mapViewRef = this
+                    mapViewRef.value = this
                     setTileSource(DarkMapTileSource)
                     setMultiTouchControls(true)
                     zoomController.setVisibility(
@@ -139,9 +140,12 @@ fun MapScreen(
                     minZoomLevel = 2.0
                     maxZoomLevel = 19.0
 
-                    addMarkers(this, viewModel, geoItems, onPhotoClick, scope)
+                    // Initial markers at default zoom
+                    scope.launch {
+                        addMarkersAsync(this@apply, viewModel, validMarkers, onPhotoClick, scope)
+                    }
 
-                    // #19: throttle marker rebuild — only on integer zoom change
+                    // Rebuild markers on zoom change (throttled)
                     var lastZoomInt = zoomLevelDouble.toInt()
                     addMapListener(object : MapListener {
                         override fun onScroll(event: ScrollEvent?): Boolean = false
@@ -149,7 +153,9 @@ fun MapScreen(
                             val newZoomInt = zoomLevelDouble.toInt()
                             if (newZoomInt != lastZoomInt) {
                                 lastZoomInt = newZoomInt
-                                addMarkers(this@apply, viewModel, geoItems, onPhotoClick, scope)
+                                scope.launch {
+                                    addMarkersAsync(this@apply, viewModel, validMarkers, onPhotoClick, scope)
+                                }
                             }
                             return false
                         }
@@ -157,8 +163,7 @@ fun MapScreen(
                 }
             },
             update = { mapView ->
-                mapViewRef = mapView
-                addMarkers(mapView, viewModel, geoItems, onPhotoClick, scope)
+                mapViewRef.value = mapView
             },
         )
 
@@ -169,7 +174,7 @@ fun MapScreen(
                     context, Manifest.permission.ACCESS_FINE_LOCATION,
                 ) == PackageManager.PERMISSION_GRANTED
                 if (hasPermission) {
-                    goToMyLocation(context, mapViewRef)
+                    goToMyLocation(context, mapViewRef.value)
                 } else {
                     locationPermissionLauncher.launch(
                         arrayOf(
@@ -203,37 +208,57 @@ private fun goToMyLocation(context: android.content.Context, mapView: MapView?) 
     } catch (_: SecurityException) { }
 }
 
-private fun addMarkers(
+private fun clusterPrecisionForZoom(zoom: Double): Int = when {
+    zoom >= 16 -> 6
+    zoom >= 14 -> 5
+    zoom >= 11 -> 4
+    zoom >= 8 -> 3
+    else -> 2
+}
+
+private suspend fun addMarkersAsync(
     mapView: MapView,
     viewModel: MapViewModel,
-    items: List<dev.egallery.domain.model.MediaItem>,
+    items: List<dev.egallery.api.dto.ImmichMapMarker>,
     onPhotoClick: (String) -> Unit,
     scope: kotlinx.coroutines.CoroutineScope,
 ) {
+    val precision = clusterPrecisionForZoom(mapView.zoomLevelDouble)
+
+    // Cluster off main thread
+    val clusters = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        viewModel.cluster(items, precision)
+    }
+
+    // Cap rendered markers to prevent UI freeze
+    val maxMarkers = 500
+    val visibleClusters = if (clusters.size > maxMarkers) {
+        clusters.sortedByDescending { it.count }.take(maxMarkers)
+    } else {
+        clusters
+    }
+
     mapView.overlays.removeAll { it is Marker }
 
-    val clusters = viewModel.clusterItems(items, mapView.zoomLevelDouble)
-
-    for (cluster in clusters) {
+    for (cluster in visibleClusters) {
         val marker = Marker(mapView).apply {
             position = GeoPoint(cluster.lat, cluster.lng)
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
 
             if (cluster.isSingle) {
-                val item = cluster.items.first()
-                title = item.filename
-                snippet = "${item.lat}, ${item.lng}"
+                val item = cluster.markers.first()
+                title = item.city ?: item.country ?: item.id.take(8)
+                snippet = "${item.lat}, ${item.lon}"
                 setOnMarkerClickListener { _, _ ->
-                    onPhotoClick(item.nasId)
+                    onPhotoClick(item.id)
                     true
                 }
 
-                // Load thumbnail for single-photo pin
-                val thumbUrl = viewModel.thumbnailUrl(item.nasId, item.cacheKey)
+                val thumbUrl = viewModel.thumbnailUrl(item.id)
                 icon = createClusterDrawable(mapView.context, 1)
                 scope.launch {
                     try {
-                        val imageLoader = ImageLoader(mapView.context)
+                        val imageLoader = SingletonImageLoader.get(mapView.context)
                         val request = ImageRequest.Builder(mapView.context)
                             .data(thumbUrl)
                             .size(96)
@@ -250,14 +275,19 @@ private fun addMarkers(
             } else {
                 title = "${cluster.count} photos"
                 setOnMarkerClickListener { _, _ ->
-                    val lats = cluster.items.mapNotNull { it.lat }
-                    val lngs = cluster.items.mapNotNull { it.lng }
-                    if (lats.isNotEmpty() && lngs.isNotEmpty()) {
-                        val box = BoundingBox(
-                            lats.max(), lngs.max(),
-                            lats.min(), lngs.min(),
-                        )
-                        mapView.zoomToBoundingBox(box.increaseByScale(1.3f), true)
+                    // Small clusters or high zoom: open first photo
+                    if (cluster.count <= 5 || mapView.zoomLevelDouble >= 14) {
+                        onPhotoClick(cluster.markers.first().id)
+                    } else {
+                        val lats = cluster.markers.map { it.lat }
+                        val lngs = cluster.markers.map { it.lon }
+                        if (lats.isNotEmpty() && lngs.isNotEmpty()) {
+                            val box = BoundingBox(
+                                lats.max(), lngs.max(),
+                                lats.min(), lngs.min(),
+                            )
+                            mapView.zoomToBoundingBox(box.increaseByScale(1.3f), true)
+                        }
                     }
                     true
                 }

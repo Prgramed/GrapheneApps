@@ -3,15 +3,14 @@ package dev.egallery.ui.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.egallery.api.ImmichPhotoMapper
+import dev.egallery.api.ImmichPhotoService
 import dev.egallery.data.CredentialStore
-import dev.egallery.data.db.dao.MediaDao
-import dev.egallery.data.db.dao.TagDao
-import dev.egallery.data.db.entity.TagEntity
 import dev.egallery.data.preferences.AppPreferencesRepository
-import dev.egallery.data.repository.toDomain
 import dev.egallery.domain.model.MediaItem
 import dev.egallery.util.ThumbnailUrlBuilder
-import kotlinx.coroutines.Job
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -20,40 +19,37 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 @OptIn(FlowPreview::class)
 @HiltViewModel
 class SearchViewModel @Inject constructor(
-    private val mediaDao: MediaDao,
-    private val tagDao: TagDao,
+    private val immichApi: ImmichPhotoService,
     private val credentialStore: CredentialStore,
     private val preferencesRepository: AppPreferencesRepository,
 ) : ViewModel() {
 
     val query = MutableStateFlow("")
 
-    // Fix #8: track search job for cancellation
-    private var searchJob: Job? = null
-
     private val _results = MutableStateFlow<List<MediaItem>>(emptyList())
     val results: StateFlow<List<MediaItem>> = _results.asStateFlow()
 
-    private val _searching = MutableStateFlow(false)
-    val searching: StateFlow<Boolean> = _searching.asStateFlow()
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
-    val recentSearches: StateFlow<List<String>> = preferencesRepository.recentSearches
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _resultCount = MutableStateFlow(0)
+    val resultCount: StateFlow<Int> = _resultCount.asStateFlow()
 
-    // Filter state
-    val availableTags: StateFlow<List<TagEntity>> = tagDao.getAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _selectedTagId = MutableStateFlow<String?>(null)
-    val selectedTagId: StateFlow<String?> = _selectedTagId.asStateFlow()
-
-    private val _selectedMediaType = MutableStateFlow<String?>(null) // "PHOTO", "VIDEO", or null
+    // Filters
+    private val _selectedMediaType = MutableStateFlow<String?>(null)
     val selectedMediaType: StateFlow<String?> = _selectedMediaType.asStateFlow()
+
+    private val _selectedCountry = MutableStateFlow<String?>(null)
+    val selectedCountry: StateFlow<String?> = _selectedCountry.asStateFlow()
+
+    private val _selectedCity = MutableStateFlow<String?>(null)
+    val selectedCity: StateFlow<String?> = _selectedCity.asStateFlow()
 
     private val _fromDate = MutableStateFlow<Long?>(null)
     val fromDate: StateFlow<Long?> = _fromDate.asStateFlow()
@@ -61,87 +57,85 @@ class SearchViewModel @Inject constructor(
     private val _toDate = MutableStateFlow<Long?>(null)
     val toDate: StateFlow<Long?> = _toDate.asStateFlow()
 
+    // Suggestions
+    private val _countrySuggestions = MutableStateFlow<List<String>>(emptyList())
+    val countrySuggestions: StateFlow<List<String>> = _countrySuggestions.asStateFlow()
+
+    private val _citySuggestions = MutableStateFlow<List<String>>(emptyList())
+    val citySuggestions: StateFlow<List<String>> = _citySuggestions.asStateFlow()
+
+    val recentSearches = preferencesRepository.recentSearches
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     init {
         viewModelScope.launch {
-            query.debounce(300).collect { q ->
-                if (q.length >= 2) {
-                    performSearch(q)
-                } else if (hasActiveFilters()) {
-                    performSearch("")
-                } else {
-                    _results.value = emptyList()
-                }
+            query.debounce(500).collect { q ->
+                if (q.length >= 2) doSearch()
+                else if (q.isBlank()) { _results.value = emptyList(); _resultCount.value = 0 }
             }
         }
+        viewModelScope.launch {
+            try { _countrySuggestions.value = immichApi.getSearchSuggestions("country") }
+            catch (_: Exception) {}
+        }
     }
 
-    fun setTagFilter(tagId: String?) {
-        _selectedTagId.value = tagId
-        rerunSearch()
+    fun setMediaTypeFilter(type: String?) { _selectedMediaType.value = type; doSearchIfReady() }
+    fun setCountryFilter(country: String?) {
+        _selectedCountry.value = country
+        if (country != null) {
+            viewModelScope.launch {
+                try { _citySuggestions.value = immichApi.getSearchSuggestions("city") }
+                catch (_: Exception) {}
+            }
+        } else { _citySuggestions.value = emptyList(); _selectedCity.value = null }
+        doSearchIfReady()
     }
-
-    fun setMediaTypeFilter(type: String?) {
-        _selectedMediaType.value = type
-        rerunSearch()
-    }
-
-    fun setDateRange(from: Long?, to: Long?) {
-        _fromDate.value = from
-        _toDate.value = to
-        rerunSearch()
-    }
-
+    fun setCityFilter(city: String?) { _selectedCity.value = city; doSearchIfReady() }
+    fun setDateRange(from: Long?, to: Long?) { _fromDate.value = from; _toDate.value = to; doSearchIfReady() }
     fun clearFilters() {
-        _selectedTagId.value = null
-        _selectedMediaType.value = null
-        _fromDate.value = null
-        _toDate.value = null
-        rerunSearch()
+        _selectedMediaType.value = null; _selectedCountry.value = null
+        _selectedCity.value = null; _fromDate.value = null; _toDate.value = null
+        doSearchIfReady()
+    }
+    fun saveRecentSearch(q: String) { if (q.length >= 2) viewModelScope.launch { preferencesRepository.addRecentSearch(q) } }
+    fun clearRecentSearches() { viewModelScope.launch { preferencesRepository.clearRecentSearches() } }
+
+    private fun doSearchIfReady() {
+        if (query.value.length >= 2 || hasActiveFilters()) viewModelScope.launch { doSearch() }
+    }
+    private fun hasActiveFilters() = _selectedMediaType.value != null || _selectedCountry.value != null ||
+        _selectedCity.value != null || _fromDate.value != null || _toDate.value != null
+
+    private suspend fun doSearch() {
+        _isSearching.value = true
+        val q = query.value.trim()
+        android.util.Log.d("SearchDebug", "doSearch called with query='$q'")
+        try {
+            val items = metadataSearch(q)
+            android.util.Log.d("SearchDebug", "metadataSearch returned ${items.size} items")
+            _results.value = items
+            _resultCount.value = items.size
+        } catch (e: Exception) {
+            android.util.Log.e("SearchDebug", "Search failed: ${e.message}", e)
+            _results.value = emptyList(); _resultCount.value = 0
+        } finally { _isSearching.value = false }
     }
 
-    private fun hasActiveFilters(): Boolean =
-        _selectedTagId.value != null || _selectedMediaType.value != null ||
-            _fromDate.value != null || _toDate.value != null
-
-    private fun rerunSearch() {
-        val q = query.value
-        if (q.length >= 2 || hasActiveFilters()) {
-            searchJob?.cancel()
-            searchJob = viewModelScope.launch { performSearch(q) }
-        }
+    private suspend fun metadataSearch(query: String): List<MediaItem> {
+        val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+        val fields = mutableMapOf<String, kotlinx.serialization.json.JsonElement>()
+        fields["page"] = JsonPrimitive(1)
+        fields["size"] = JsonPrimitive(200)
+        if (query.isNotBlank()) fields["originalFileName"] = JsonPrimitive(query)
+        _selectedMediaType.value?.let { fields["type"] = JsonPrimitive(it) }
+        _selectedCountry.value?.let { fields["country"] = JsonPrimitive(it) }
+        _selectedCity.value?.let { fields["city"] = JsonPrimitive(it) }
+        _fromDate.value?.let { fields["takenAfter"] = JsonPrimitive(dateFormat.format(java.util.Date(it))) }
+        _toDate.value?.let { fields["takenBefore"] = JsonPrimitive(dateFormat.format(java.util.Date(it))) }
+        return immichApi.searchMetadata(JsonObject(fields)).assets.items
+            .mapNotNull { ImmichPhotoMapper.run { it.toDomain() } }
     }
 
-    private suspend fun performSearch(q: String) {
-        _searching.value = true
-
-        // Search local Room DB (data is already synced from Immich)
-        val searchQuery = if (q.length >= 2) q else "%"
-        val localResults = mediaDao.searchFiltered(
-            query = searchQuery,
-            mediaType = _selectedMediaType.value,
-            fromDate = _fromDate.value,
-            toDate = _toDate.value,
-            tagId = _selectedTagId.value,
-        ).map { it.toDomain() }
-        _results.value = localResults
-
-        _searching.value = false
-    }
-
-    fun saveRecentSearch(q: String) {
-        if (q.isBlank()) return
-        viewModelScope.launch {
-            preferencesRepository.addRecentSearch(q)
-        }
-    }
-
-    fun clearRecentSearches() {
-        viewModelScope.launch {
-            preferencesRepository.clearRecentSearches()
-        }
-    }
-
-    fun thumbnailUrl(nasId: String, cacheKey: String, isSharedSpace: Boolean = false): String {
-        return ThumbnailUrlBuilder.thumbnail(credentialStore.serverUrl, nasId)
-    }
+    fun thumbnailUrl(nasId: String) = ThumbnailUrlBuilder.thumbnail(credentialStore.serverUrl, nasId)
 }

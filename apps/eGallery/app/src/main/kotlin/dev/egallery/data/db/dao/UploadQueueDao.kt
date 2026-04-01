@@ -32,4 +32,10 @@ interface UploadQueueDao {
 
     @Query("DELETE FROM upload_queue WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("DELETE FROM upload_queue")
+    suspend fun deleteAll()
+
+    @Query("DELETE FROM upload_queue WHERE localPath LIKE '%' || :pattern || '%'")
+    suspend fun deleteByPathContaining(pattern: String): Int
 }

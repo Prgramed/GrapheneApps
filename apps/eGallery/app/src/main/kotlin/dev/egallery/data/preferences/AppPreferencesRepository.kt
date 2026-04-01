@@ -131,6 +131,17 @@ class AppPreferencesRepository @Inject constructor(
         dataStore.edit { it[PreferenceKeys.LAST_DEVICE_SCAN_AT] = timestamp }
     }
 
+    val uploadConcurrency: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[PreferenceKeys.UPLOAD_CONCURRENCY] ?: 3
+    }
+
+    suspend fun setUploadConcurrency(count: Int) {
+        dataStore.edit { it[PreferenceKeys.UPLOAD_CONCURRENCY] = count.coerceIn(1, 8) }
+    }
+
+    suspend fun getUploadConcurrencyOnce(): Int =
+        dataStore.data.map { it[PreferenceKeys.UPLOAD_CONCURRENCY] ?: 3 }.first()
+
     companion object {
         private const val MAX_RECENT_SEARCHES = 10
     }

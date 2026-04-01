@@ -18,8 +18,21 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class Folder(val id: Int, val name: String, val photoCount: Int = 0, val coverNasId: String? = null, val coverCacheKey: String = "", val coverLocalPath: String? = null, val localDirPath: String? = null)
+data class Folder(
+    val id: Int,
+    val name: String,
+    val photoCount: Int = 0,
+    val coverNasId: String? = null,
+    val coverCacheKey: String = "",
+    val coverLocalPath: String? = null,
+    val localDirPath: String? = null,
+    val isIgnored: Boolean = false,
+)
+
 data class Breadcrumb(val id: Int, val name: String)
+
+private val IGNORED_PATH_PATTERNS = listOf("/Android/media/", "/WhatsApp/", "/Telegram/")
+private val HIDDEN_PATH_PATTERNS = listOf("/data/data/", "/data/user/") // App-private directories (cache/downloads)
 
 @HiltViewModel
 class FolderViewModel @Inject constructor(
@@ -43,39 +56,55 @@ class FolderViewModel @Inject constructor(
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
+    private val _showIgnored = MutableStateFlow(false)
+    val showIgnored: StateFlow<Boolean> = _showIgnored.asStateFlow()
+
+    private var allLocalFolders: List<Folder> = emptyList()
+
     init {
         loadRootFolders()
+    }
+
+    fun toggleShowIgnored() {
+        _showIgnored.value = !_showIgnored.value
+        applyFolderFilter()
+    }
+
+    private fun applyFolderFilter() {
+        _folders.value = if (_showIgnored.value) {
+            allLocalFolders
+        } else {
+            allLocalFolders.filter { !it.isIgnored }
+        }
     }
 
     private fun loadRootFolders() {
         viewModelScope.launch {
             _loading.value = true
+            allLocalFolders = loadLocalDeviceFolders()
+            applyFolderFilter()
 
-            // Load local device folders from Room
-            val localFolders = loadLocalDeviceFolders()
-
-            // Immich has no folder browse API; device folders still work from Room
-            _folders.value = localFolders
             _loading.value = false
         }
     }
 
     private suspend fun loadLocalDeviceFolders(): List<Folder> {
-        // #18: getAllLocalPaths can be large; limit to 5000 for folder grouping
         val paths = mediaDao.getAllLocalPaths().take(5000)
-        val folderMap = mutableMapOf<String, Int>() // dirPath -> count
+        val folderMap = mutableMapOf<String, Int>()
 
         for (path in paths) {
-            // Skip content URIs — only process actual file paths
             if (path.startsWith("content://")) continue
+            // Skip app-private directories (cached downloads)
+            if (HIDDEN_PATH_PATTERNS.any { path.contains(it) }) continue
             val parent = java.io.File(path).parent ?: continue
             folderMap[parent] = (folderMap[parent] ?: 0) + 1
         }
 
-        return folderMap.entries
+        val rawFolders = folderMap.entries
             .sortedByDescending { it.value }
             .mapIndexed { index, (dirPath, count) ->
                 val dirName = java.io.File(dirPath).name
+                val isIgnored = IGNORED_PATH_PATTERNS.any { dirPath.contains(it) }
                 val cover = mediaDao.getByLocalPath(
                     paths.first { it.startsWith(dirPath) },
                 )
@@ -87,11 +116,22 @@ class FolderViewModel @Inject constructor(
                     coverCacheKey = cover?.cacheKey ?: "",
                     coverLocalPath = cover?.localPath,
                     localDirPath = dirPath,
+                    isIgnored = isIgnored,
                 )
             }
+
+        // Disambiguate duplicate names: append parent dir in parentheses
+        val nameCounts = rawFolders.groupBy { it.name }
+        return rawFolders.map { folder ->
+            if ((nameCounts[folder.name]?.size ?: 0) > 1 && folder.localDirPath != null) {
+                val parentName = java.io.File(folder.localDirPath).parentFile?.name ?: ""
+                folder.copy(name = "${folder.name} ($parentName)")
+            } else {
+                folder
+            }
+        }
     }
 
-    // Map local folder IDs to their directory paths
     private val localFolderPaths = mutableMapOf<Int, String>()
 
     fun navigateToFolder(id: Int, name: String, localDirPath: String? = null) {
@@ -103,11 +143,10 @@ class FolderViewModel @Inject constructor(
 
         val dirPath = localDirPath ?: localFolderPaths[id]
         if (id < 0 && dirPath != null) {
-            // Local device folder — query Room by localPath prefix
             _photos.value = mediaDao.getByLocalDir("$dirPath/").map { entities ->
                 entities.map { it.toDomain() }
             }
-            _folders.value = emptyList() // local folders are flat, no sub-folders
+            _folders.value = emptyList()
             _loading.value = false
         } else {
             _photos.value = mediaRepository.observeFolder(id)

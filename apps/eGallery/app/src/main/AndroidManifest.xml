@@ -103,10 +103,11 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- WorkManager foreground service for uploads -->
         <service
-            android:name=".sync.CameraWatcher"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
 
         <receiver
             android:name=".sync.BootReceiver"

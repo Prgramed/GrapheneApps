@@ -4,8 +4,9 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.egallery.api.ImmichPhotoMapper
+import dev.egallery.api.ImmichPhotoService
 import dev.egallery.data.CredentialStore
-import dev.egallery.data.db.dao.MediaDao
 import dev.egallery.data.db.dao.PersonDao
 import dev.egallery.data.repository.toDomain
 import dev.egallery.domain.model.MediaItem
@@ -21,9 +22,9 @@ import javax.inject.Inject
 @HiltViewModel
 class PersonDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
+    private val immichApi: ImmichPhotoService,
     private val credentialStore: CredentialStore,
     private val personDao: PersonDao,
-    private val mediaDao: MediaDao,
 ) : ViewModel() {
 
     private val personId: String = savedStateHandle["personId"] ?: ""
@@ -39,7 +40,6 @@ class PersonDetailViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            // Load person info from Room
             personDao.getAll().collect { persons ->
                 _person.value = persons.find { it.id == personId }?.toDomain()
             }
@@ -50,11 +50,15 @@ class PersonDetailViewModel @Inject constructor(
     private fun loadPersonPhotos() {
         viewModelScope.launch {
             try {
-                // Load from Room DB (data synced from Immich already)
-                val allMedia = mediaDao.getAllNasIdsOrdered()
-                // Person photos are loaded from the synced Room data
-                // For now, show empty until album-based person sync is implemented
-                _photos.value = emptyList()
+                val body = kotlinx.serialization.json.buildJsonObject {
+                    put("personIds", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(personId))))
+                    put("page", kotlinx.serialization.json.JsonPrimitive(1))
+                    put("size", kotlinx.serialization.json.JsonPrimitive(500))
+                }
+                val response = immichApi.searchMetadata(body)
+                _photos.value = response.assets.items.mapNotNull {
+                    ImmichPhotoMapper.run { it.toDomain() }
+                }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to load person $personId photos")
             }
@@ -62,7 +66,6 @@ class PersonDetailViewModel @Inject constructor(
         }
     }
 
-    fun thumbnailUrl(nasId: String, cacheKey: String, isSharedSpace: Boolean = false): String {
-        return ThumbnailUrlBuilder.thumbnail(credentialStore.serverUrl, nasId)
-    }
+    fun thumbnailUrl(nasId: String, cacheKey: String = "", isSharedSpace: Boolean = false): String =
+        ThumbnailUrlBuilder.thumbnail(credentialStore.serverUrl, nasId)
 }

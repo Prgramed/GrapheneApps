@@ -1,21 +1,16 @@
-package dev.egallery.sync
+package dev.eweather
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import dagger.hilt.android.AndroidEntryPoint
+import dev.eweather.data.worker.WeatherRefreshWorker
 import timber.log.Timber
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
-
-    @Inject lateinit var evictionScheduler: EvictionScheduler
-
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            Timber.d("Boot completed — scheduling daily eviction")
-            evictionScheduler.scheduleDaily()
+            Timber.d("Boot completed — scheduling weather refresh")
+            WeatherRefreshWorker.schedule(context)
         }
     }
 }

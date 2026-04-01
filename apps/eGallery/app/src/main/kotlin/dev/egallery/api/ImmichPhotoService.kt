@@ -5,6 +5,7 @@ import dev.egallery.api.dto.DeltaSyncRequest
 import dev.egallery.api.dto.DeltaSyncResponse
 import dev.egallery.api.dto.ImmichAlbum
 import dev.egallery.api.dto.ImmichAsset
+import dev.egallery.api.dto.ImmichMapMarker
 import dev.egallery.api.dto.ImmichPeopleResponse
 import dev.egallery.api.dto.ImmichServerInfo
 import dev.egallery.api.dto.ImmichTimeBucket
@@ -65,7 +66,7 @@ interface ImmichPhotoService {
     suspend fun streamVideo(@Path("id") id: String): ResponseBody
 
     @DELETE("/api/assets")
-    suspend fun deleteAssets(@Body body: Map<String, @JvmSuppressWildcards Any>): Unit
+    suspend fun deleteAssets(@Body body: kotlinx.serialization.json.JsonObject): Unit
 
     // --- Albums ---
 
@@ -96,13 +97,32 @@ interface ImmichPhotoService {
     @GET("/api/people/{id}/thumbnail")
     suspend fun getPersonThumbnail(@Path("id") id: String): ResponseBody
 
+    // --- Map ---
+
+    @GET("/api/map/markers")
+    suspend fun getMapMarkers(): List<ImmichMapMarker>
+
+    // --- Search ---
+
+    @POST("/api/search/smart")
+    suspend fun searchSmart(@Body body: kotlinx.serialization.json.JsonObject): dev.egallery.api.dto.ImmichSearchResponse
+
+    @POST("/api/search/metadata")
+    suspend fun searchMetadata(@Body body: kotlinx.serialization.json.JsonObject): dev.egallery.api.dto.ImmichSearchResponse
+
+    @GET("/api/search/suggestions")
+    suspend fun getSearchSuggestions(
+        @Query("type") type: String,
+        @Query("query") query: String? = null,
+    ): List<String>
+
     // --- Sync ---
 
     @POST("/api/sync/delta-sync")
     suspend fun deltaSync(@Body request: DeltaSyncRequest): DeltaSyncResponse
 
     @POST("/api/assets/bulk-upload-check")
-    suspend fun bulkUploadCheck(@Body body: Map<String, @JvmSuppressWildcards Any>): BulkUploadCheckResponse
+    suspend fun bulkUploadCheck(@Body body: kotlinx.serialization.json.JsonObject): BulkUploadCheckResponse
 
     // --- Upload ---
 
