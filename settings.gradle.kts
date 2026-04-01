@@ -86,3 +86,8 @@ include(":apps:ecalendar:app")
 
 // eGallery app
 include(":apps:egallery:app")
+
+// eQuran app
+include(":apps:equran:app")
+include(":apps:equran:domain")
+include(":apps:equran:data")

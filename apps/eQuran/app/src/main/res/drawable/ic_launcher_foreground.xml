@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Closed book - back cover -->
+    <path
+        android:fillColor="#1A6B2A"
+        android:pathData="M36,32 L70,32 Q73,32 73,35 L73,73 Q73,76 70,76 L36,76 Q33,76 33,73 L33,35 Q33,32 36,32 Z" />
+
+    <!-- Closed book - front cover -->
+    <path
+        android:fillColor="#2E7D32"
+        android:pathData="M37,31 L71,31 Q74,31 74,34 L74,72 Q74,75 71,75 L37,75 Q34,75 34,72 L34,34 Q34,31 37,31 Z" />
+
+    <!-- Pages edge -->
+    <path
+        android:fillColor="#FFF8E1"
+        android:pathData="M34,34 L34,72 L36,76 L36,32 Z" />
+
+    <!-- Spine -->
+    <path
+        android:fillColor="#145220"
+        android:pathData="M34,31 L38,31 L38,75 L34,75 Z" />
+
+    <!-- Spine ridge -->
+    <path
+        android:fillColor="#1A6B2A"
+        android:pathData="M36,31 L37,31 L37,75 L36,75 Z" />
+
+    <!-- Gold border -->
+    <path
+        android:fillColor="#C9A836"
+        android:pathData="M42,36 L70,36 L70,70 L42,70 Z" />
+    <path
+        android:fillColor="#2E7D32"
+        android:pathData="M43.2,37.2 L68.8,37.2 L68.8,68.8 L43.2,68.8 Z" />
+
+    <!-- Inner gold border -->
+    <path
+        android:fillColor="#C9A836"
+        android:pathData="M45,39 L67,39 L67,67 L45,67 Z" />
+    <path
+        android:fillColor="#2E7D32"
+        android:pathData="M46,40 L66,40 L66,66 L46,66 Z" />
+
+    <!-- Central octagonal medallion -->
+    <path
+        android:fillColor="#C9A836"
+        android:pathData="M56,45 L61,48 L63,53 L61,58 L56,61 L51,58 L49,53 L51,48 Z" />
+    <path
+        android:fillColor="#2E7D32"
+        android:pathData="M56,46.5 L60,49 L61.5,53 L60,57 L56,59.5 L52,57 L50.5,53 L52,49 Z" />
+
+    <!-- 8-point star -->
+    <path
+        android:fillColor="#C9A836"
+        android:pathData="M56,48 L57.5,51.5 L61,53 L57.5,54.5 L56,58 L54.5,54.5 L51,53 L54.5,51.5 Z" />
+    <path
+        android:fillColor="#C9A836"
+        android:pathData="M53,49.5 L56,50.5 L59,49.5 L58,52.5 L59,55.5 L56,54.5 L53,55.5 L54,52.5 Z" />
+
+    <!-- Center dot -->
+    <path
+        android:fillColor="#C9A836"
+        android:pathData="M55,52 A1,1 0 1,1 57,52 A1,1 0 1,1 55,52 Z" />
+
+    <!-- Top band -->
+    <path
+        android:fillColor="#C9A836"
+        android:pathData="M49,42 L63,42 L63,43 L49,43 Z" />
+
+    <!-- Bottom band -->
+    <path
+        android:fillColor="#C9A836"
+        android:pathData="M49,63 L63,63 L63,64 L49,64 Z" />
+
+</vector>
