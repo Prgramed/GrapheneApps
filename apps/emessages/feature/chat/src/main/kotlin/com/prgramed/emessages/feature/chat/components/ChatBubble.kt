@@ -135,8 +135,14 @@ fun ChatBubble(
                     message.attachments.forEach { attachment ->
                         when {
                             attachment.mimeType.startsWith("image/") -> {
+                                val context = androidx.compose.ui.platform.LocalContext.current
+                                val imageModel = remember(message.id, attachment.uri) {
+                                    com.prgramed.emessages.data.message.ThumbnailCache
+                                        .getThumbnail(context, message.id)
+                                        ?: attachment.uri
+                                }
                                 AsyncImage(
-                                    model = attachment.uri,
+                                    model = imageModel,
                                     contentDescription = "Image",
                                     modifier = Modifier
                                         .fillMaxWidth()

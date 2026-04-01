@@ -64,6 +64,26 @@ class MmsDownloadedReceiver : BroadcastReceiver() {
         val sender = getMmsSender(context, mmsId)
         val body = getMmsBody(context, mmsId) ?: "MMS received"
 
+        // Pre-cache image thumbnails for smooth scrolling
+        try {
+            val partUri = android.net.Uri.parse("content://mms/part")
+            context.contentResolver.query(
+                partUri, arrayOf("_id", "ct"),
+                "mid = ?", arrayOf(mmsId.toString()), null,
+            )?.use { cursor ->
+                val idIdx = cursor.getColumnIndex("_id")
+                val ctIdx = cursor.getColumnIndex("ct")
+                while (cursor.moveToNext()) {
+                    val ct = cursor.getString(ctIdx) ?: continue
+                    if (ct.startsWith("image/")) {
+                        val partId = cursor.getLong(idIdx)
+                        val contentUri = android.net.Uri.parse("content://mms/part/$partId")
+                        com.prgramed.emessages.data.message.ThumbnailCache.cache(context, contentUri, mmsId)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
         if (sender != null) {
             val threadId = getThreadId(context, mmsId)
             showNotification(context, sender, body, threadId ?: sender.hashCode().toLong())

@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -55,13 +56,22 @@ class MessageRepositoryImpl @Inject constructor(
         )
         trySend(Unit)
         awaitClose { contentResolver.unregisterContentObserver(observer) }
-    }.debounce(500).map {
-        val smsMessages = loadSmsMessages(threadId, limit = PAGE_SIZE)
-        val mmsMessages = loadMmsMessages(threadId, limit = PAGE_SIZE)
-        (smsMessages + mmsMessages)
-            .sortedByDescending { it.timestamp }
-            .take(PAGE_SIZE)
-            .reversed()
+    }.debounce(500).scan(emptyList<Message>()) { existing, _ ->
+        if (existing.isEmpty()) {
+            // First load — full query
+            val sms = loadSmsMessages(threadId, limit = PAGE_SIZE)
+            val mms = loadMmsMessages(threadId, limit = PAGE_SIZE)
+            (sms + mms).sortedByDescending { it.timestamp }.take(PAGE_SIZE).reversed()
+        } else {
+            // Incremental — only fetch messages newer than the latest we have
+            val newestTs = existing.lastOrNull()?.timestamp ?: 0L
+            val newSms = loadSmsMessages(threadId, limit = 50, afterTimestamp = newestTs)
+            val newMms = loadMmsMessages(threadId, limit = 50, afterTimestamp = newestTs)
+            val existingIds = existing.map { it.id }.toSet()
+            val newMessages = (newSms + newMms).filter { it.id !in existingIds }
+            if (newMessages.isEmpty()) existing
+            else (existing + newMessages).sortedBy { it.timestamp }
+        }
     }.flowOn(Dispatchers.IO)
 
     override suspend fun loadOlderMessages(
@@ -196,7 +206,23 @@ class MessageRepositoryImpl @Inject constructor(
             )
             val smsManager = context.getSystemService(SmsManager::class.java)
             android.util.Log.d("eMessages", "sendMms: sending to $address, pdu=${pdu.size} bytes")
-            smsManager.sendMultimediaMessage(context, pduUri, null, null, sentIntent)
+
+            // Retry with exponential backoff
+            var lastError: Exception? = null
+            for (attempt in 1..3) {
+                try {
+                    smsManager.sendMultimediaMessage(context, pduUri, null, null, sentIntent)
+                    lastError = null
+                    break
+                } catch (e: Exception) {
+                    lastError = e
+                    if (attempt < 3) kotlinx.coroutines.delay(1000L * (1 shl attempt))
+                }
+            }
+            if (lastError != null) {
+                pduFile.delete()
+                throw lastError
+            }
 
             // Write sent MMS to content provider so it shows in conversation
             val threadId = Telephony.Threads.getOrCreateThreadId(context, setOf(address))
@@ -206,6 +232,7 @@ class MessageRepositoryImpl @Inject constructor(
             pduFile.deleteOnExit()
         } catch (e: Exception) {
             android.util.Log.e("eMessages", "sendMms failed", e)
+            throw e // Propagate so ChatViewModel can show error and restore text
         }
         Unit
     }
@@ -542,15 +569,18 @@ class MessageRepositoryImpl @Inject constructor(
         threadId: Long,
         limit: Int? = null,
         beforeTimestamp: Long? = null,
+        afterTimestamp: Long? = null,
     ): List<Message> = try {
         val messages = mutableListOf<Message>()
         val selection = buildString {
             append("${Telephony.Sms.THREAD_ID} = ?")
             if (beforeTimestamp != null) append(" AND ${Telephony.Sms.DATE} < ?")
+            if (afterTimestamp != null) append(" AND ${Telephony.Sms.DATE} > ?")
         }
         val selectionArgs = buildList {
             add(threadId.toString())
             if (beforeTimestamp != null) add(beforeTimestamp.toString())
+            if (afterTimestamp != null) add(afterTimestamp.toString())
         }.toTypedArray()
         val sortOrder = buildString {
             append("${Telephony.Sms.DATE} DESC")
@@ -611,16 +641,19 @@ class MessageRepositoryImpl @Inject constructor(
         threadId: Long,
         limit: Int? = null,
         beforeTimestamp: Long? = null,
+        afterTimestamp: Long? = null,
     ): List<Message> = try {
         val messages = mutableListOf<Message>()
         val selection = buildString {
             append("${Telephony.Mms.THREAD_ID} = ?")
             // MMS dates are stored in seconds
             if (beforeTimestamp != null) append(" AND ${Telephony.Mms.DATE} < ?")
+            if (afterTimestamp != null) append(" AND ${Telephony.Mms.DATE} > ?")
         }
         val selectionArgs = buildList {
             add(threadId.toString())
             if (beforeTimestamp != null) add((beforeTimestamp / 1000).toString())
+            if (afterTimestamp != null) add((afterTimestamp / 1000).toString())
         }.toTypedArray()
         val sortOrder = buildString {
             append("${Telephony.Mms.DATE} DESC")
