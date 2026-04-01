@@ -78,6 +78,10 @@ class DownloadManager @Inject constructor(
         workManager.cancelAllWorkByTag("album_$albumId")
     }
 
+    fun pruneWork() {
+        workManager.pruneWork()
+    }
+
     fun observeDownloadState(trackId: String): Flow<DownloadState> =
         workManager.getWorkInfosForUniqueWorkFlow("download_$trackId")
             .map { infos -> infos.firstOrNull().toDownloadState(trackId) }
@@ -86,7 +90,7 @@ class DownloadManager @Inject constructor(
         workManager.getWorkInfosByTagFlow("download")
             .map { infos ->
                 infos.map { info ->
-                    val id = info.tags.firstOrNull { it != "download" && !it.startsWith("album_") } ?: ""
+                    val id = info.tags.firstOrNull { it != "download" && !it.startsWith("album_") && !it.contains(".") } ?: info.id.toString()
                     id to info.toDownloadState(id)
                 }
             }

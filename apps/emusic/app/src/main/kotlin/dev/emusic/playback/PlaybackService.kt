@@ -352,7 +352,7 @@ class PlaybackService : MediaLibraryService() {
                     .setTitle(track.title)
                     .setArtist(track.artist)
                     .setAlbumTitle(track.album)
-                    .setArtworkUri(android.net.Uri.parse(urlBuilder.getCoverArtUrlWithAuth(track.albumId)))
+                    .setArtworkUri(android.net.Uri.parse(urlBuilder.getCoverArtUrlWithAuth(track.coverArtId ?: track.albumId)))
                     .build(),
             )
             .build()

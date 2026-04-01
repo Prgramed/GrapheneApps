@@ -62,4 +62,10 @@ interface AlbumDao {
 
     @Query("SELECT id FROM albums WHERE id IN (:ids)")
     suspend fun getExistingIds(ids: List<String>): List<String>
+
+    @Query("UPDATE albums SET pinned = :pinned WHERE id = :id")
+    suspend fun setPinned(id: String, pinned: Boolean)
+
+    @Query("SELECT * FROM albums WHERE pinned = 1 ORDER BY name COLLATE NOCASE")
+    fun observePinned(): Flow<List<AlbumEntity>>
 }

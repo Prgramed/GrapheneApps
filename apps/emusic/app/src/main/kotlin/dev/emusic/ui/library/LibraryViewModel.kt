@@ -12,6 +12,9 @@ import dev.emusic.domain.model.Album
 import dev.emusic.domain.model.Artist
 import dev.emusic.domain.model.Track
 import dev.emusic.domain.repository.LibraryRepository
+import dev.emusic.data.db.dao.PlaylistDao
+import dev.emusic.data.download.DownloadManager
+import dev.emusic.domain.model.DownloadState
 import dev.emusic.domain.usecase.SyncLibraryUseCase
 import dev.emusic.domain.usecase.SyncProgress
 import dev.emusic.playback.QueueManager
@@ -20,8 +23,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -31,6 +37,8 @@ class LibraryViewModel @Inject constructor(
     private val libraryRepository: LibraryRepository,
     val queueManager: QueueManager,
     private val syncLibraryUseCase: SyncLibraryUseCase,
+    private val downloadManager: DownloadManager,
+    private val playlistDao: PlaylistDao,
     private val trackDao: TrackDao,
     private val albumDao: AlbumDao,
     private val artistDao: ArtistDao,
@@ -106,6 +114,32 @@ class LibraryViewModel @Inject constructor(
         libraryRepository.observeAllTracks().cachedIn(viewModelScope)
 
     val syncProgress: StateFlow<SyncProgress?> = syncLibraryUseCase.progress
+
+    private val _pendingDownloadCount = MutableStateFlow(0)
+    val pendingDownloadCount: StateFlow<Int> = _pendingDownloadCount.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            // Combine pinned items + downloaded tracks to react to both pin changes and download completions
+            combine(
+                playlistDao.observePinned(),
+                albumDao.observeAll(),
+                trackDao.observeDownloaded(),
+            ) { pinnedPlaylists, allAlbums, _ ->
+                val pinnedAlbums = allAlbums.filter { it.pinned }
+                pinnedPlaylists to pinnedAlbums
+            }.collect { (pinnedPlaylists, pinnedAlbums) ->
+                var pending = 0
+                for (pl in pinnedPlaylists) {
+                    pending += playlistDao.getUndownloadedPlaylistTracks(pl.id).size
+                }
+                for (alb in pinnedAlbums) {
+                    pending += trackDao.getUndownloadedByAlbum(alb.id).size
+                }
+                _pendingDownloadCount.value = pending
+            }
+        }
+    }
 
     init {
         viewModelScope.launch {

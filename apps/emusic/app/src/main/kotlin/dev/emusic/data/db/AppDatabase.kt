@@ -37,7 +37,7 @@ import dev.emusic.data.db.entity.TrackFtsEntity
         CountryEntity::class,
         EqPresetEntity::class,
     ],
-    version = 7,
+    version = 9,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

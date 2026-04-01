@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.emusic.data.db.dao.ScrobbleDao
 import dev.emusic.data.db.dao.TrackDao
 import dev.emusic.data.db.entity.toDomain
+import dev.emusic.data.db.dao.PlaylistDao
 import dev.emusic.data.download.DownloadManager
 import dev.emusic.domain.model.Playlist
 import dev.emusic.domain.model.Track
@@ -14,9 +15,12 @@ import dev.emusic.domain.repository.LibraryRepository
 import dev.emusic.domain.repository.PlaylistRepository
 import dev.emusic.playback.QueueManager
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -29,6 +33,7 @@ class PlaylistDetailViewModel @Inject constructor(
     private val trackDao: TrackDao,
     private val scrobbleDao: ScrobbleDao,
     private val downloadManager: DownloadManager,
+    private val playlistDao: PlaylistDao,
 ) : ViewModel() {
 
     private val playlistId: String = savedStateHandle["playlistId"] ?: ""
@@ -101,103 +106,52 @@ class PlaylistDetailViewModel @Inject constructor(
         }
     }
 
-    enum class DlState { NONE, DOWNLOADING, DONE }
+    // Pinned = "download this playlist" toggle
+    val isPinned: StateFlow<Boolean> = playlistDao.observeAll()
+        .map { all -> all.find { it.id == playlistId }?.pinned ?: false }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    private val _dlState = MutableStateFlow(DlState.NONE)
-    val dlState: StateFlow<DlState> = _dlState.asStateFlow()
+    // Download progress: count of tracks with localPath / total tracks
+    private val _downloadProgress = MutableStateFlow("")
+    val downloadProgress: StateFlow<String> = _downloadProgress.asStateFlow()
 
-    private val _downloadStatus = MutableStateFlow("")
-    val downloadStatus: StateFlow<String> = _downloadStatus.asStateFlow()
-
-    private var downloadJob: kotlinx.coroutines.Job? = null
-    private var hasCheckedInitial = false
-
-    fun checkDownloadState() {
-        // Only run once on init — never override DOWNLOADING state
-        if (hasCheckedInitial || _dlState.value == DlState.DOWNLOADING) return
-        val tracks = _tracks.value
-        if (tracks.isEmpty()) return // Don't mark checked — retry when tracks load
-        hasCheckedInitial = true
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val total = tracks.size
-            val done = tracks.count { trackDao.getById(it.id)?.localPath != null }
-            if (done >= total) {
-                _dlState.value = DlState.DONE
-                _downloadStatus.value = "All downloaded"
-            } else if (done > 0) {
-                _downloadStatus.value = "$done/$total downloaded"
-            }
-        }
-    }
-
-    fun toggleDownload() {
-        when (_dlState.value) {
-            DlState.NONE -> startDownload()
-            DlState.DOWNLOADING -> { /* button disabled */ }
-            DlState.DONE -> removeDownloads()
-        }
-    }
-
-    private fun startDownload() {
-        _dlState.value = DlState.DOWNLOADING
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val tracks = _tracks.value
-            if (tracks.isEmpty()) { _dlState.value = DlState.NONE; return@launch }
-
-            val total = tracks.size
-            // Build a queue of tracks not yet downloaded
-            val remaining = tracks.filter { trackDao.getById(it.id)?.localPath == null }
-
-            if (remaining.isEmpty()) {
-                _dlState.value = DlState.DONE
-                _downloadStatus.value = "All downloaded"
-                return@launch
-            }
-
-            _downloadStatus.value = "Downloading ${total - remaining.size}/$total"
-
-            // Enqueue all tracks but only a small batch at a time to avoid
-            // Android's JobScheduler killing workers for "too many jobs running"
-            val batchSize = 5
-            val queue = ArrayDeque(remaining)
-
-            suspend fun enqueueBatch() {
-                repeat(batchSize) {
-                    val track = queue.removeFirstOrNull() ?: return
-                    downloadManager.enqueue(track)
-                }
-            }
-
-            enqueueBatch()
-
-            // Poll for progress and feed the queue
-            downloadJob?.cancel()
-            downloadJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                var lastDone = total - remaining.size
-                while (true) {
-                    kotlinx.coroutines.delay(3000)
-                    val done = tracks.count { trackDao.getById(it.id)?.localPath != null }
-                    _downloadStatus.value = "Downloading $done/$total"
-
-                    // When downloads complete, enqueue more
-                    if (done > lastDone) {
-                        enqueueBatch()
-                        lastDone = done
-                    }
-
-                    if (done >= total) {
-                        _dlState.value = DlState.DONE
-                        _downloadStatus.value = "All downloaded"
-                        break
+    init {
+        // Observe download progress reactively
+        if (!isSmart) {
+            viewModelScope.launch {
+                playlistDao.observePlaylistTracks(playlistId).collect { trackEntities ->
+                    val total = trackEntities.size
+                    val done = trackEntities.count { it.localPath != null }
+                    _downloadProgress.value = when {
+                        total == 0 -> ""
+                        done >= total -> "All downloaded"
+                        done > 0 -> "$done / $total downloaded"
+                        else -> ""
                     }
                 }
             }
         }
     }
 
-    private fun removeDownloads() {
+    fun togglePinned() {
+        viewModelScope.launch {
+            val current = isPinned.value
+            playlistDao.setPinned(playlistId, !current)
+            if (current) {
+                // Unpinning — cancel pending downloads for this playlist's tracks
+                val tracks = _tracks.value
+                for (track in tracks) {
+                    downloadManager.cancel(track.id)
+                }
+            }
+            // If pinning, the DownloadQueueProcessor will pick it up automatically
+        }
+    }
+
+    fun removeDownloads() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            _downloadStatus.value = "Removing..."
+            // Unpin first
+            playlistDao.setPinned(playlistId, false)
             val tracks = _tracks.value
             for (track in tracks) {
                 val entity = trackDao.getById(track.id) ?: continue
@@ -206,9 +160,6 @@ class PlaylistDetailViewModel @Inject constructor(
                 trackDao.updateLocalPath(track.id, null)
                 downloadManager.cancel(track.id)
             }
-            _dlState.value = DlState.NONE
-            _downloadStatus.value = ""
-            hasCheckedInitial = false
         }
     }
 

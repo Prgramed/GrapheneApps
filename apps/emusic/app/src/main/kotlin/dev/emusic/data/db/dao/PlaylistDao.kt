@@ -62,4 +62,17 @@ interface PlaylistDao {
         """,
     )
     fun observePlaylistTracks(playlistId: String): Flow<List<TrackEntity>>
+
+    @Query("UPDATE playlists SET pinned = :pinned WHERE id = :id")
+    suspend fun setPinned(id: String, pinned: Boolean)
+
+    @Query("SELECT * FROM playlists WHERE pinned = 1 ORDER BY name COLLATE NOCASE")
+    fun observePinned(): Flow<List<PlaylistEntity>>
+
+    @Query("""
+        SELECT tracks.* FROM tracks
+        INNER JOIN playlist_tracks ON tracks.id = playlist_tracks.trackId
+        WHERE playlist_tracks.playlistId = :playlistId AND tracks.localPath IS NULL
+    """)
+    suspend fun getUndownloadedPlaylistTracks(playlistId: String): List<TrackEntity>
 }

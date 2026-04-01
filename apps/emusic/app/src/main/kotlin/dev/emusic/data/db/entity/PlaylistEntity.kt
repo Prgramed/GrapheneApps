@@ -14,4 +14,5 @@ data class PlaylistEntity(
     val comment: String? = null,
     val createdAt: String? = null,
     val changedAt: String? = null,
+    val pinned: Boolean = false,
 )

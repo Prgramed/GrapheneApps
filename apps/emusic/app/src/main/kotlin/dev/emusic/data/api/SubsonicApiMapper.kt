@@ -26,6 +26,7 @@ fun TrackDto.toDomain(): Track = Track(
     artistId = artistId.orEmpty(),
     album = album.orEmpty(),
     albumId = albumId.orEmpty(),
+    coverArtId = coverArt,
     duration = duration ?: 0,
     trackNumber = track ?: 0,
     discNumber = discNumber ?: 1,

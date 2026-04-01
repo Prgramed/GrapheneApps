@@ -76,6 +76,7 @@ object Routes {
     const val COUNTRY_STATIONS = "country_stations/{countryCode}/{countryName}"
     const val GENRE_DETAIL = "genre_detail/{genre}"
     const val EQUALIZER = "equalizer"
+    const val DOWNLOADS = "downloads"
 
     fun genreDetail(genre: String) = "genre_detail/${android.net.Uri.encode(genre)}"
     const val LISTENING_STATS = "listening_stats"
@@ -247,12 +248,16 @@ fun EMusicNavHost(
             composable(Routes.SETTINGS) {
                 SettingsScreen(
                     onEqualizerClick = { navController.navigate(Routes.EQUALIZER) },
+                    onDownloadsClick = { navController.navigate(Routes.DOWNLOADS) },
                 )
             }
             composable(Routes.EQUALIZER) {
                 EqualizerScreen(
                     onBack = { navController.popBackStack() },
                 )
+            }
+            composable(Routes.DOWNLOADS) {
+                dev.emusic.ui.downloads.DownloadsScreen()
             }
             composable(Routes.LISTENING_STATS) {
                 StatsScreen(

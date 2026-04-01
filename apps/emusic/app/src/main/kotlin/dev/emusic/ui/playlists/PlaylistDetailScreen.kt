@@ -55,11 +55,29 @@ fun PlaylistDetailScreen(
 ) {
     val playlist by viewModel.playlist.collectAsStateWithLifecycle()
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
-    val downloadStatus by viewModel.downloadStatus.collectAsStateWithLifecycle()
-    val dlState by viewModel.dlState.collectAsStateWithLifecycle()
+    val isPinned by viewModel.isPinned.collectAsStateWithLifecycle()
+    val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle()
+    var showRemoveDialog by remember { mutableStateOf(false) }
 
-    androidx.compose.runtime.LaunchedEffect(tracks) {
-        if (tracks.isNotEmpty()) viewModel.checkDownloadState()
+    if (showRemoveDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showRemoveDialog = false },
+            title = { Text("Remove downloads?") },
+            text = { Text("Delete all downloaded tracks for this playlist?") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    viewModel.removeDownloads()
+                    showRemoveDialog = false
+                }) { Text("Remove") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    // Just unpin without deleting files
+                    viewModel.togglePinned()
+                    showRemoveDialog = false
+                }) { Text("Keep files") }
+            },
+        )
     }
 
     var contextTrack by remember { mutableStateOf<dev.emusic.domain.model.Track?>(null) }
@@ -137,28 +155,20 @@ fun PlaylistDetailScreen(
                     Spacer(Modifier.width(4.dp))
                     Text("Shuffle")
                 }
-                IconButton(
-                    onClick = { viewModel.toggleDownload() },
-                    enabled = dlState != PlaylistDetailViewModel.DlState.DOWNLOADING,
-                ) {
-                    when (dlState) {
-                        PlaylistDetailViewModel.DlState.NONE -> Icon(
-                            Icons.Default.Download,
-                            contentDescription = "Download playlist",
+                androidx.compose.material3.Switch(
+                    checked = isPinned,
+                    onCheckedChange = {
+                        if (isPinned) showRemoveDialog = true
+                        else viewModel.togglePinned()
+                    },
+                    thumbContent = {
+                        Icon(
+                            if (isPinned) Icons.Default.DownloadDone else Icons.Default.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
                         )
-                        PlaylistDetailViewModel.DlState.DOWNLOADING -> {
-                            androidx.compose.material3.CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        }
-                        PlaylistDetailViewModel.DlState.DONE -> Icon(
-                            Icons.Default.DownloadDone,
-                            contentDescription = "Remove downloads",
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
+                    },
+                )
             }
         }
 
@@ -178,9 +188,9 @@ fun PlaylistDetailScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
-            if (downloadStatus.isNotBlank()) {
+            if (downloadProgress.isNotBlank()) {
                 Text(
-                    text = downloadStatus,
+                    text = downloadProgress,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
@@ -191,7 +201,7 @@ fun PlaylistDetailScreen(
         // Track list — simple rows (no drag reorder for performance with large playlists)
         items(tracks.size, key = { "${tracks[it].id}_$it" }) { index ->
             val track = tracks[index]
-            val coverUrl = remember(track.albumId) { viewModel.getCoverArtUrl(track.albumId, 100) }
+            val coverUrl = remember(track.coverArtId, track.albumId) { viewModel.getCoverArtUrl(track.coverArtId ?: track.albumId, 100) }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier

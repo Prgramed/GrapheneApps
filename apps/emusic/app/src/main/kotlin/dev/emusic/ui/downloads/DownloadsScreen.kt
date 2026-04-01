@@ -1,6 +1,7 @@
 package dev.emusic.ui.downloads
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -50,9 +52,13 @@ fun DownloadsScreen(
     val storageUsed by viewModel.storageUsed.collectAsStateWithLifecycle()
     val storageAvailable by viewModel.storageAvailable.collectAsStateWithLifecycle()
     val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
+    val orphanedCount by viewModel.orphanedCount.collectAsStateWithLifecycle()
+    val orphanedSize by viewModel.orphanedSize.collectAsStateWithLifecycle()
 
     var showClearDialog by remember { mutableStateOf(false) }
     var albumToRemove by remember { mutableStateOf<DownloadedAlbum?>(null) }
+
+    LaunchedEffect(Unit) { viewModel.scanOrphaned() }
 
     if (showClearDialog) {
         AlertDialog(
@@ -114,6 +120,39 @@ fun DownloadsScreen(
                     if (downloadedAlbums.isNotEmpty()) {
                         IconButton(onClick = { showClearDialog = true }) {
                             Icon(Icons.Default.DeleteSweep, contentDescription = "Clear all")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Orphaned files cleanup
+        if (orphanedCount > 0) {
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(16.dp),
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "$orphanedCount orphaned files",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            Text(
+                                text = "${formatSize(orphanedSize)} on disk with no matching track in library",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f),
+                            )
+                        }
+                        TextButton(onClick = { viewModel.cleanOrphaned() }) {
+                            Text("Clean", color = MaterialTheme.colorScheme.onErrorContainer)
                         }
                     }
                 }

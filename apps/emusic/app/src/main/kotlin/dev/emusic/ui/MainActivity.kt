@@ -117,9 +117,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val coverArtUrl = remember(currentTrack?.albumId) {
-                    currentTrack?.albumId?.let {
-                        libraryRepository.getCoverArtUrl(it)
+                val coverArtUrl = remember(currentTrack?.coverArtId, currentTrack?.albumId) {
+                    currentTrack?.let { t ->
+                        libraryRepository.getCoverArtUrl(t.coverArtId ?: t.albumId)
                     }
                 }
 

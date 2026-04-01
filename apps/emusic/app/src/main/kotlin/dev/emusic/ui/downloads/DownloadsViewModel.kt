@@ -106,6 +106,49 @@ class DownloadsViewModel @Inject constructor(
         }
     }
 
+    private val _orphanedCount = MutableStateFlow(0)
+    val orphanedCount: StateFlow<Int> = _orphanedCount.asStateFlow()
+
+    private val _orphanedSize = MutableStateFlow(0L)
+    val orphanedSize: StateFlow<Long> = _orphanedSize.asStateFlow()
+
+    fun scanOrphaned() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val downloadsDir = File(context.filesDir, "downloads")
+            if (!downloadsDir.exists()) { _orphanedCount.value = 0; _orphanedSize.value = 0; return@launch }
+            val allFiles = downloadsDir.walkBottomUp().filter { it.isFile }.toList()
+            val knownPaths = trackDao.observeDownloaded().let {
+                // Read current snapshot
+                val tracks = trackDao.getAllDownloaded()
+                tracks.mapNotNull { t -> t.localPath }.toSet()
+            }
+            val orphaned = allFiles.filter { it.absolutePath !in knownPaths }
+            _orphanedCount.value = orphaned.size
+            _orphanedSize.value = orphaned.sumOf { it.length() }
+        }
+    }
+
+    fun cleanOrphaned() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val downloadsDir = File(context.filesDir, "downloads")
+            if (!downloadsDir.exists()) return@launch
+            val allFiles = downloadsDir.walkBottomUp().filter { it.isFile }.toList()
+            val knownPaths = trackDao.getAllDownloaded().mapNotNull { it.localPath }.toSet()
+            var cleaned = 0
+            for (file in allFiles) {
+                if (file.absolutePath !in knownPaths) {
+                    file.delete()
+                    cleaned++
+                }
+            }
+            _orphanedCount.value = 0
+            _orphanedSize.value = 0
+            // Clean empty directories
+            downloadsDir.walkBottomUp().filter { it.isDirectory && it.listFiles()?.isEmpty() == true }.forEach { it.delete() }
+            refreshStorageInfo()
+        }
+    }
+
     private fun refreshStorageInfo() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val downloadsDir = File(context.filesDir, "downloads")

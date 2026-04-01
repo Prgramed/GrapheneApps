@@ -25,7 +25,12 @@ class PlaylistRepositoryImpl @Inject constructor(
     override suspend fun syncPlaylists() {
         val response = api.getPlaylists().subsonicResponse
         val playlists = response.playlists?.playlist ?: return
-        playlistDao.upsertAll(playlists.map { it.toDomain().toEntity() })
+        val entities = playlists.map { dto ->
+            val entity = dto.toDomain().toEntity()
+            val existing = playlistDao.getById(entity.id)
+            if (existing != null) entity.copy(pinned = existing.pinned) else entity
+        }
+        playlistDao.upsertAll(entities)
 
         // Strip playlists deleted from server
         val serverIds = playlists.mapNotNull { it.id }.toSet()

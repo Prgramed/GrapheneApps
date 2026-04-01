@@ -57,7 +57,11 @@ class LibraryRepositoryImpl @Inject constructor(
                 offset = offset,
             ).subsonicResponse
             val albums = response.albumList2?.album
-                ?.map { it.toDomain().toEntity() }
+                ?.map { dto ->
+                    val entity = dto.toDomain().toEntity()
+                    val existing = albumDao.getById(entity.id)
+                    if (existing != null) entity.copy(pinned = existing.pinned) else entity
+                }
                 ?: break
             if (albums.isEmpty()) break
             albumDao.upsertAll(albums)

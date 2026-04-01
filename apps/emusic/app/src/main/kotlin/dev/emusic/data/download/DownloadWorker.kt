@@ -45,7 +45,7 @@ class DownloadWorker @AssistedInject constructor(
         val notificationId = trackId.hashCode()
 
         return try {
-            // Skip foreground — runs as background work (avoids FGS type issues on SDK 35)
+            setForeground(createProgressForegroundInfo(notificationId, trackTitle, albumId, 0))
             downloadTrack(trackId, destFile, notificationId, trackTitle, albumId)
             trackDao.updateLocalPath(trackId, destFile.absolutePath)
             downloadArtwork(albumId)

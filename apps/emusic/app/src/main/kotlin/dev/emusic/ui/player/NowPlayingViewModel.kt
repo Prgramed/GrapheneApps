@@ -84,8 +84,8 @@ class NowPlayingViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         track = track,
-                        coverArtUrl = track?.albumId?.let { id ->
-                            libraryRepository.getCoverArtUrl(id)
+                        coverArtUrl = track?.let { t ->
+                            libraryRepository.getCoverArtUrl(t.coverArtId ?: t.albumId)
                         },
                         lyrics = null, // Reset on track change
                     )
@@ -187,8 +187,18 @@ class NowPlayingViewModel @Inject constructor(
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             controller?.let { mc ->
                 syncStateFromPlayer(mc)
-                // Bug fix: immediately update position so slider resets on track change
-                _uiState.update { it.copy(positionMs = mc.currentPosition, durationMs = mc.duration.coerceAtLeast(0)) }
+            }
+            // Immediately read the new track from queueManager so we don't wait for flow
+            val track = queueManager.currentTrack.value
+            _uiState.update {
+                it.copy(
+                    track = track,
+                    coverArtUrl = track?.let { t -> libraryRepository.getCoverArtUrl(t.coverArtId ?: t.albumId) },
+                    lyrics = null,
+                )
+            }
+            if (track != null) {
+                viewModelScope.launch { loadLyrics(track) }
             }
         }
 

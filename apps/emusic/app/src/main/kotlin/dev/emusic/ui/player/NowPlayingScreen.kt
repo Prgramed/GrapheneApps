@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.VolumeMute
 import androidx.compose.material.icons.filled.VolumeUp
@@ -329,7 +330,7 @@ private fun RadioNowPlayingLayout(
             Row(modifier = Modifier.align(Alignment.TopEnd)) {
                 IconButton(onClick = onCastClick) {
                     Icon(
-                        Icons.Default.Cast,
+                        if (state.isCasting) Icons.Default.CastConnected else Icons.Default.Cast,
                         contentDescription = if (state.isCasting) "Casting to ${state.castDeviceName}" else "Cast",
                         tint = if (state.isCasting) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -539,7 +540,7 @@ private fun MusicNowPlayingLayout(
             Row(modifier = Modifier.align(Alignment.TopEnd)) {
                 IconButton(onClick = onCastClick) {
                     Icon(
-                        Icons.Default.Cast,
+                        if (state.isCasting) Icons.Default.CastConnected else Icons.Default.Cast,
                         contentDescription = if (state.isCasting) "Casting to ${state.castDeviceName}" else "Cast",
                         tint = if (state.isCasting) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,

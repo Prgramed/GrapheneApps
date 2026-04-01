@@ -31,6 +31,9 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE localPath IS NOT NULL ORDER BY title COLLATE NOCASE")
     fun observeDownloaded(): Flow<List<TrackEntity>>
 
+    @Query("SELECT * FROM tracks WHERE localPath IS NOT NULL")
+    suspend fun getAllDownloaded(): List<TrackEntity>
+
     @Query("SELECT * FROM tracks WHERE playCount = 0 ORDER BY title COLLATE NOCASE")
     fun observeNeverPlayed(): Flow<List<TrackEntity>>
 
@@ -98,6 +101,9 @@ interface TrackDao {
 
     @Query("SELECT id, localPath FROM tracks WHERE id IN (:ids) AND localPath IS NOT NULL")
     suspend fun getLocalPaths(ids: List<String>): List<LocalPathEntry>
+
+    @Query("SELECT * FROM tracks WHERE albumId = :albumId AND localPath IS NULL")
+    suspend fun getUndownloadedByAlbum(albumId: String): List<TrackEntity>
 }
 
 data class GenreCount(

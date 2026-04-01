@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun SettingsScreen(
     onEqualizerClick: () -> Unit = {},
+    onDownloadsClick: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
@@ -220,6 +221,12 @@ fun SettingsScreen(
                 checked = forceOfflineMode,
                 onCheckedChange = { viewModel.updateForceOfflineMode(it) },
             )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedButton(onClick = onDownloadsClick) {
+            Text("Manage Downloads")
         }
 
         Spacer(Modifier.height(24.dp))

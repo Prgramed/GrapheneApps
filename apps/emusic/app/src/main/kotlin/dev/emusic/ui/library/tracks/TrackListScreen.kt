@@ -107,7 +107,7 @@ fun TrackListScreen(
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                     ) {
                         AsyncImage(
-                            model = track.albumId.let { viewModel.getCoverArtUrl(it, 100) },
+                            model = viewModel.getCoverArtUrl(track.coverArtId ?: track.albumId, 100),
                             contentDescription = track.album,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier

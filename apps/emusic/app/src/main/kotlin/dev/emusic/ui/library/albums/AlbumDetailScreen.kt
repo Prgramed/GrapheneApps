@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Star
@@ -62,6 +63,29 @@ fun AlbumDetailScreen(
     val albumInfo by viewModel.albumInfo.collectAsStateWithLifecycle()
     val moreByArtist by viewModel.moreByArtist.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val isPinned by viewModel.isPinned.collectAsStateWithLifecycle()
+    val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle()
+    var showRemoveDialog by remember { mutableStateOf(false) }
+
+    if (showRemoveDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showRemoveDialog = false },
+            title = { Text("Remove downloads?") },
+            text = { Text("Delete all downloaded tracks for this album?") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    viewModel.removeDownloads()
+                    showRemoveDialog = false
+                }) { Text("Remove") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    viewModel.togglePinned()
+                    showRemoveDialog = false
+                }) { Text("Keep files") }
+            },
+        )
+    }
 
     var contextTrack by remember { mutableStateOf<dev.emusic.domain.model.Track?>(null) }
     var playlistTrack by remember { mutableStateOf<dev.emusic.domain.model.Track?>(null) }
@@ -171,17 +195,33 @@ fun AlbumDetailScreen(
             }
         }
 
-        // Download Album button
+        // Download Album toggle
         item {
-            OutlinedButton(
-                onClick = { viewModel.downloadAlbum() },
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
-                Icon(Icons.Default.Download, contentDescription = null)
-                Spacer(Modifier.width(4.dp))
-                Text("Download Album")
+                Icon(
+                    if (isPinned) Icons.Default.DownloadDone else Icons.Default.Download,
+                    contentDescription = null,
+                    tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Download Album", style = MaterialTheme.typography.bodyLarge)
+                    if (isPinned && downloadProgress.isNotBlank()) {
+                        Text(downloadProgress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                androidx.compose.material3.Switch(
+                    checked = isPinned,
+                    onCheckedChange = {
+                        if (isPinned) showRemoveDialog = true
+                        else viewModel.togglePinned()
+                    },
+                )
             }
         }
 

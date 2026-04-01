@@ -11,4 +11,5 @@ data class Playlist(
     val createdAt: String? = null,
     val changedAt: String? = null,
     val tracks: List<Track> = emptyList(),
+    val pinned: Boolean = false,
 )

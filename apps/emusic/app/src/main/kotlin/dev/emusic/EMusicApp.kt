@@ -11,6 +11,7 @@ import coil3.memory.MemoryCache
 import coil3.request.crossfade
 import dagger.hilt.android.HiltAndroidApp
 import dev.emusic.data.db.AppDatabase
+import dev.emusic.data.download.DownloadQueueProcessor
 import dev.emusic.playback.NotificationHelper
 import javax.inject.Inject
 
@@ -21,6 +22,7 @@ class EMusicApp : Application(), SingletonImageLoader.Factory, Configuration.Pro
     @Inject lateinit var okHttpClient: okhttp3.OkHttpClient
     @Inject lateinit var database: AppDatabase
     @Inject lateinit var workerFactory: HiltWorkerFactory
+    @Inject lateinit var downloadQueueProcessor: DownloadQueueProcessor
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -36,6 +38,8 @@ class EMusicApp : Application(), SingletonImageLoader.Factory, Configuration.Pro
         Thread {
             database.openHelper.writableDatabase
         }.start()
+
+        downloadQueueProcessor.start()
     }
 
     override fun newImageLoader(context: android.content.Context): ImageLoader =

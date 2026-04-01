@@ -35,4 +35,5 @@ data class AlbumEntity(
     val genre: String? = null,
     val starred: Boolean = false,
     val playCount: Int = 0,
+    val pinned: Boolean = false,
 )

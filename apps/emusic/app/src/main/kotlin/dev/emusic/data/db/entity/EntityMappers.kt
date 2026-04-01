@@ -14,6 +14,7 @@ fun TrackEntity.toDomain(): Track = Track(
     artistId = artistId,
     album = album,
     albumId = albumId,
+    coverArtId = coverArtId,
     duration = duration,
     trackNumber = trackNumber,
     discNumber = discNumber,
@@ -40,6 +41,7 @@ fun Track.toEntity(): TrackEntity = TrackEntity(
     artistId = artistId,
     album = album,
     albumId = albumId,
+    coverArtId = coverArtId,
     duration = duration,
     trackNumber = trackNumber,
     discNumber = discNumber,
@@ -73,6 +75,7 @@ fun AlbumEntity.toDomain(): Album = Album(
     genre = genre,
     starred = starred,
     playCount = playCount,
+    pinned = pinned,
 )
 
 fun Album.toEntity(): AlbumEntity = AlbumEntity(
@@ -87,6 +90,7 @@ fun Album.toEntity(): AlbumEntity = AlbumEntity(
     genre = genre,
     starred = starred,
     playCount = playCount,
+    pinned = pinned,
 )
 
 // --- Artist ---
@@ -119,6 +123,7 @@ fun PlaylistEntity.toDomain(): Playlist = Playlist(
     comment = comment,
     createdAt = createdAt,
     changedAt = changedAt,
+    pinned = pinned,
 )
 
 fun Playlist.toEntity(): PlaylistEntity = PlaylistEntity(
@@ -131,4 +136,5 @@ fun Playlist.toEntity(): PlaylistEntity = PlaylistEntity(
     comment = comment,
     createdAt = createdAt,
     changedAt = changedAt,
+    pinned = pinned,
 )

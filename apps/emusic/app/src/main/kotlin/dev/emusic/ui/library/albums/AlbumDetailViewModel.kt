@@ -4,6 +4,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.emusic.data.db.dao.AlbumDao
+import dev.emusic.data.db.dao.TrackDao
 import dev.emusic.domain.model.Album
 import dev.emusic.domain.model.AlbumInfo
 import dev.emusic.domain.model.Track
@@ -12,8 +14,11 @@ import dev.emusic.domain.repository.LibraryRepository
 import dev.emusic.playback.QueueManager
 import dev.emusic.playback.RadioEngine
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -24,6 +29,8 @@ class AlbumDetailViewModel @Inject constructor(
     val queueManager: QueueManager,
     private val downloadManager: DownloadManager,
     private val radioEngine: RadioEngine,
+    private val albumDao: AlbumDao,
+    private val trackDao: TrackDao,
 ) : ViewModel() {
 
     private val albumId: String = savedStateHandle["albumId"] ?: ""
@@ -94,9 +101,51 @@ class AlbumDetailViewModel @Inject constructor(
         queueManager.play(trackList.shuffled(), 0)
     }
 
-    fun downloadAlbum() {
-        val trackList = _tracks.value.ifEmpty { return }
-        viewModelScope.launch { downloadManager.enqueueAlbum(trackList) }
+    val isPinned: StateFlow<Boolean> = albumDao.observeAll()
+        .map { all -> all.find { it.id == albumId }?.pinned ?: false }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    private val _downloadProgress = MutableStateFlow("")
+    val downloadProgress: StateFlow<String> = _downloadProgress.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            libraryRepository.observeTracksByAlbum(albumId).collect { tracks ->
+                val total = tracks.size
+                val done = tracks.count { it.localPath != null }
+                _downloadProgress.value = when {
+                    total == 0 -> ""
+                    done >= total -> "All downloaded"
+                    done > 0 -> "$done / $total downloaded"
+                    else -> ""
+                }
+            }
+        }
+    }
+
+    fun togglePinned() {
+        viewModelScope.launch {
+            val current = isPinned.value
+            albumDao.setPinned(albumId, !current)
+            if (current) {
+                val tracks = _tracks.value
+                for (track in tracks) { downloadManager.cancel(track.id) }
+            }
+        }
+    }
+
+    fun removeDownloads() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            albumDao.setPinned(albumId, false)
+            val tracks = _tracks.value
+            for (track in tracks) {
+                val entity = trackDao.getById(track.id) ?: continue
+                val path = entity.localPath ?: continue
+                try { java.io.File(path).delete() } catch (_: Exception) { }
+                trackDao.updateLocalPath(track.id, null)
+                downloadManager.cancel(track.id)
+            }
+        }
     }
 
     fun toggleStar(track: Track) = toggleStar(track.id, track.starred)

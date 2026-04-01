@@ -61,6 +61,7 @@ fun LibraryScreen(
     }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val syncProgress by viewModel.syncProgress.collectAsStateWithLifecycle()
+    val pendingDownloadCount by viewModel.pendingDownloadCount.collectAsStateWithLifecycle()
     val albumSort by viewModel.albumSort.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
     val availableGenres by viewModel.availableGenres.collectAsStateWithLifecycle()
@@ -99,6 +100,17 @@ fun LibraryScreen(
                 text = progress.stage,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
+
+        // Download progress indicator
+        if (pendingDownloadCount > 0) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Text(
+                text = "$pendingDownloadCount tracks pending download",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
         }
