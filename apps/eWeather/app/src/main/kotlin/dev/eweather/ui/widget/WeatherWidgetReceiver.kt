@@ -4,6 +4,7 @@ import android.appwidget.AppWidgetManager
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import dev.eweather.data.worker.WeatherRefreshWorker
@@ -18,6 +19,10 @@ class WeatherWidgetReceiver : GlanceAppWidgetReceiver() {
     ) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
         val request = OneTimeWorkRequestBuilder<WeatherRefreshWorker>().build()
-        WorkManager.getInstance(context).enqueue(request)
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "widget_refresh",
+            ExistingWorkPolicy.KEEP,
+            request,
+        )
     }
 }

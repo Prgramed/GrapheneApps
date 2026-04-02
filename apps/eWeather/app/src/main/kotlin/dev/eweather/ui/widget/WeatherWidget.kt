@@ -213,11 +213,20 @@ private data class WidgetData(
 
 private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 
-private suspend fun loadWidgetData(context: Context): WidgetData? {
-    return try {
-        val db = Room.databaseBuilder(context, AppDatabase::class.java, "eweather.db")
+// Singleton DB for widget — avoids creating new Room instance per widget update
+@Volatile private var widgetDb: AppDatabase? = null
+private fun getWidgetDb(context: Context): AppDatabase {
+    return widgetDb ?: synchronized(WeatherWidget::class) {
+        widgetDb ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "eweather.db")
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
+            .also { widgetDb = it }
+    }
+}
+
+private suspend fun loadWidgetData(context: Context): WidgetData? {
+    return try {
+        val db = getWidgetDb(context)
 
         // Get active location ID from DataStore preferences file
         val prefs = context.getSharedPreferences("eweather_widget", Context.MODE_PRIVATE)

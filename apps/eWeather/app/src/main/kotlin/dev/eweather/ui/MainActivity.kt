@@ -25,8 +25,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private var lastWidgetUpdate = 0L
+
     override fun onResume() {
         super.onResume()
+        val now = System.currentTimeMillis()
+        if (now - lastWidgetUpdate < 60_000) return // Skip if updated < 1 minute ago
+        lastWidgetUpdate = now
         lifecycleScope.launch {
             try {
                 val manager = GlanceAppWidgetManager(this@MainActivity)

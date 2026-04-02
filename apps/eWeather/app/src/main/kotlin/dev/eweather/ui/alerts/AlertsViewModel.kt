@@ -13,6 +13,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -50,6 +51,7 @@ class AlertsViewModel @Inject constructor(
 
                 alertRepository.observeActiveAlerts(location.id)
                     .map { alerts -> alerts.sortedByDescending { it.severity.ordinal } }
+                    .catch { timber.log.Timber.w(it, "Alert observation failed") }
                     .collect { _alerts.value = it }
             }
         }

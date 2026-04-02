@@ -34,9 +34,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setRefreshInterval(hours: Int) {
+        val validated = hours.coerceIn(1, 24)
         viewModelScope.launch {
-            preferencesRepository.updateRefreshInterval(hours)
-            WeatherRefreshWorker.schedule(appContext, hours)
+            preferencesRepository.updateRefreshInterval(validated)
+            WeatherRefreshWorker.schedule(appContext, validated)
         }
     }
 
