@@ -67,17 +67,17 @@ fun MemoryViewerScreen(
         else -> "This Year"
     }
 
-    // Auto-advance slideshow
+    // Auto-advance slideshow — instant page jump (no slide animation)
     LaunchedEffect(pagerState.currentPage, isPlaying) {
         if (!isPlaying) return@LaunchedEffect
         progress = 0f
-        val steps = 30 // 3 seconds / 100ms
+        val steps = 50 // 5 seconds / 100ms
         for (i in 1..steps) {
             delay(100)
             progress = i.toFloat() / steps
         }
         if (pagerState.currentPage < assets.size - 1) {
-            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+            pagerState.scrollToPage(pagerState.currentPage + 1)
         } else {
             isPlaying = false // Stop at last photo
         }
@@ -93,7 +93,7 @@ fun MemoryViewerScreen(
             AsyncImage(
                 model = "${serverUrl.trimEnd('/')}/api/assets/$assetId/thumbnail?size=preview",
                 contentDescription = null,
-                contentScale = ContentScale.Fit,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
         }
