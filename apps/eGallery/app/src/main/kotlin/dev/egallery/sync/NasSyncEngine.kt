@@ -441,6 +441,12 @@ class NasSyncEngine @Inject constructor(
 
     private suspend fun scanDevicePhotosSince(sinceMs: Long): List<LocalPhoto> = scanMediaStore(sinceMs)
 
+    private data class PendingPhoto(
+        val path: String, val filename: String, val size: Long,
+        val captureDate: Long, val isVideo: Boolean, val dateModifiedSec: Long,
+        val cachedHash: String?,
+    )
+
     private suspend fun scanMediaStore(sinceMs: Long?): List<LocalPhoto> {
         // Pre-load hash cache from Room: path → (hash, modifiedAt)
         val hashCache = mutableMapOf<String, Pair<String, Long?>>()
@@ -450,11 +456,13 @@ class NasSyncEngine @Inject constructor(
                 hashCache[entry.localPath] = entry.nasHash to entry.localFileModifiedAt
             }
             Timber.d("Hash cache: ${hashCache.size} entries loaded")
+            if (hashCache.size > 50_000) Timber.w("Hash cache very large: ${hashCache.size} entries")
         } catch (e: Exception) {
             Timber.w(e, "Failed to load hash cache")
         }
 
-        val photos = mutableListOf<LocalPhoto>()
+        // Phase 1: Collect metadata from MediaStore cursor (fast, no I/O)
+        val pending = mutableListOf<PendingPhoto>()
 
         for (uri in listOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)) {
             val isVideo = uri == MediaStore.Video.Media.EXTERNAL_CONTENT_URI
@@ -490,30 +498,44 @@ class NasSyncEngine @Inject constructor(
                     val dateModified = dateModifiedSec * 1000L
                     val captureDate = if (dateTaken > 0) dateTaken else dateModified
 
-                    // Use cached hash if file hasn't changed
                     val cachedEntry = hashCache[localPath]
-                    val sha1 = if (cachedEntry != null && cachedEntry.second == dateModifiedSec) {
+                    val cachedHash = if (cachedEntry != null && cachedEntry.second == dateModifiedSec) {
                         cachedEntry.first
-                    } else {
-                        try {
-                            HashUtil.sha1Base64(file)
-                        } catch (e: Exception) {
-                            Timber.w("Failed to hash $filename: ${e.message}")
-                            continue
-                        }
-                    }
+                    } else null
 
-                    photos.add(LocalPhoto(
-                        path = localPath,
-                        filename = filename,
-                        sha1Base64 = sha1,
-                        captureDate = captureDate,
-                        size = size,
-                        isVideo = isVideo,
-                        dateModified = dateModifiedSec,
-                    ))
+                    pending.add(PendingPhoto(localPath, filename, size, captureDate, isVideo, dateModifiedSec, cachedHash))
                 }
             }
+        }
+
+        // Phase 2: Hash cache-miss files in parallel (4 concurrent I/O threads)
+        val hashSemaphore = Semaphore(4)
+        val photos = kotlinx.coroutines.coroutineScope {
+            pending.map { p ->
+                async(Dispatchers.IO) {
+                    val sha1: String = if (p.cachedHash != null) {
+                        p.cachedHash
+                    } else {
+                        hashSemaphore.withPermit {
+                            try {
+                                HashUtil.sha1Base64(File(p.path))
+                            } catch (e: Exception) {
+                                Timber.w("Failed to hash ${p.filename}: ${e.message}")
+                                return@async null
+                            }
+                        }
+                    }
+                    LocalPhoto(
+                        path = p.path,
+                        filename = p.filename,
+                        sha1Base64 = sha1,
+                        captureDate = p.captureDate,
+                        size = p.size,
+                        isVideo = p.isVideo,
+                        dateModified = p.dateModifiedSec,
+                    )
+                }
+            }.awaitAll().filterNotNull()
         }
 
         return photos
