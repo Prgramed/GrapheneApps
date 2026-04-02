@@ -26,6 +26,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -59,6 +60,64 @@ fun MemoryViewerScreen(
     val pagerState = rememberPagerState(pageCount = { assets.size })
     var isPlaying by remember { mutableStateOf(true) }
     var progress by remember { mutableStateOf(0f) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Background music — shuffle ambient tracks from raw resources
+    val mediaPlayer = remember {
+        val trackIds = listOf(
+            "memory_ambient_1", "memory_ambient_2", "memory_ambient_3",
+        ).mapNotNull { name ->
+            val resId = context.resources.getIdentifier(name, "raw", context.packageName)
+            if (resId != 0) resId else null
+        }.shuffled()
+
+        if (trackIds.isNotEmpty()) {
+            android.media.MediaPlayer.create(context, trackIds.first())?.apply {
+                isLooping = true
+                setVolume(0f, 0f) // Start silent, fade in
+            }
+        } else null
+    }
+
+    // Fade in music on start, fade out on exit
+    DisposableEffect(mediaPlayer) {
+        mediaPlayer?.let { mp ->
+            mp.start()
+            // Fade in over 2 seconds
+            val fadeThread = Thread {
+                try {
+                    for (i in 0..20) {
+                        val vol = i / 20f * 0.4f // Max 40% volume
+                        mp.setVolume(vol, vol)
+                        Thread.sleep(100)
+                    }
+                } catch (_: Exception) {}
+            }
+            fadeThread.start()
+        }
+        onDispose {
+            mediaPlayer?.let { mp ->
+                // Quick fade out
+                try {
+                    for (i in 20 downTo 0) {
+                        val vol = i / 20f * 0.4f
+                        mp.setVolume(vol, vol)
+                        Thread.sleep(30)
+                    }
+                } catch (_: Exception) {}
+                mp.stop()
+                mp.release()
+            }
+        }
+    }
+
+    // Pause/resume music with slideshow
+    LaunchedEffect(isPlaying) {
+        mediaPlayer?.let { mp ->
+            if (isPlaying && !mp.isPlaying) mp.start()
+            else if (!isPlaying && mp.isPlaying) mp.pause()
+        }
+    }
 
     val yearsAgo = java.time.Year.now().value - memory.data.year
     val title = when {
