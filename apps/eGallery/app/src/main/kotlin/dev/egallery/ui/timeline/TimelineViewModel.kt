@@ -70,14 +70,33 @@ class TimelineViewModel @Inject constructor(
     // Server URL for UI (thumbnails, memories)
     val serverUrl: StateFlow<String> = MutableStateFlow(credentialStore.serverUrl)
 
-    // Memories
+    // Memories — cached in SharedPreferences for instant load
     private val _memories = MutableStateFlow<List<dev.egallery.api.dto.ImmichMemory>>(emptyList())
     val memories: StateFlow<List<dev.egallery.api.dto.ImmichMemory>> = _memories.asStateFlow()
+
+    private val memoriesPrefs = appContext.getSharedPreferences("memories_cache", Context.MODE_PRIVATE)
+    private val memoriesJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; coerceInputValues = true }
+
+    init {
+        // Load cached memories instantly
+        try {
+            val cached = memoriesPrefs.getString("memories", null)
+            if (cached != null) {
+                _memories.value = memoriesJson.decodeFromString<List<dev.egallery.api.dto.ImmichMemory>>(cached)
+                    .filter { it.assets.isNotEmpty() }
+            }
+        } catch (_: Exception) { }
+    }
 
     fun fetchMemories() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                _memories.value = immichApi.getMemories().filter { it.assets.isNotEmpty() }
+                val fresh = immichApi.getMemories().filter { it.assets.isNotEmpty() }
+                _memories.value = fresh
+                // Cache for next launch
+                memoriesPrefs.edit().putString("memories",
+                    memoriesJson.encodeToString(fresh),
+                ).apply()
             } catch (_: Exception) { }
         }
     }
