@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -195,6 +196,18 @@ fun MemoryViewerScreen(
                         contentDescription = if (isPlaying) "Pause" else "Play",
                         tint = Color.White,
                         modifier = Modifier.size(28.dp),
+                    )
+                }
+                IconButton(onClick = {
+                    val assetIds = assets.map { it.id }
+                    dev.egallery.sync.MemoryVideoExportWorker.enqueue(context, assetIds)
+                    android.widget.Toast.makeText(context, "Exporting video...", android.widget.Toast.LENGTH_SHORT).show()
+                }) {
+                    Icon(
+                        Icons.Default.Save,
+                        contentDescription = "Save as video",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }
