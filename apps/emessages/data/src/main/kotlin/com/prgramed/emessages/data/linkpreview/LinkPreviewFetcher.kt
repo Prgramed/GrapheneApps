@@ -15,7 +15,8 @@ import javax.inject.Singleton
 @Singleton
 class LinkPreviewFetcher @Inject constructor() {
 
-    private val cache = ConcurrentHashMap<String, LinkPreview?>()
+    private val cache = ConcurrentHashMap<String, LinkPreview>()
+    private val failedUrls = ConcurrentHashMap.newKeySet<String>()
     private val maxCacheSize = 200
 
     private val client = OkHttpClient.Builder()
@@ -26,7 +27,7 @@ class LinkPreviewFetcher @Inject constructor() {
 
     suspend fun fetch(url: String): LinkPreview? {
         cache[url]?.let { return it }
-        if (cache.containsKey(url)) return null // Already tried, failed
+        if (url in failedUrls) return null // Already tried, failed
         // Evict if cache too large
         if (cache.size > maxCacheSize) {
             cache.keys.take(cache.size - maxCacheSize + 20).forEach { cache.remove(it) }
@@ -50,7 +51,7 @@ class LinkPreviewFetcher @Inject constructor() {
                 response.close()
 
                 if (body == null) {
-                    cache[url] = null
+                    failedUrls.add(url)
                     return@withContext null
                 }
 
@@ -84,7 +85,7 @@ class LinkPreviewFetcher @Inject constructor() {
                 Log.d("LinkPreview", "url=$url title=$title image=$imageUrl")
 
                 if (title == null && description == null && imageUrl == null) {
-                    cache[url] = null
+                    failedUrls.add(url)
                     return@withContext null
                 }
 
@@ -98,7 +99,7 @@ class LinkPreviewFetcher @Inject constructor() {
                 cache[url] = preview
                 preview
             } catch (_: Exception) {
-                cache[url] = null
+                failedUrls.add(url)
                 null
             }
         }
