@@ -94,7 +94,10 @@ object ImmichPhotoMapper {
         return try {
             Instant.from(DateTimeFormatter.ISO_DATE_TIME.parse(dateStr)).toEpochMilli()
         } catch (_: Exception) {
-            try { Instant.parse(dateStr).toEpochMilli() } catch (_: Exception) { 0L }
+            try { Instant.parse(dateStr).toEpochMilli() } catch (_: Exception) {
+                timber.log.Timber.w("Failed to parse date: $dateStr")
+                0L
+            }
         }
     }
 }

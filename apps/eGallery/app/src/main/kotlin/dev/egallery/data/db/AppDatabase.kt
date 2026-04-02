@@ -27,7 +27,7 @@ import dev.egallery.data.db.entity.UploadQueueEntity
         TagEntity::class,
         MediaTagEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

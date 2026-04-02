@@ -175,16 +175,15 @@ class UploadWorker @AssistedInject constructor(
             val response = api.uploadAsset(filePart, params)
 
             val tempNasId = entity?.nasId ?: ""
-            if (tempNasId.isNotBlank()) {
+            if (tempNasId.isNotBlank() && response.id.isNotBlank()) {
                 mediaDao.updateNasIdAndStatus(tempNasId, response.id, "ON_DEVICE")
             }
 
             uploadQueueDao.delete(item.id)
             val count = uploaded.incrementAndGet()
-            val msg = "Uploaded $count/$total: ${file.name}"
-            uploadStatus.update(msg)
-            // Throttle notification updates — every 5 uploads or on last item
+            // Throttle all progress updates — every 5 uploads or on last item
             if (count % 5 == 0 || count == total) {
+                uploadStatus.update("Uploaded $count/$total: ${file.name}")
                 setForeground(createForegroundInfo("Uploaded $count/$total"))
             }
             Timber.d("Uploaded ${file.name} -> immichId=${response.id}")
