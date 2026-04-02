@@ -26,7 +26,7 @@ class TopicsViewModel @Inject constructor(
                 if (q.isBlank()) all
                 else all.filter {
                     it.nameEn.contains(q, ignoreCase = true) ||
-                        (it.nameAr?.contains(q) == true) ||
+                        (it.nameAr?.contains(q, ignoreCase = true) == true) ||
                         (it.description?.contains(q, ignoreCase = true) == true) ||
                         it.category.contains(q, ignoreCase = true)
                 }

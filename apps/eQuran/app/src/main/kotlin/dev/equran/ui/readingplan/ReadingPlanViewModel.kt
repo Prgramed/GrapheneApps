@@ -58,12 +58,15 @@ class ReadingPlanViewModel @Inject constructor(
                     val daysRemaining = (plan.totalDays - dayNumber + 1).coerceAtLeast(0)
                     val progressPct = if (stats.versesRead > 0) ((stats.versesRead / 6236f) * 100).toInt().coerceAtMost(100) else 0
 
-                    // Streak: count consecutive days ending today
-                    val sortedDates = stats.readDates.sorted().reversed()
+                    // Streak: count consecutive days ending today (parse dates for robust comparison)
+                    val todayDate = java.time.LocalDate.now()
+                    val parsedDates = stats.readDates.mapNotNull {
+                        try { java.time.LocalDate.parse(it) } catch (_: Exception) { null }
+                    }.sortedDescending()
                     var streak = 0
-                    for (i in sortedDates.indices) {
-                        val expected = java.time.LocalDate.now().minusDays(i.toLong()).toString()
-                        if (i < sortedDates.size && sortedDates[i] == expected) streak++ else break
+                    for (i in parsedDates.indices) {
+                        val expected = todayDate.minusDays(i.toLong())
+                        if (parsedDates[i] == expected) streak++ else break
                     }
 
                     _uiState.value = _uiState.value.copy(

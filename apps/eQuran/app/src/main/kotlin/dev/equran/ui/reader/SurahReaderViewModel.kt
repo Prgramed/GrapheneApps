@@ -47,7 +47,7 @@ class SurahReaderViewModel @Inject constructor(
     private val wordByWordRepository: WordByWordRepository,
 ) : ViewModel() {
 
-    val surahNumber: Int = savedStateHandle["surahNumber"] ?: 1
+    val surahNumber: Int = (savedStateHandle.get<Int>("surahNumber") ?: 1).coerceIn(1, 114)
     private val scrollToAyah: Int = savedStateHandle["scrollToAyah"] ?: 0
 
     private val _uiState = MutableStateFlow(ReaderUiState())

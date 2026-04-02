@@ -52,7 +52,9 @@ class QuranDataManager @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val editionCache = LinkedHashMap<String, List<Verse>>(4, 0.75f, true)
+    private val editionCache = object : LinkedHashMap<String, List<Verse>>(2, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Verse>>?): Boolean = size > 2
+    }
     private var surahMetaCache: List<SurahMeta>? = null
 
     fun getSurahList(): List<SurahMeta> {

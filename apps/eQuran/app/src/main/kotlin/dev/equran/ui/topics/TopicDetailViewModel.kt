@@ -69,6 +69,10 @@ class TopicDetailViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             try {
+                if (topicId <= 0) {
+                    _uiState.value = TopicDetailUiState(isLoading = false)
+                    return@launch
+                }
                 val settings = preferencesRepository.settings.first()
                 val topics = topicRepository.getAll()
                 val topic = topics.find { it.id == topicId }

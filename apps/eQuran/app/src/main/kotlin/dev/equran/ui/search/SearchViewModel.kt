@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -39,13 +40,17 @@ class SearchViewModel @Inject constructor(
         .map { it.quranIndexServerUrl.isNotBlank() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    private var searchJob: Job? = null
+
     init {
         viewModelScope.launch {
             query.debounce(400).collect { q ->
+                searchJob?.cancel()
                 if (q.length >= 2) {
-                    doSearch(q)
+                    searchJob = viewModelScope.launch { doSearch(q) }
                 } else if (q.isBlank()) {
                     _results.value = emptyList()
+                    _isSearching.value = false
                 }
             }
         }

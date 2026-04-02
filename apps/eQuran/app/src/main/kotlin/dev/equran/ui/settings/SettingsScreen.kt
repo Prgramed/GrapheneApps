@@ -118,7 +118,7 @@ fun SettingsScreen(
                 value = settings.fontSize,
                 onValueChange = { viewModel.setFontSize(it) },
                 valueRange = 20f..48f,
-                steps = 13,
+                steps = 27, // 1sp increments from 20 to 48
                 modifier = Modifier.fillMaxWidth(),
             )
             // Preview

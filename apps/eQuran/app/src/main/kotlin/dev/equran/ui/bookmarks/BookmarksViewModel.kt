@@ -43,8 +43,12 @@ class BookmarksViewModel @Inject constructor(
                 try {
                     val settings = preferencesRepository.settings.first()
                     val surahList = quranRepository.getSurahList()
+                    // Batch by surah to avoid N+1 asset loads
+                    val verseBySurah = mutableMapOf<Int, List<AyahWithTranslations>>()
                     val items = bookmarks.map { bm ->
-                        val surahVerses = quranRepository.getVerses(bm.surah, settings.arabicScript, settings.enabledTranslations)
+                        val surahVerses = verseBySurah.getOrPut(bm.surah) {
+                            quranRepository.getVerses(bm.surah, settings.arabicScript, settings.enabledTranslations)
+                        }
                         val ayah = surahVerses.find { it.ayah == bm.ayah }
                         val surahName = surahList.getOrNull(bm.surah - 1)?.englishName ?: "Surah ${bm.surah}"
                         BookmarkWithVerse(bm, ayah, surahName)
