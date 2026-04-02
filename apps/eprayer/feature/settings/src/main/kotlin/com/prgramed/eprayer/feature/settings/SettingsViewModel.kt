@@ -105,5 +105,11 @@ class SettingsViewModel @Inject constructor(
             javaToday.year, javaToday.monthValue, javaToday.dayOfMonth,
         )
         schedulePrayerNotificationsUseCase(today)
+        // Also reschedule tomorrow so new settings take effect for next day
+        val javaTomorrow = javaToday.plusDays(1)
+        val tomorrow = kotlinx.datetime.LocalDate(
+            javaTomorrow.year, javaTomorrow.monthValue, javaTomorrow.dayOfMonth,
+        )
+        schedulePrayerNotificationsUseCase(tomorrow)
     }
 }

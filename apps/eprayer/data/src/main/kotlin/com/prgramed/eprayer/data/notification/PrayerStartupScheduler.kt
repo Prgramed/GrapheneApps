@@ -24,7 +24,7 @@ class PrayerStartupScheduler @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun scheduleOnStartup() {
-        // Schedule today's prayer alarms
+        // Schedule today's and tomorrow's prayer alarms
         scope.launch {
             try {
                 val javaToday = java.time.LocalDate.now()
@@ -32,6 +32,11 @@ class PrayerStartupScheduler @Inject constructor(
                     javaToday.year, javaToday.monthValue, javaToday.dayOfMonth,
                 )
                 schedulePrayerNotificationsUseCase(today)
+                val javaTomorrow = javaToday.plusDays(1)
+                val tomorrow = kotlinx.datetime.LocalDate(
+                    javaTomorrow.year, javaTomorrow.monthValue, javaTomorrow.dayOfMonth,
+                )
+                schedulePrayerNotificationsUseCase(tomorrow)
             } catch (_: Exception) { }
         }
 

@@ -82,7 +82,7 @@ class NativeLocationProvider @Inject constructor(
     private fun getCachedOrResolveCity(lat: Double, lon: Double): String? {
         if (cachedCityName != null && !cachedCityLat.isNaN()) {
             val dist = approxDistance(lat, lon, cachedCityLat, cachedCityLon)
-            if (dist < 0.1) return cachedCityName // ~10km — skip re-resolve
+            if (dist < 0.5) return cachedCityName // ~55km — skip re-resolve
         }
         val name = resolveCity(lat, lon)
         cachedCityName = name
