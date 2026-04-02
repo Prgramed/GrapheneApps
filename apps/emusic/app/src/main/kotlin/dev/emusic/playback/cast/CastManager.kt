@@ -3,7 +3,9 @@ package dev.emusic.playback.cast
 import dev.emusic.data.api.SubsonicUrlBuilder
 import dev.emusic.domain.model.Track
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +35,29 @@ class CastManager @Inject constructor(
 
     val isCasting: Boolean get() = _activeDevice.value != null
 
+    private var heartbeatJob: Job? = null
+
+    private fun startHeartbeat(device: CastDevice) {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            while (_activeDevice.value != null) {
+                delay(10_000) // Check every 10 seconds
+                try {
+                    val reachable = upnpController.checkReachable(device.controlUrl)
+                    if (!reachable) {
+                        Timber.w("Cast device ${device.name} unreachable, disconnecting")
+                        disconnect()
+                        return@launch
+                    }
+                } catch (e: Exception) {
+                    Timber.w("Heartbeat failed for ${device.name}: ${e.message}")
+                    disconnect()
+                    return@launch
+                }
+            }
+        }
+    }
+
     fun startDiscovery() {
         _castState.value = CastState.DISCOVERING
         scope.launch {
@@ -58,6 +83,7 @@ class CastManager @Inject constructor(
                 }
                 upnpController.play(device.controlUrl)
                 _castState.value = CastState.PLAYING
+                startHeartbeat(device)
             } else {
                 _castState.value = CastState.IDLE
                 _activeDevice.value = null
@@ -113,9 +139,13 @@ class CastManager @Inject constructor(
     }
 
     fun disconnect() {
+        heartbeatJob?.cancel()
+        heartbeatJob = null
         val device = _activeDevice.value
         if (device != null) {
-            scope.launch { upnpController.stop(device.controlUrl) }
+            scope.launch {
+                try { upnpController.stop(device.controlUrl) } catch (_: Exception) {}
+            }
         }
         _activeDevice.value = null
         _castState.value = CastState.IDLE

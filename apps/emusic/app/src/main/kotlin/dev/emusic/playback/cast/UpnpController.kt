@@ -159,6 +159,18 @@ class UpnpController @Inject constructor(
 </DIDL-Lite>"""
     }
 
+    suspend fun checkReachable(controlUrl: String): Boolean = withContext(Dispatchers.IO) {
+        val soap = """<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:GetTransportInfo xmlns:u="$AVT_NS">
+      <InstanceID>0</InstanceID>
+    </u:GetTransportInfo>
+  </s:Body>
+</s:Envelope>"""
+        sendSoap(controlUrl, "GetTransportInfo", soap)
+    }
+
     private fun String.xmlEscape(): String =
         replace("&", "&amp;")
             .replace("<", "&lt;")

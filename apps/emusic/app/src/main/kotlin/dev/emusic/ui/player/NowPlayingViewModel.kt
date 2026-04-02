@@ -140,10 +140,10 @@ class NowPlayingViewModel @Inject constructor(
                 }
             }
         }
-        // Sync play/pause UI with cast state
+        // Sync play/pause UI with cast state — ignore transient CONNECTING state
         viewModelScope.launch {
             castManager.castState.collect { state ->
-                if (castManager.isCasting) {
+                if (castManager.isCasting && state != dev.emusic.playback.cast.CastState.CONNECTING) {
                     _uiState.update {
                         it.copy(isPlaying = state == dev.emusic.playback.cast.CastState.PLAYING)
                     }

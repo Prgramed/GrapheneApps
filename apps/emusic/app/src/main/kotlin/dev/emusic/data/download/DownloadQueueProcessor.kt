@@ -61,17 +61,31 @@ class DownloadQueueProcessor @Inject constructor(
         val downloadsDir = File(context.filesDir, "downloads")
         if (!downloadsDir.exists()) return
 
+        // Forward: files on disk with no DB localPath
         var reconciled = 0
         downloadsDir.walkBottomUp().filter { it.isFile }.forEach { file ->
             val trackId = file.nameWithoutExtension
             val entity = trackDao.getById(trackId) ?: return@forEach
-            if (entity.localPath == null && file.length() > 0) {
+            if (entity.localPath == null && file.length() > 8192) {
                 trackDao.updateLocalPath(trackId, file.absolutePath)
                 reconciled++
             }
         }
-        if (reconciled > 0) {
-            Timber.d("Reconciled $reconciled downloads (files on disk with missing localPath)")
+
+        // Reverse: DB says downloaded but file missing or corrupted
+        var cleared = 0
+        val allDownloaded = trackDao.getAllDownloaded()
+        for (entity in allDownloaded) {
+            val path = entity.localPath ?: continue
+            val file = File(path)
+            if (!file.exists() || file.length() < 8192) {
+                trackDao.updateLocalPath(entity.id, null)
+                cleared++
+            }
+        }
+
+        if (reconciled > 0 || cleared > 0) {
+            Timber.d("Reconciled downloads: $reconciled restored, $cleared cleared (missing/corrupted)")
         }
     }
 

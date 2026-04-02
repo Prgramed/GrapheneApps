@@ -86,6 +86,17 @@ class PlaybackService : MediaLibraryService() {
         mediaSession = MediaLibrarySession.Builder(this, exoPlayer, librarySessionCallback)
             .build()
 
+        // Auto-disconnect cast on network loss
+        val connectivityManager = getSystemService(android.net.ConnectivityManager::class.java)
+        connectivityManager?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onLost(network: android.net.Network) {
+                if (castManager.isCasting) {
+                    timber.log.Timber.d("Network lost — auto-disconnecting cast")
+                    castManager.disconnect()
+                }
+            }
+        })
+
         // Mute local player when casting starts, restore when disconnected
         var preCastVolume = 1f
         serviceScope.launch {

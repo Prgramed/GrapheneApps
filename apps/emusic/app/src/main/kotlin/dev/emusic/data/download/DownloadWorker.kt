@@ -47,6 +47,13 @@ class DownloadWorker @AssistedInject constructor(
         return try {
             setForeground(createProgressForegroundInfo(notificationId, trackTitle, albumId, 0))
             downloadTrack(trackId, destFile, notificationId, trackTitle, albumId)
+
+            // Verify file integrity — must be > 8KB to be a valid audio file
+            if (!destFile.exists() || destFile.length() < 8192) {
+                destFile.delete()
+                throw Exception("Downloaded file missing or too small (${destFile.length()} bytes)")
+            }
+
             trackDao.updateLocalPath(trackId, destFile.absolutePath)
             downloadArtwork(albumId)
 
