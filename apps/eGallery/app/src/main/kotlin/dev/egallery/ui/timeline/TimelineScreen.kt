@@ -41,6 +41,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -109,6 +110,7 @@ fun TimelineScreen(
     val photoCount by viewModel.photoCount.collectAsState()
     var showAlbumPicker by remember { mutableStateOf(false) }
     var showMovePicker by remember { mutableStateOf(false) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState(
         initialFirstVisibleItemIndex = viewModel.savedScrollIndex,
         initialFirstVisibleItemScrollOffset = viewModel.savedScrollOffset,
@@ -163,7 +165,7 @@ fun TimelineScreen(
                         IconButton(onClick = { showMovePicker = true }) {
                             Icon(Icons.Default.DriveFileMove, "Move to folder")
                         }
-                        IconButton(onClick = { viewModel.deleteSelected() }) {
+                        IconButton(onClick = { showDeleteConfirmation = true }) {
                             Icon(Icons.Default.Delete, "Delete")
                         }
                     },
@@ -399,6 +401,24 @@ fun TimelineScreen(
         }
     }
 
+    // Multi-select delete confirmation
+    if (showDeleteConfirmation) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Delete ${selectedNasIds.size} items?") },
+            text = { Text("These items will be moved to trash.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showDeleteConfirmation = false
+                    viewModel.deleteSelected()
+                }) { Text("Delete", color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showDeleteConfirmation = false }) { Text("Cancel") }
+            },
+        )
+    }
+
     // Album picker bottom sheet
     if (showAlbumPicker) {
         AlbumPickerSheet(
@@ -503,16 +523,28 @@ private fun PhotoGridCell(
                 tint = Color.White,
             )
         }
-        // Green check for items synced to server (real Immich UUID, not temp ID)
+        // Green check for items on device + synced to server
         if (item.storageStatus == StorageStatus.ON_DEVICE && item.nasId.length > 10 && !item.nasId.startsWith("-")) {
             Icon(
                 imageVector = Icons.Default.CheckCircle,
-                contentDescription = "Uploaded",
+                contentDescription = "On device & NAS",
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(3.dp)
                     .size(16.dp),
                 tint = Color(0xFF4CAF50),
+            )
+        }
+        // NAS-only badge (not downloaded to device)
+        if (item.storageStatus == StorageStatus.NAS_ONLY) {
+            Icon(
+                imageVector = Icons.Filled.CloudDownload,
+                contentDescription = "On NAS only",
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(3.dp)
+                    .size(16.dp),
+                tint = Color.White.copy(alpha = 0.7f),
             )
         }
 

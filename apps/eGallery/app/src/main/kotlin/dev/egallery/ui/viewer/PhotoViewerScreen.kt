@@ -107,8 +107,8 @@ fun PhotoViewerScreen(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete photo?", color = Color.White) },
-            text = { Text("This will delete the photo from this device.", color = Color.White.copy(alpha = 0.7f)) },
+            title = { Text("Delete photo?") },
+            text = { Text("This will move the photo to trash.") },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteDialog = false
