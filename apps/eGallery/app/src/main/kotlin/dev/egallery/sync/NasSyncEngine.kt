@@ -80,6 +80,37 @@ class NasSyncEngine @Inject constructor(
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
 
+    /**
+     * Merges a server asset with any existing local entry that has the same hash.
+     * Prevents duplicates when the same photo exists on device (temp nasId) and server (real nasId).
+     */
+    private suspend fun mergeWithExisting(item: dev.egallery.domain.model.MediaItem): dev.egallery.data.db.entity.MediaEntity {
+        // Check by nasId first (existing server entry)
+        val byNasId = mediaDao.getByNasId(item.nasId)
+        if (byNasId != null && byNasId.storageStatus != "NAS_ONLY") {
+            return item.copy(
+                storageStatus = dev.egallery.domain.model.StorageStatus.valueOf(byNasId.storageStatus),
+                localPath = byNasId.localPath,
+            ).toEntity()
+        }
+
+        // Check by hash — catches device-only entries with temp nasId
+        val nasHash = item.nasHash
+        if (!nasHash.isNullOrBlank()) {
+            val byHash = mediaDao.getByHash(nasHash)
+            if (byHash != null && byHash.nasId != item.nasId && byHash.localPath != null) {
+                // Found local duplicate — merge: delete temp entry, keep localPath
+                mediaDao.deleteByNasId(byHash.nasId)
+                return item.copy(
+                    storageStatus = dev.egallery.domain.model.StorageStatus.ON_DEVICE,
+                    localPath = byHash.localPath,
+                ).toEntity()
+            }
+        }
+
+        return item.toEntity()
+    }
+
     fun startFullSync() {
         if (syncJob?.isActive == true) return
         syncJob = syncScope.launch {
@@ -176,17 +207,7 @@ class NasSyncEngine @Inject constructor(
             val items = response.upserted.mapNotNull { asset ->
                 ImmichPhotoMapper.run { asset.toDomain() }
             }
-            val entities = items.map { item ->
-                val existing = mediaDao.getByNasId(item.nasId)
-                if (existing != null && existing.storageStatus != "NAS_ONLY") {
-                    item.copy(
-                        storageStatus = dev.egallery.domain.model.StorageStatus.valueOf(existing.storageStatus),
-                        localPath = existing.localPath,
-                    ).toEntity()
-                } else {
-                    item.toEntity()
-                }
-            }
+            val entities = items.map { item -> mergeWithExisting(item) }
             mediaDao.upsertAll(entities)
             upserted = entities.size
         }
@@ -337,17 +358,7 @@ class NasSyncEngine @Inject constructor(
                 if (consecutiveEmpty >= 3) break // Buckets are newest-first; 3 old buckets in a row = done
             } else {
                 consecutiveEmpty = 0
-                val entities = newItems.map { item ->
-                    val existing = mediaDao.getByNasId(item.nasId)
-                    if (existing != null && existing.storageStatus != "NAS_ONLY") {
-                        item.copy(
-                            storageStatus = dev.egallery.domain.model.StorageStatus.valueOf(existing.storageStatus),
-                            localPath = existing.localPath,
-                        ).toEntity()
-                    } else {
-                        item.toEntity()
-                    }
-                }
+                val entities = newItems.map { item -> mergeWithExisting(item) }
                 mediaDao.upsertAll(entities)
                 newFromServer += entities.size
             }
@@ -558,16 +569,7 @@ class NasSyncEngine @Inject constructor(
 
             for (item in items) {
                 coroutineContext.job.ensureActive()
-                val existing = mediaDao.getByNasId(item.nasId)
-                val entity = if (existing != null && existing.storageStatus != "NAS_ONLY") {
-                    item.copy(
-                        storageStatus = dev.egallery.domain.model.StorageStatus.valueOf(existing.storageStatus),
-                        localPath = existing.localPath,
-                        nasHash = existing.nasHash,
-                    ).toEntity()
-                } else {
-                    item.toEntity()
-                }
+                val entity = mergeWithExisting(item)
                 allEntities.add(entity)
             }
 

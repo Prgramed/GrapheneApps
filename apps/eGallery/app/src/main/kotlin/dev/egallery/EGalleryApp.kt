@@ -46,6 +46,37 @@ class EGalleryApp : Application(), Configuration.Provider, SingletonImageLoader.
         installCrashHandler()
         clearPoisonedCache()
         restoreWronglyTrashedItems()
+        deduplicateByHash()
+    }
+
+    /** One-time: merge duplicate entries that have the same nasHash but different nasIds */
+    private fun deduplicateByHash() {
+        val prefs = getSharedPreferences("cache_version", MODE_PRIVATE)
+        if (prefs.getInt("dedup_v", 0) < 1) {
+            appScope.launch {
+                try {
+                    val duplicates = mediaDao.findHashDuplicates()
+                    var merged = 0
+                    for (dup in duplicates) {
+                        // Keep the entry with a real nasId (not temp UUID), merge localPath
+                        val entries = mediaDao.getAllByHash(dup)
+                        if (entries.size < 2) continue
+                        val withLocalPath = entries.firstOrNull { it.localPath != null }
+                        val withRealNasId = entries.firstOrNull { !it.nasId.startsWith("-") && it.nasId.length > 10 }
+                        if (withRealNasId != null && withLocalPath != null && withRealNasId.nasId != withLocalPath.nasId) {
+                            // Merge: keep real NAS entry, add localPath, delete temp entry
+                            mediaDao.updateStorageStatus(withRealNasId.nasId, "ON_DEVICE", withLocalPath.localPath)
+                            mediaDao.deleteByNasId(withLocalPath.nasId)
+                            merged++
+                        }
+                    }
+                    if (merged > 0) Timber.d("Deduplicated $merged entries by hash")
+                    prefs.edit().putInt("dedup_v", 1).apply()
+                } catch (e: Exception) {
+                    Timber.w(e, "Dedup failed")
+                }
+            }
+        }
     }
 
     private fun clearPoisonedCache() {

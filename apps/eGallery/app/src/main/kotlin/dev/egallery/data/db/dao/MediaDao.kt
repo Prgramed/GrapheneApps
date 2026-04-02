@@ -108,6 +108,12 @@ interface MediaDao {
     @Query("SELECT * FROM media WHERE nasHash = :hash LIMIT 1")
     suspend fun getByHash(hash: String): MediaEntity?
 
+    @Query("SELECT nasHash FROM media WHERE nasHash IS NOT NULL GROUP BY nasHash HAVING COUNT(*) > 1")
+    suspend fun findHashDuplicates(): List<String>
+
+    @Query("SELECT * FROM media WHERE nasHash = :hash")
+    suspend fun getAllByHash(hash: String): List<MediaEntity>
+
     @Query("SELECT * FROM media WHERE localPath = :localPath LIMIT 1")
     suspend fun getByLocalPath(localPath: String): MediaEntity?
 
