@@ -27,6 +27,12 @@ class BootReceiver : BroadcastReceiver() {
                     javaToday.year, javaToday.monthValue, javaToday.dayOfMonth,
                 )
                 schedulePrayerNotificationsUseCase(today)
+                // Also schedule tomorrow in case boot happens after Isha
+                val javaTomorrow = javaToday.plusDays(1)
+                val tomorrow = kotlinx.datetime.LocalDate(
+                    javaTomorrow.year, javaTomorrow.monthValue, javaTomorrow.dayOfMonth,
+                )
+                schedulePrayerNotificationsUseCase(tomorrow)
             } finally {
                 pendingResult.finish()
             }

@@ -14,9 +14,7 @@ import com.prgramed.eprayer.domain.model.CalculationMethodType
 import com.prgramed.eprayer.domain.model.LocationMode
 import com.prgramed.eprayer.domain.model.MadhabType
 import com.prgramed.eprayer.domain.repository.UserPreferencesRepository
-import android.appwidget.AppWidgetManager
-import android.content.ComponentName
-import android.content.Intent
+
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
@@ -92,18 +90,16 @@ class PrayerWidgetWorker @AssistedInject constructor(
             .putFloat(KEY_LON, lon.toFloat())
             .apply()
 
-        // Notify AppWidgetManager to update widget UI
+        // Update Glance widget directly
         try {
-            val widgetClass = Class.forName("com.prgramed.eprayer.feature.widget.PrayerWidgetReceiver")
-            val widgetManager = AppWidgetManager.getInstance(applicationContext)
-            val ids = widgetManager.getAppWidgetIds(ComponentName(applicationContext, widgetClass))
-            if (ids.isNotEmpty()) {
-                val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
-                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
-                    component = ComponentName(applicationContext, widgetClass)
-                }
-                applicationContext.sendBroadcast(intent)
-            }
+            val widgetClass = Class.forName("com.prgramed.eprayer.feature.widget.PrayerWidget")
+            val widget = widgetClass.getDeclaredConstructor().newInstance()
+                as androidx.glance.appwidget.GlanceAppWidget
+            val manager = androidx.glance.appwidget.GlanceAppWidgetManager(applicationContext)
+            @Suppress("UNCHECKED_CAST")
+            val typedClass = widgetClass as Class<androidx.glance.appwidget.GlanceAppWidget>
+            val ids = manager.getGlanceIds(typedClass)
+            ids.forEach { widget.update(applicationContext, it) }
         } catch (_: Exception) { }
 
         return Result.success()

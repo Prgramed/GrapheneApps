@@ -1,9 +1,6 @@
 package com.prgramed.eprayer.data.prayer
 
-import android.appwidget.AppWidgetManager
-import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import com.batoulapps.adhan2.CalculationMethod
 import com.batoulapps.adhan2.Coordinates
 import com.batoulapps.adhan2.Madhab
@@ -110,24 +107,11 @@ class PrayerTimesRepositoryImpl @Inject constructor(
     }
 
     private fun notifyWidget() {
+        // Trigger widget worker to re-render with fresh SharedPreferences data
         try {
-            val widgetReceiverClass = Class.forName(
-                "com.prgramed.eprayer.feature.widget.PrayerWidgetReceiver",
-            )
-            val appWidgetManager = AppWidgetManager.getInstance(context)
-            val ids = appWidgetManager.getAppWidgetIds(
-                ComponentName(context, widgetReceiverClass),
-            )
-            if (ids.isNotEmpty()) {
-                val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
-                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
-                    component = ComponentName(context, widgetReceiverClass)
-                }
-                context.sendBroadcast(intent)
-            }
-        } catch (_: Exception) {
-            // Widget not installed or class not found — ignore
-        }
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.prgramed.eprayer.data.widget.PrayerWidgetWorker>().build()
+            androidx.work.WorkManager.getInstance(context).enqueue(request)
+        } catch (_: Exception) { }
     }
 
     private fun mapCalculationMethod(type: CalculationMethodType): CalculationMethod =

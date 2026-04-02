@@ -76,6 +76,12 @@ class PrayerNotificationManager @Inject constructor(
     }
 
     fun showPrayerNotification(prayer: Prayer) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) return
+
         val displayName = prayer.name.lowercase().replaceFirstChar { it.uppercase() }
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
