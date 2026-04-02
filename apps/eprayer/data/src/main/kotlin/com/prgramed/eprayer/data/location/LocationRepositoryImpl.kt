@@ -36,7 +36,7 @@ class LocationRepositoryImpl @Inject constructor(
                     flowOf(LocationInfo(lat, lon, prefs.manualCityName))
                 }
             }
-        }.shareIn(scope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+        }.shareIn(scope, SharingStarted.WhileSubscribed(0), replay = 1)
 
     override fun getCurrentLocation(): Flow<LocationInfo> = sharedLocation
 

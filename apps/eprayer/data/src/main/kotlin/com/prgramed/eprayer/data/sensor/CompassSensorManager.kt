@@ -74,8 +74,8 @@ class CompassSensorManager @Inject constructor(
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
 
-        // 100ms (10Hz) — smooth enough for compass, half the CPU of SENSOR_DELAY_UI (66ms)
-        val sensorRate = 100_000 // microseconds
+        // 150ms (6.67Hz) — smooth for compass, 33% less CPU than 10Hz
+        val sensorRate = 150_000 // microseconds
         sensorManager.registerListener(listener, accelerometer, sensorRate)
         sensorManager.registerListener(listener, magnetometer, sensorRate)
 

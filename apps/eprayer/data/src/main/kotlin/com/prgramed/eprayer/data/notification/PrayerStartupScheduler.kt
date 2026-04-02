@@ -40,7 +40,7 @@ class PrayerStartupScheduler @Inject constructor(
             .setRequiresBatteryNotLow(true)
             .build()
         val widgetWork = PeriodicWorkRequestBuilder<PrayerWidgetWorker>(
-            30, TimeUnit.MINUTES,
+            2, TimeUnit.HOURS,
         ).setConstraints(constraints).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PrayerWidgetWorker.WORK_NAME,
