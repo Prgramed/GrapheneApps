@@ -61,6 +61,7 @@ fun MemoryViewerScreen(
     val pagerState = rememberPagerState(pageCount = { assets.size })
     var isPlaying by remember { mutableStateOf(true) }
     var progress by remember { mutableStateOf(0f) }
+    var isExporting by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     // Background music — shuffle ambient tracks from res/raw (supports 1-9)
@@ -198,15 +199,21 @@ fun MemoryViewerScreen(
                         modifier = Modifier.size(28.dp),
                     )
                 }
-                IconButton(onClick = {
-                    val assetIds = assets.map { it.id }
-                    dev.egallery.sync.MemoryVideoExportWorker.enqueue(context, assetIds)
-                    android.widget.Toast.makeText(context, "Exporting video...", android.widget.Toast.LENGTH_SHORT).show()
-                }) {
+                IconButton(
+                    onClick = {
+                        if (!isExporting) {
+                            isExporting = true
+                            val assetIds = assets.map { it.id }
+                            dev.egallery.sync.MemoryVideoExportWorker.enqueue(context, assetIds)
+                            android.widget.Toast.makeText(context, "Exporting video — check notifications for progress", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    enabled = !isExporting,
+                ) {
                     Icon(
                         Icons.Default.Save,
-                        contentDescription = "Save as video",
-                        tint = Color.White,
+                        contentDescription = if (isExporting) "Exporting..." else "Save as video",
+                        tint = if (isExporting) Color.White.copy(alpha = 0.3f) else Color.White,
                         modifier = Modifier.size(24.dp),
                     )
                 }
