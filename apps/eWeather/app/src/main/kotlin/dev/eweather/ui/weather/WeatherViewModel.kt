@@ -49,6 +49,7 @@ sealed class WeatherUiState {
 
 @HiltViewModel
 class WeatherViewModel @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
     private val weatherRepository: WeatherRepository,
     private val locationRepository: LocationRepository,
     private val alertRepository: AlertRepository,
@@ -92,6 +93,12 @@ class WeatherViewModel @Inject constructor(
         loadJobs[location.id] = viewModelScope.launch(Dispatchers.IO) {
             weatherRepository.refreshWeather(location)
             loadWeatherForPage(location)
+            // Update widget with fresh data
+            try {
+                val manager = androidx.glance.appwidget.GlanceAppWidgetManager(appContext)
+                val ids = manager.getGlanceIds(dev.eweather.ui.widget.WeatherWidget::class.java)
+                ids.forEach { dev.eweather.ui.widget.WeatherWidget().update(appContext, it) }
+            } catch (_: Exception) { }
         }
     }
 
