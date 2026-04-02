@@ -98,8 +98,25 @@ class QuranDataManager @Inject constructor(
             val trans = translationVerses.mapNotNull { (editionId, verses) ->
                 verses.find { it.ayah == arabic.ayah }?.let { Translation(editionId, it.text) }
             }
-            AyahWithTranslations(arabic.number, arabic.surah, arabic.ayah, arabic.text, trans)
+            // Strip Basmala from ayah 1 (the UI renders it separately as a header)
+            val text = if (arabic.ayah == 1 && surah != 1 && surah != 9) {
+                stripBasmala(arabic.text)
+            } else arabic.text
+            AyahWithTranslations(arabic.number, arabic.surah, arabic.ayah, text, trans)
         }
+    }
+
+    private fun stripBasmala(text: String): String {
+        // Common Basmala prefixes in various Quran scripts
+        val prefixes = listOf(
+            "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ ",
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ ",
+            "بِسْمِ اللهِ الرَّحْمنِ الرَّحِيمِ ",
+        )
+        for (prefix in prefixes) {
+            if (text.startsWith(prefix)) return text.removePrefix(prefix).trim()
+        }
+        return text
     }
 
     fun textSearch(query: String, limit: Int = 50): List<SearchResult> {

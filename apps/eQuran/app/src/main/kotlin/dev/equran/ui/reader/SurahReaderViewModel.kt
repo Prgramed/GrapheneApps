@@ -110,6 +110,26 @@ class SurahReaderViewModel @Inject constructor(
         }
     }
 
+    fun toggleSurahMemorized() {
+        viewModelScope.launch {
+            val totalAyahs = _uiState.value.ayahs.size
+            val memorized = memorizedAyahs.value.size
+            if (memorized >= totalAyahs) {
+                // All memorized → unmark all
+                for (ayah in _uiState.value.ayahs) {
+                    memorizationRepository.removeMemorized(surahNumber, ayah.ayah)
+                }
+            } else {
+                // Not all memorized → mark all
+                for (ayah in _uiState.value.ayahs) {
+                    if (memorizedAyahs.value.none { it.ayah == ayah.ayah }) {
+                        memorizationRepository.markMemorized(surahNumber, ayah.ayah)
+                    }
+                }
+            }
+        }
+    }
+
     fun copyVerse(ayah: AyahWithTranslations) {
         val meta = _uiState.value.surahMeta ?: return
         val text = buildString {

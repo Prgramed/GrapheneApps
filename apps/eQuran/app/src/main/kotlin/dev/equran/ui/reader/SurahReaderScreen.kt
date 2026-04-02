@@ -202,6 +202,18 @@ fun SurahReaderScreen(
                     }
                 },
                 actions = {
+                    // Mark/unmark entire surah as memorized
+                    val totalAyahs = state.ayahs.size
+                    val memorizedCount = memorizedAyahSet.size
+                    val allMemorized = totalAyahs > 0 && memorizedCount >= totalAyahs
+                    IconButton(onClick = { viewModel.toggleSurahMemorized() }) {
+                        Icon(
+                            if (allMemorized) Icons.Outlined.Psychology else Icons.Outlined.Psychology,
+                            contentDescription = if (allMemorized) "Unmark surah memorized" else "Mark surah memorized",
+                            tint = if (allMemorized) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     // Arabic surah name
                     state.surahMeta?.let {
                         Text(
