@@ -171,14 +171,29 @@ class TimelineViewModel @Inject constructor(
         _selectedNasIds.value = emptySet()
     }
 
-    // Move selected to trash
+    // Move selected to trash (locally + on Immich server)
     fun deleteSelected() {
         val ids = _selectedNasIds.value.toList()
         viewModelScope.launch(Dispatchers.IO) {
+            // Trash locally
             val now = System.currentTimeMillis()
             ids.forEach { nasId -> mediaDao.trash(nasId, now) }
             _selectedNasIds.value = emptySet()
             _photoCount.value = mediaRepository.getCount()
+
+            // Trash on Immich server (so sync doesn't bring them back)
+            try {
+                val realIds = ids.filter { it.length > 10 && !it.startsWith("-") }
+                if (realIds.isNotEmpty()) {
+                    immichApi.deleteAssets(kotlinx.serialization.json.buildJsonObject {
+                        put("ids", kotlinx.serialization.json.JsonArray(
+                            realIds.map { kotlinx.serialization.json.JsonPrimitive(it) }
+                        ))
+                    })
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to trash on server — items may reappear after sync")
+            }
         }
     }
 

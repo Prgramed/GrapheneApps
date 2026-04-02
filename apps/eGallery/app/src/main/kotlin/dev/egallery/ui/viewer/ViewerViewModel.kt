@@ -246,18 +246,28 @@ class ViewerViewModel @Inject constructor(
         }
     }
 
-    // Move to trash instead of permanent delete
+    // Move to trash (locally + on Immich server)
     fun deleteCurrentItem() {
         val item = _currentItem.value ?: return
         viewModelScope.launch {
             try {
                 mediaDao.trash(item.nasId, System.currentTimeMillis())
                 _timelineIds.value = _timelineIds.value.filter { it != item.nasId }
-                // Fix #1: fire one-shot delete event
                 _deleteEvent.value = true
-                Timber.d("Deleted item: ${item.nasId}")
+
+                // Also trash on Immich server
+                if (item.nasId.length > 10 && !item.nasId.startsWith("-")) {
+                    try {
+                        immichApi.deleteAssets(kotlinx.serialization.json.buildJsonObject {
+                            put("ids", kotlinx.serialization.json.JsonArray(
+                                listOf(kotlinx.serialization.json.JsonPrimitive(item.nasId))
+                            ))
+                        })
+                    } catch (_: Exception) { }
+                }
+                Timber.d("Trashed item: ${item.nasId}")
             } catch (e: Exception) {
-                Timber.e(e, "Failed to delete item")
+                Timber.e(e, "Failed to trash item")
             }
         }
     }
