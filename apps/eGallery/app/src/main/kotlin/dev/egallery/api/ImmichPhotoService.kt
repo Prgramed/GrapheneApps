@@ -116,6 +116,11 @@ interface ImmichPhotoService {
         @Query("query") query: String? = null,
     ): List<String>
 
+    // --- Memories ---
+
+    @GET("/api/memories")
+    suspend fun getMemories(): List<dev.egallery.api.dto.ImmichMemory>
+
     // --- Sync ---
 
     @POST("/api/sync/delta-sync")

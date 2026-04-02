@@ -131,3 +131,17 @@ data class DeltaSyncResponse(
     val upserted: List<ImmichAsset> = emptyList(),
     val deleted: List<String> = emptyList(),
 )
+
+@Serializable
+data class ImmichMemory(
+    val id: String = "",
+    val type: String = "", // "on_this_day"
+    val data: ImmichMemoryData = ImmichMemoryData(),
+    val assets: List<ImmichAsset> = emptyList(),
+    val createdAt: String = "",
+)
+
+@Serializable
+data class ImmichMemoryData(
+    val year: Int = 0,
+)

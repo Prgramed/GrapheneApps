@@ -61,10 +61,26 @@ class TimelineViewModel @Inject constructor(
     private val mediaDao: MediaDao,
     private val credentialStore: CredentialStore,
     private val preferencesRepository: AppPreferencesRepository,
+    private val immichApi: dev.egallery.api.ImmichPhotoService,
 ) : ViewModel() {
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle())
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
+
+    // Server URL for UI (thumbnails, memories)
+    val serverUrl: StateFlow<String> = MutableStateFlow(credentialStore.serverUrl)
+
+    // Memories
+    private val _memories = MutableStateFlow<List<dev.egallery.api.dto.ImmichMemory>>(emptyList())
+    val memories: StateFlow<List<dev.egallery.api.dto.ImmichMemory>> = _memories.asStateFlow()
+
+    fun fetchMemories() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                _memories.value = immichApi.getMemories().filter { it.assets.isNotEmpty() }
+            } catch (_: Exception) { }
+        }
+    }
 
     // Multi-select state
     private val _selectedNasIds = MutableStateFlow<Set<String>>(emptySet())

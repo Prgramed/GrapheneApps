@@ -97,6 +97,7 @@ fun TimelineScreen(
     pendingUploadCount: Int = 0,
     isNasReachable: Boolean = true,
     pickerMode: Boolean = false,
+    onMemoryClick: ((dev.egallery.api.dto.ImmichMemory) -> Unit)? = null,
     scrollToTopTrigger: Int = 0,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
@@ -108,6 +109,8 @@ fun TimelineScreen(
     val selectedNasIds by viewModel.selectedNasIds.collectAsState()
     val isMultiSelectMode by viewModel.isMultiSelectMode.collectAsState()
     val photoCount by viewModel.photoCount.collectAsState()
+    val memories by viewModel.memories.collectAsState()
+    val serverUrl by viewModel.serverUrl.collectAsState()
     var showAlbumPicker by remember { mutableStateOf(false) }
     var showMovePicker by remember { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
@@ -270,6 +273,9 @@ fun TimelineScreen(
                         isRefreshing = isSyncing,
                         onRefresh = { viewModel.syncNow() },
                     ) {
+                    // Fetch memories on first composition
+                    LaunchedEffect(Unit) { viewModel.fetchMemories() }
+
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
                         state = gridState,
@@ -277,6 +283,17 @@ fun TimelineScreen(
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
+                        // Memories carousel header
+                        if (memories.isNotEmpty() && !isMultiSelectMode) {
+                            item(span = { GridItemSpan(maxLineSpan) }, key = "memories_carousel") {
+                                dev.egallery.ui.memories.MemoriesCarousel(
+                                    memories = memories,
+                                    serverUrl = serverUrl,
+                                    onMemoryClick = { memory -> onMemoryClick?.invoke(memory) },
+                                )
+                            }
+                        }
+
                         items(
                             count = items.itemCount,
                             key = { index ->

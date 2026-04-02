@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var mediaDao: MediaDao
     @Inject lateinit var preferencesRepository: AppPreferencesRepository
     @Inject lateinit var deviceMediaScanner: DeviceMediaScanner
+    @Inject lateinit var credentialStore: dev.egallery.data.CredentialStore
 
     private val scope get() = lifecycleScope
     private val tempIdCounter = AtomicInteger(-1000) // separate range from CameraWatcher
@@ -80,6 +81,7 @@ class MainActivity : ComponentActivity() {
                 .collectAsState(initial = 0)
             GrapheneAppsTheme {
                 EGalleryNavGraph(
+                    credentialStore = credentialStore,
                     pendingUploadCount = pendingCount,
                     isNasReachable = true, // Immich uses API key — always reachable if configured
                     pickerMode = pickerMode.value,

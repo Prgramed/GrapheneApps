@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -66,6 +67,7 @@ private val bottomNavTabs = listOf(
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun EGalleryNavGraph(
+    credentialStore: dev.egallery.data.CredentialStore,
     pendingUploadCount: Int = 0,
     isNasReachable: Boolean = true,
     pickerMode: Boolean = false,
@@ -130,6 +132,10 @@ fun EGalleryNavGraph(
                 TimelineScreen(
                     animatedVisibilityScope = this@composable,
                     sharedTransitionScope = this@SharedTransitionLayout,
+                    onMemoryClick = { memory ->
+                        MemoryHolder.current = memory
+                        navController.navigate("memory_viewer")
+                    },
                     onPhotoClick = { nasId: String ->
                         if (pickerMode && onPickResult != null) {
                             onPickResult(android.net.Uri.parse("content://dev.egallery/media/$nasId"))
@@ -273,7 +279,25 @@ fun EGalleryNavGraph(
                     onBack = { navController.popBackStack() },
                 )
             }
+
+            composable("memory_viewer") {
+                val memory = MemoryHolder.current
+                if (memory != null) {
+                    val serverUrl = credentialStore.serverUrl
+                    dev.egallery.ui.memories.MemoryViewerScreen(
+                        memory = memory,
+                        serverUrl = serverUrl,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+            }
         }
         }
     }
+}
+
+/** Simple holder to pass memory data between nav destinations */
+object MemoryHolder {
+    var current: dev.egallery.api.dto.ImmichMemory? = null
+    var serverUrl: String = ""
 }
