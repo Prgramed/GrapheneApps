@@ -62,12 +62,10 @@ fun MemoryViewerScreen(
     var progress by remember { mutableStateOf(0f) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    // Background music — shuffle ambient tracks from raw resources
+    // Background music — shuffle ambient tracks from res/raw (supports 1-9)
     val mediaPlayer = remember {
-        val trackIds = listOf(
-            "memory_ambient_1", "memory_ambient_2", "memory_ambient_3",
-        ).mapNotNull { name ->
-            val resId = context.resources.getIdentifier(name, "raw", context.packageName)
+        val trackIds = (1..9).mapNotNull { i ->
+            val resId = context.resources.getIdentifier("memory_ambient_$i", "raw", context.packageName)
             if (resId != 0) resId else null
         }.shuffled()
 
