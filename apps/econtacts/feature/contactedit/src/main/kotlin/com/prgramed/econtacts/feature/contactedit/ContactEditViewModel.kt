@@ -66,6 +66,9 @@ class ContactEditViewModel @Inject constructor(
 
     private val contactId: Long = savedStateHandle["contactId"] ?: 0L
     private val fromVCard: Boolean = savedStateHandle["fromVCard"] ?: false
+    private val prefillPhone: String = (savedStateHandle.get<String>("phone") ?: "").let {
+        try { java.net.URLDecoder.decode(it, "UTF-8") } catch (_: Exception) { it }
+    }
 
     private val _uiState = MutableStateFlow(ContactEditUiState(contactId = contactId))
     val uiState: StateFlow<ContactEditUiState> = _uiState.asStateFlow()
@@ -93,8 +96,11 @@ class ContactEditViewModel @Inject constructor(
                 )
             } ?: run {
                 if (fromVCard) {
-                    // Process death — vCard data lost, tell user to retry
                     _uiState.update { it.copy(error = "Import data lost, please try again") }
+                } else if (prefillPhone.isNotBlank()) {
+                    _uiState.update {
+                        it.copy(phoneNumbers = listOf(EditablePhone(number = prefillPhone)))
+                    }
                 }
             }
         }

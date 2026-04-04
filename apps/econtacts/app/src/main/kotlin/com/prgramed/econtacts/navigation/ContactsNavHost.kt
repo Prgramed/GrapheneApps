@@ -59,11 +59,23 @@ private val bottomNavRoutes = navItems.map { it.route }.toSet()
 fun ContactsNavHost(
     modifier: Modifier = Modifier,
     vcardContact: com.prgramed.econtacts.domain.model.Contact? = null,
+    dialNumber: String? = null,
+    onDialHandled: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val showBottomBar = currentDestination?.route in bottomNavRoutes
+
+    // Navigate to dialer with pre-filled number from tel: intent
+    LaunchedEffect(dialNumber) {
+        if (!dialNumber.isNullOrBlank()) {
+            navController.navigate("${ContactsDestinations.DIALER}?number=${java.net.URLEncoder.encode(dialNumber, "UTF-8")}") {
+                launchSingleTop = true
+            }
+            onDialHandled()
+        }
+    }
 
     Scaffold(
         modifier = modifier,
@@ -138,9 +150,19 @@ fun ContactsNavHost(
                     },
                 )
             }
-            composable(ContactsDestinations.DIALER) {
+            composable(
+                "${ContactsDestinations.DIALER}?number={number}",
+                arguments = listOf(navArgument("number") { defaultValue = ""; type = NavType.StringType }),
+            ) { backStackEntry ->
+                val number = backStackEntry.arguments?.getString("number")?.let {
+                    java.net.URLDecoder.decode(it, "UTF-8")
+                }
                 DialerScreen(
                     onBack = { navController.popBackStack() },
+                    onCreateContact = { phone ->
+                        navController.navigate("${ContactsDestinations.CONTACT_NEW}?phone=${java.net.URLEncoder.encode(phone, "UTF-8")}")
+                    },
+                    initialNumber = number?.ifBlank { null },
                 )
             }
             composable(ContactsDestinations.SETTINGS) {
@@ -175,9 +197,10 @@ fun ContactsNavHost(
                 )
             }
             composable(
-                "${ContactsDestinations.CONTACT_NEW}?fromVCard={fromVCard}",
+                "${ContactsDestinations.CONTACT_NEW}?fromVCard={fromVCard}&phone={phone}",
                 arguments = listOf(
                     navArgument("fromVCard") { defaultValue = false; type = NavType.BoolType },
+                    navArgument("phone") { defaultValue = ""; type = NavType.StringType },
                 ),
             ) {
                 ContactEditScreen(

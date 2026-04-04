@@ -64,6 +64,14 @@ class DialerViewModel @Inject constructor(
         lookupJob?.cancel()
     }
 
+    fun setNumber(number: String) {
+        val cleaned = number.filter { it.isDigit() || it == '+' || it == '*' || it == '#' }
+        if (cleaned.isNotBlank()) {
+            _uiState.update { it.copy(currentNumber = cleaned) }
+            lookupContact()
+        }
+    }
+
     fun initiateCall() {
         val number = _uiState.value.currentNumber
         if (number.isBlank()) return

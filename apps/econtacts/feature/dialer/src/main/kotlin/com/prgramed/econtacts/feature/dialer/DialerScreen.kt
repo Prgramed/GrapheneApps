@@ -22,6 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -64,6 +66,8 @@ private val dialButtons = listOf(
 fun DialerScreen(
     onBack: () -> Unit = {},
     onCallInitiated: () -> Unit = {},
+    onCreateContact: (String) -> Unit = {},
+    initialNumber: String? = null,
     modifier: Modifier = Modifier,
     viewModel: DialerViewModel = hiltViewModel(),
 ) {
@@ -87,6 +91,13 @@ fun DialerScreen(
         if (uiState.callPlaced) {
             onCallInitiated()
             viewModel.onCallPlacedHandled()
+        }
+    }
+
+    // Pre-fill number from intent
+    LaunchedEffect(initialNumber) {
+        if (!initialNumber.isNullOrBlank()) {
+            viewModel.setNumber(initialNumber)
         }
     }
 
@@ -157,14 +168,26 @@ fun DialerScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Number display
+        // Number display with paste + backspace
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
+            // Paste button
+            val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+            IconButton(onClick = {
+                val clip = clipboardManager.getText()?.text ?: return@IconButton
+                viewModel.setNumber(clip)
+            }) {
+                Icon(
+                    Icons.Default.ContentPaste,
+                    contentDescription = "Paste",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Text(
                 text = uiState.currentNumber.ifEmpty { " " },
                 style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
@@ -179,6 +202,15 @@ fun DialerScreen(
                         contentDescription = "Backspace",
                     )
                 }
+            }
+        }
+
+        // Create contact button (when number entered and no match)
+        if (uiState.currentNumber.isNotEmpty() && uiState.matchedContactName == null) {
+            TextButton(onClick = { onCreateContact(uiState.currentNumber) }) {
+                Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.padding(start = 4.dp))
+                Text("Create contact")
             }
         }
 
