@@ -20,6 +20,7 @@ class MainActivity : ComponentActivity() {
     private var sendToAddress by mutableStateOf<String?>(null)
     private var sharedMessageText by mutableStateOf<String?>(null)
     private var sharedAttachmentUri by mutableStateOf<String?>(null)
+    var openThreadId by mutableStateOf<Long?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,11 +33,13 @@ class MainActivity : ComponentActivity() {
                     sendToAddress = sendToAddress,
                     sharedMessageText = sharedMessageText,
                     sharedAttachmentUri = sharedAttachmentUri,
+                    openThreadId = openThreadId,
                     onSendToHandled = {
                         sendToAddress = null
                         sharedMessageText = null
                         sharedAttachmentUri = null
                     },
+                    onThreadOpened = { openThreadId = null },
                 )
             }
         }
@@ -75,6 +78,10 @@ class MainActivity : ComponentActivity() {
                     sharedAttachmentUri = firstUri.toString()
                     sendToAddress = ""
                 }
+            }
+            "com.prgramed.emessages.ACTION_OPEN_THREAD" -> {
+                val threadId = intent.getLongExtra("thread_id", -1L)
+                if (threadId > 0) openThreadId = threadId
             }
         }
     }

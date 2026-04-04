@@ -215,7 +215,14 @@ fun ConversationsListScreen(
                     }
                 }
                 else -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+                    // Auto-scroll to top when the first conversation changes (new message received)
+                    androidx.compose.runtime.LaunchedEffect(uiState.conversations.firstOrNull()?.threadId) {
+                        if (listState.firstVisibleItemIndex <= 2) {
+                            listState.animateScrollToItem(0)
+                        }
+                    }
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                         items(
                             items = uiState.conversations,
                             key = { it.threadId },

@@ -95,8 +95,12 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         val messagingStyle = NotificationCompat.MessagingStyle(person)
             .addMessage(body, System.currentTimeMillis(), person)
 
-        // Tap to open app
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        // Tap to open conversation
+        val launchIntent = Intent(context, com.prgramed.emessages.MainActivity::class.java).apply {
+            action = "com.prgramed.emessages.ACTION_OPEN_THREAD"
+            putExtra("thread_id", threadId)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
         val contentPendingIntent = PendingIntent.getActivity(
             context, threadId.toInt(), launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,

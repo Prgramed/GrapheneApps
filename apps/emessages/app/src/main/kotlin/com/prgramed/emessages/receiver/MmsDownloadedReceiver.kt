@@ -215,7 +215,11 @@ class MmsDownloadedReceiver : BroadcastReceiver() {
         val style = NotificationCompat.MessagingStyle(person)
             .addMessage(body, System.currentTimeMillis(), person)
 
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        val launchIntent = android.content.Intent(context, com.prgramed.emessages.MainActivity::class.java).apply {
+            action = "com.prgramed.emessages.ACTION_OPEN_THREAD"
+            putExtra("thread_id", threadId)
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
         val contentIntent = PendingIntent.getActivity(
             context, threadId.toInt(), launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,

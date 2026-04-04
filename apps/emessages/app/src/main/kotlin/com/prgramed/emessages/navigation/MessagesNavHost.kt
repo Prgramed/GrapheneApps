@@ -21,9 +21,20 @@ fun MessagesNavHost(
     sendToAddress: String? = null,
     sharedMessageText: String? = null,
     sharedAttachmentUri: String? = null,
+    openThreadId: Long? = null,
     onSendToHandled: () -> Unit = {},
+    onThreadOpened: () -> Unit = {},
 ) {
     val navController = rememberNavController()
+
+    LaunchedEffect(openThreadId) {
+        if (openThreadId != null && openThreadId > 0) {
+            navController.navigate(MessagesDestinations.chat(openThreadId)) {
+                launchSingleTop = true
+            }
+            onThreadOpened()
+        }
+    }
 
     LaunchedEffect(sendToAddress, sharedMessageText, sharedAttachmentUri) {
         if (sendToAddress != null) {

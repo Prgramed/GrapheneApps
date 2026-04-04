@@ -30,7 +30,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +45,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.aspectRatio
 import coil3.compose.AsyncImage
 import com.prgramed.emessages.domain.model.Attachment
 import com.prgramed.emessages.domain.model.LinkPreview
@@ -325,7 +329,7 @@ fun ChatBubble(
                     if (linkPreview != null) {
                         val context = androidx.compose.ui.platform.LocalContext.current
                         Spacer(Modifier.height(4.dp))
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
@@ -340,22 +344,20 @@ fun ChatBubble(
                                             android.net.Uri.parse(linkPreview.url),
                                         ),
                                     )
-                                }
-                                .padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                                },
                         ) {
                             if (linkPreview.imageUrl != null) {
                                 AsyncImage(
                                     model = linkPreview.imageUrl,
                                     contentDescription = null,
                                     modifier = Modifier
-                                        .size(56.dp)
-                                        .clip(RoundedCornerShape(4.dp)),
+                                        .fillMaxWidth()
+                                        .aspectRatio(1.91f)
+                                        .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)),
                                     contentScale = ContentScale.Crop,
                                 )
-                                Spacer(Modifier.padding(start = 8.dp))
                             }
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(modifier = Modifier.padding(8.dp)) {
                                 val previewTitle = linkPreview.title
                                 if (previewTitle != null) {
                                     Text(

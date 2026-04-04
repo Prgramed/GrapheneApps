@@ -279,11 +279,11 @@ class ChatViewModel @Inject constructor(
         return SegmentInfo(segments, remaining, limit)
     }
 
-    private val linkPreviewSemaphore = kotlinx.coroutines.sync.Semaphore(3)
+    private val linkPreviewSemaphore = kotlinx.coroutines.sync.Semaphore(6)
 
     private fun fetchLinkPreviews(messages: List<Message>) {
         val current = _linkPreviews.value
-        messages.takeLast(10).forEach { message ->
+        messages.takeLast(30).forEach { message ->
             if (message.id in current) return@forEach
             val matcher = urlPattern.matcher(message.body)
             if (matcher.find()) {
