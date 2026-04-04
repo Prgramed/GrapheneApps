@@ -6,10 +6,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
@@ -37,7 +40,9 @@ import dev.emusic.ui.components.FilterSheet
 import dev.emusic.ui.library.albums.AlbumGridScreen
 import dev.emusic.ui.library.artists.ArtistListScreen
 import dev.emusic.ui.library.tracks.TrackListScreen
+import dev.emusic.ui.playlists.PlaylistSort
 import dev.emusic.ui.playlists.PlaylistsScreen
+import dev.emusic.ui.playlists.PlaylistsViewModel
 
 @Composable
 fun LibraryScreen(
@@ -46,6 +51,7 @@ fun LibraryScreen(
     onPlaylistClick: (String) -> Unit,
     onStatsClick: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
+    playlistsViewModel: PlaylistsViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
 ) {
     val artistCount by viewModel.artistCount.collectAsStateWithLifecycle()
@@ -68,6 +74,12 @@ fun LibraryScreen(
 
     var showSortMenu by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
+
+    // Playlist sort/search state
+    val playlistSort by playlistsViewModel.sort.collectAsStateWithLifecycle()
+    val playlistFilter by playlistsViewModel.filter.collectAsStateWithLifecycle()
+    var showPlaylistSortMenu by remember { mutableStateOf(false) }
+    var showPlaylistSearch by remember { mutableStateOf(false) }
 
     if (showFilterSheet) {
         FilterSheet(
@@ -115,6 +127,16 @@ fun LibraryScreen(
             )
         }
 
+        TabRow(selectedTabIndex = selectedTab) {
+            tabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = selectedTab == index,
+                    onClick = { selectedTab = index },
+                    text = { Text(title) },
+                )
+            }
+        }
+
         // Sort/filter toolbar (shown on Albums tab)
         if (selectedTab == 1) {
             Row(
@@ -159,13 +181,50 @@ fun LibraryScreen(
             }
         }
 
-        TabRow(selectedTabIndex = selectedTab) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = { Text(title) },
-                )
+        // Playlist sort/search toolbar (shown on Playlists tab)
+        if (selectedTab == 3) {
+            Row(
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            ) {
+                if (showPlaylistSearch) {
+                    OutlinedTextField(
+                        value = playlistFilter,
+                        onValueChange = { playlistsViewModel.filter.value = it },
+                        placeholder = { Text("Search playlists…") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        trailingIcon = {
+                            IconButton(onClick = { playlistsViewModel.filter.value = ""; showPlaylistSearch = false }) {
+                                Icon(Icons.Default.FilterList, "Close")
+                            }
+                        },
+                    )
+                } else {
+                    Text(
+                        text = playlistSort.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f).padding(start = 8.dp),
+                    )
+                    IconButton(onClick = { showPlaylistSearch = true }) {
+                        Icon(Icons.Default.Search, "Search playlists")
+                    }
+                    Box {
+                        IconButton(onClick = { showPlaylistSortMenu = true }) {
+                            Icon(Icons.Default.Sort, "Sort")
+                        }
+                        DropdownMenu(expanded = showPlaylistSortMenu, onDismissRequest = { showPlaylistSortMenu = false }) {
+                            PlaylistSort.entries.forEach { s ->
+                                DropdownMenuItem(
+                                    text = { Text(s.label) },
+                                    onClick = { playlistsViewModel.setSort(s); showPlaylistSortMenu = false },
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -183,6 +242,7 @@ fun LibraryScreen(
             )
             3 -> PlaylistsScreen(
                 onPlaylistClick = onPlaylistClick,
+                viewModel = playlistsViewModel,
             )
         }
     }

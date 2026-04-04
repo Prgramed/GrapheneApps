@@ -41,16 +41,27 @@ class DownloadQueueProcessor @Inject constructor(
             }
         }
 
-        // Periodic re-check every 30s
+        // Periodic re-check every 60s — only when items are pinned
         scope.launch {
             while (true) {
-                delay(30_000)
+                delay(60_000)
                 try {
-                    val pinnedPlaylists = playlistDao.observePinned().first().map { it.id }
-                    val pinnedAlbums = albumDao.observePinned().first().map { it.id }
-                    if (pinnedPlaylists.isNotEmpty() || pinnedAlbums.isNotEmpty()) {
+                    val pinnedPlaylists = playlistDao.observePinned().first()
+                    val pinnedAlbums = albumDao.observePinned().first()
+                    if (pinnedPlaylists.isEmpty() && pinnedAlbums.isEmpty()) continue
+                    // Check if there's actually anything left to download
+                    var hasPending = false
+                    for (pl in pinnedPlaylists) {
+                        if (playlistDao.getUndownloadedPlaylistTracks(pl.id).isNotEmpty()) { hasPending = true; break }
+                    }
+                    if (!hasPending) {
+                        for (alb in pinnedAlbums) {
+                            if (trackDao.getUndownloadedByAlbum(alb.id).isNotEmpty()) { hasPending = true; break }
+                        }
+                    }
+                    if (hasPending) {
                         downloadManager.pruneWork()
-                        processQueue(pinnedPlaylists, pinnedAlbums)
+                        processQueue(pinnedPlaylists.map { it.id }, pinnedAlbums.map { it.id })
                     }
                 } catch (_: Exception) { }
             }

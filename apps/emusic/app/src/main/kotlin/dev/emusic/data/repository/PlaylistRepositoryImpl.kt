@@ -12,6 +12,8 @@ import dev.emusic.domain.model.Track
 import dev.emusic.domain.repository.PlaylistRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,7 +24,9 @@ class PlaylistRepositoryImpl @Inject constructor(
     private val trackDao: TrackDao,
 ) : PlaylistRepository {
 
-    override suspend fun syncPlaylists() {
+    private val syncMutex = Mutex()
+
+    override suspend fun syncPlaylists() = syncMutex.withLock {
         val response = api.getPlaylists().subsonicResponse
         val playlists = response.playlists?.playlist ?: return
         val entities = playlists.map { dto ->

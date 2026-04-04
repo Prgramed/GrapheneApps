@@ -39,6 +39,9 @@ class QueueManager @Inject constructor(
     private val _isLiveStream = MutableStateFlow(false)
     val isLiveStream: StateFlow<Boolean> = _isLiveStream.asStateFlow()
 
+    private val _queueVersion = MutableStateFlow(0L)
+    val queueVersion: StateFlow<Long> = _queueVersion.asStateFlow()
+
     val queue: StateFlow<List<QueueItem>> = _queue
         .map { tracks ->
             tracks.mapIndexed { index, track -> QueueItem(track = track, queueIndex = index) }
@@ -64,6 +67,7 @@ class QueueManager @Inject constructor(
         radioNowPlayingBridge.onStationStopped()
         _queue.value = tracks
         _currentIndex.value = startIndex.coerceIn(0, (tracks.size - 1).coerceAtLeast(0))
+        _queueVersion.value++
         persistQueue()
     }
 

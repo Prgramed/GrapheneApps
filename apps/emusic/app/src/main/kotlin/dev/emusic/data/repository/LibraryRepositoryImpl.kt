@@ -45,11 +45,18 @@ class LibraryRepositoryImpl @Inject constructor(
             ?.map { it.toDomain().toEntity() }
             ?: return
         artistDao.upsertAll(artists)
+        // Cleanup artists deleted from server
+        val serverIds = artists.map { it.id }.toSet()
+        val localIds = artistDao.getAllIds()
+        for (localId in localIds) {
+            if (localId !in serverIds) artistDao.deleteById(localId)
+        }
     }
 
     override suspend fun syncAlbums() {
         var offset = 0
         val pageSize = 500
+        val serverAlbumIds = mutableSetOf<String>()
         while (true) {
             val response = api.getAlbumList2(
                 type = "alphabeticalByName",
@@ -64,16 +71,24 @@ class LibraryRepositoryImpl @Inject constructor(
                 }
                 ?: break
             if (albums.isEmpty()) break
+            serverAlbumIds.addAll(albums.map { it.id })
             albumDao.upsertAll(albums)
             offset += albums.size
             if (albums.size < pageSize) break
         }
+        // Cleanup albums deleted from server
+        if (serverAlbumIds.isNotEmpty()) {
+            val localIds = albumDao.getAllIds()
+            for (localId in localIds) {
+                if (localId !in serverAlbumIds) albumDao.deleteById(localId)
+            }
+        }
     }
 
-    override suspend fun syncAlbumsIncremental(): Int {
+    override suspend fun syncAlbumsIncremental(): List<String> {
         var offset = 0
         val pageSize = 100
-        var newCount = 0
+        val newAlbumIds = mutableListOf<String>()
         while (true) {
             val response = api.getAlbumList2(
                 type = "newest",
@@ -85,20 +100,18 @@ class LibraryRepositoryImpl @Inject constructor(
                 ?: break
             if (albums.isEmpty()) break
 
-            // Check which albums are new (not in Room)
             val existingIds = albumDao.getExistingIds(albums.map { it.id }).toSet()
             val newAlbums = albums.filter { it.id !in existingIds }
             if (newAlbums.isNotEmpty()) {
                 albumDao.upsertAll(newAlbums)
-                newCount += newAlbums.size
+                newAlbumIds.addAll(newAlbums.map { it.id })
             }
 
-            // If we found existing albums in this batch, we've caught up
             if (newAlbums.size < albums.size) break
             if (albums.size < pageSize) break
             offset += pageSize
         }
-        return newCount
+        return newAlbumIds
     }
 
     override suspend fun syncAlbumTracks(albumId: String) {
@@ -132,7 +145,7 @@ class LibraryRepositoryImpl @Inject constructor(
                 val tracks = songs.map { it.toDomain().toEntity() }
                 upsertPreservingLocalPath(tracks)
                 totalFetched += tracks.size
-                onProgress(totalFetched, totalFetched + pageSize)
+                onProgress(totalFetched, -1) // Total unknown for search3
                 offset += songs.size
                 if (songs.size < pageSize) break
             } catch (e: Exception) {
@@ -163,6 +176,19 @@ class LibraryRepositoryImpl @Inject constructor(
             }
         }
 
+        // Backfill artists that only appear in tracks (not returned by getArtists)
+        val trackOnlyArtists = trackDao.getTrackOnlyArtists()
+        if (trackOnlyArtists.isNotEmpty()) {
+            val entities = trackOnlyArtists.map { ref ->
+                dev.emusic.data.db.entity.ArtistEntity(
+                    id = ref.artistId,
+                    name = ref.artist,
+                    albumCount = 0,
+                    starred = false,
+                )
+            }
+            artistDao.upsertAll(entities)
+        }
     }
 
     // --- Observe ---

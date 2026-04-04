@@ -14,7 +14,7 @@ interface LibraryRepository {
     // Sync (API → Room)
     suspend fun syncArtists()
     suspend fun syncAlbums()
-    suspend fun syncAlbumsIncremental(): Int
+    suspend fun syncAlbumsIncremental(): List<String>
     suspend fun syncAlbumTracks(albumId: String)
     suspend fun syncAllTracks(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> })
 

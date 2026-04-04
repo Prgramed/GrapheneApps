@@ -104,7 +104,19 @@ interface TrackDao {
 
     @Query("SELECT * FROM tracks WHERE albumId = :albumId AND localPath IS NULL")
     suspend fun getUndownloadedByAlbum(albumId: String): List<TrackEntity>
+
+    @Query("""
+        SELECT DISTINCT artistId, artist FROM tracks
+        WHERE artistId NOT IN (SELECT id FROM artists)
+        AND artistId != ''
+    """)
+    suspend fun getTrackOnlyArtists(): List<TrackArtistRef>
 }
+
+data class TrackArtistRef(
+    val artistId: String,
+    val artist: String,
+)
 
 data class GenreCount(
     val genre: String,

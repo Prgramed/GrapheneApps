@@ -22,6 +22,12 @@ interface ArtistDao {
     @Query("SELECT * FROM artists ORDER BY name COLLATE NOCASE")
     fun pagingAll(): PagingSource<Int, ArtistEntity>
 
+    @Query("DELETE FROM artists WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("SELECT id FROM artists")
+    suspend fun getAllIds(): List<String>
+
     @Query("DELETE FROM artists")
     suspend fun deleteAll()
 

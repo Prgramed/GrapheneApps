@@ -155,48 +155,9 @@ fun PlaylistsScreen(
                 Icon(Icons.Default.Add, contentDescription = "Create playlist")
             }
         },
-    ) { innerPadding ->
-        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            // Search + sort toolbar
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                if (showSearch) {
-                    OutlinedTextField(
-                        value = filter,
-                        onValueChange = { viewModel.filter.value = it },
-                        placeholder = { Text("Search playlists...") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        trailingIcon = {
-                            IconButton(onClick = { viewModel.filter.value = ""; showSearch = false }) {
-                                Icon(Icons.Default.Clear, "Close search")
-                            }
-                        },
-                    )
-                } else {
-                    Spacer(Modifier.weight(1f))
-                }
-                IconButton(onClick = { showSearch = !showSearch; if (!showSearch) viewModel.filter.value = "" }) {
-                    Icon(Icons.Default.Search, "Search")
-                }
-                Box {
-                    IconButton(onClick = { showSortMenu = true }) {
-                        Icon(Icons.Default.Sort, "Sort")
-                    }
-                    DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                        PlaylistSort.entries.forEach { s ->
-                            DropdownMenuItem(
-                                text = { Text(s.label) },
-                                onClick = { viewModel.setSort(s); showSortMenu = false },
-                            )
-                        }
-                    }
-                }
-            }
-
+    ) { _ ->
         LazyVerticalGrid(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 80.dp),
             columns = GridCells.Fixed(2),
             modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
         ) {
@@ -330,5 +291,4 @@ fun PlaylistsScreen(
                 }
             }
         }
-        } // Column
     }

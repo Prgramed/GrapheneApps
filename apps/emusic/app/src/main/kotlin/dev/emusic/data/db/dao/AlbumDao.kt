@@ -42,6 +42,9 @@ interface AlbumDao {
     @Query("SELECT * FROM albums WHERE starred = 1 LIMIT :limit")
     suspend fun getStarred(limit: Int = 10): List<AlbumEntity>
 
+    @Query("DELETE FROM albums WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("DELETE FROM albums")
     suspend fun deleteAll()
 

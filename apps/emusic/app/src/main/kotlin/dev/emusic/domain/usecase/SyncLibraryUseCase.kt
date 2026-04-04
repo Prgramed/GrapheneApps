@@ -74,29 +74,35 @@ class SyncLibraryUseCase @Inject constructor(
                     errors++
                     timber.log.Timber.w(e, "Sync albums failed")
                 }
+
+                emit(SyncProgress(stage = "Syncing tracks…"))
+                try {
+                    libraryRepository.syncAllTracks { current, total ->
+                        val stageText = if (total > 0) "Syncing tracks… $current/$total" else "Syncing tracks… $current fetched"
+                        val p = SyncProgress(stage = stageText, current = current, total = total.coerceAtLeast(0))
+                        _progress.value = p
+                        trySend(p)
+                    }
+                } catch (e: Exception) {
+                    errors++
+                    timber.log.Timber.w(e, "Sync tracks failed")
+                }
             } else {
                 emit(SyncProgress(stage = "Checking for new albums…"))
                 try {
-                    val newCount = libraryRepository.syncAlbumsIncremental()
-                    if (newCount > 0) {
-                        emit(SyncProgress(stage = "$newCount new albums found"))
+                    val newAlbumIds = libraryRepository.syncAlbumsIncremental()
+                    if (newAlbumIds.isNotEmpty()) {
+                        emit(SyncProgress(stage = "${newAlbumIds.size} new albums — syncing tracks…"))
+                        for (albumId in newAlbumIds) {
+                            try {
+                                libraryRepository.syncAlbumTracks(albumId)
+                            } catch (_: Exception) { }
+                        }
                     }
                 } catch (e: Exception) {
                     errors++
                     timber.log.Timber.w(e, "Sync albums incremental failed")
                 }
-            }
-
-            emit(SyncProgress(stage = "Syncing tracks…"))
-            try {
-                libraryRepository.syncAllTracks { current, total ->
-                    val p = SyncProgress(stage = "Syncing tracks… $current/$total", current = current, total = total)
-                    _progress.value = p
-                    trySend(p)
-                }
-            } catch (e: Exception) {
-                errors++
-                timber.log.Timber.w(e, "Sync tracks failed")
             }
 
             emit(SyncProgress(stage = "Syncing playlists…"))
