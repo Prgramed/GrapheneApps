@@ -122,9 +122,9 @@ class ViewerViewModel @Inject constructor(
             }
             val file = File(item.localPath)
             if (file.exists()) return file
-            if (item.storageStatus == StorageStatus.ON_DEVICE) {
+            if (item.storageStatus == StorageStatus.SYNCED) {
                 viewModelScope.launch {
-                    mediaDao.updateStorageStatus(item.nasId, "NAS_ONLY", null)
+                    mediaDao.updateStorageStatus(item.nasId, "NAS", null)
                 }
             }
         }
@@ -170,7 +170,7 @@ class ViewerViewModel @Inject constructor(
 
                     val thirtyDays = 30L * 24 * 60 * 60 * 1000
                     val updated = item.copy(
-                        storageStatus = StorageStatus.ON_DEVICE,
+                        storageStatus = StorageStatus.SYNCED,
                         localPath = destFile.absolutePath,
                         localExpiry = LocalExpiry.Fixed(System.currentTimeMillis() + thirtyDays),
                     )
@@ -255,15 +255,21 @@ class ViewerViewModel @Inject constructor(
                 _timelineIds.value = _timelineIds.value.filter { it != item.nasId }
                 _deleteEvent.value = true
 
-                // Also trash on Immich server
+                // Also trash on Immich server (retry up to 3 times)
                 if (item.nasId.length > 10 && !item.nasId.startsWith("-")) {
-                    try {
-                        immichApi.deleteAssets(kotlinx.serialization.json.buildJsonObject {
-                            put("ids", kotlinx.serialization.json.JsonArray(
-                                listOf(kotlinx.serialization.json.JsonPrimitive(item.nasId))
-                            ))
-                        })
-                    } catch (_: Exception) { }
+                    for (attempt in 1..3) {
+                        try {
+                            immichApi.deleteAssets(kotlinx.serialization.json.buildJsonObject {
+                                put("ids", kotlinx.serialization.json.JsonArray(
+                                    listOf(kotlinx.serialization.json.JsonPrimitive(item.nasId))
+                                ))
+                            })
+                            break
+                        } catch (e: Exception) {
+                            if (attempt == 3) Timber.w(e, "Failed to delete ${item.nasId} on server after 3 attempts")
+                            else kotlinx.coroutines.delay(1000L * attempt)
+                        }
+                    }
                 }
                 Timber.d("Trashed item: ${item.nasId}")
             } catch (e: Exception) {
@@ -323,7 +329,7 @@ class ViewerViewModel @Inject constructor(
                     folderId = 0,
                     cacheKey = "",
                     localPath = destFile.absolutePath,
-                    storageStatus = "ON_DEVICE",
+                    storageStatus = "SYNCED",
                     lastSyncedAt = System.currentTimeMillis(),
                 )
                 mediaDao.upsert(newEntity)
@@ -350,7 +356,7 @@ class ViewerViewModel @Inject constructor(
                 srcFile.delete()
 
                 // Update Room entry with new path
-                mediaDao.updateStorageStatus(item.nasId, "ON_DEVICE", destFile.absolutePath)
+                mediaDao.updateStorageStatus(item.nasId, "SYNCED", destFile.absolutePath)
                 _currentItem.value = item.copy(localPath = destFile.absolutePath)
                 Timber.d("Moved ${item.filename} to $destDir")
             } catch (e: Exception) {

@@ -131,24 +131,39 @@ fun BlockEditor(
             ))
         }
 
+        // Track cursor position so it survives recomposition from ViewModel updates
+        var lastCursorPos by remember(block.id) { androidx.compose.runtime.mutableIntStateOf(-1) }
+        if (lastCursorPos >= 0 && lastCursorPos <= tfv.text.length) {
+            tfv = tfv.copy(selection = TextRange(lastCursorPos))
+            lastCursorPos = -1 // consumed
+        }
+
         BasicTextField(
             value = tfv,
             onValueChange = { newValue ->
                 val raw = newValue.text
+                val prevLen = tfv.text.length
                 when {
-                    // Sentinel was deleted → backspace at start
+                    // Sentinel was deleted — only treat as backspace if text actually got shorter
                     !raw.startsWith(sentinel) -> {
-                        onDelete()
+                        if (raw.length < prevLen) {
+                            // Real backspace at start of block
+                            onDelete()
+                        } else {
+                            // Keyboard composition replaced sentinel — restore it and treat as normal edit
+                            val restored = sentinel + raw
+                            tfv = newValue.copy(text = restored, selection = TextRange(newValue.selection.start + 1))
+                            lastCursorPos = newValue.selection.start + 1
+                            onTextChanged(raw)
+                        }
                     }
                     raw.contains('\n') -> {
                         val clean = raw.removePrefix(sentinel)
                         val lines = clean.split('\n')
                         if (lines.size > 2 && onPasteLines != null) {
-                            // Multi-line paste — first line updates current block, rest create new blocks
                             onTextChanged(lines.first())
                             onPasteLines(lines.drop(1))
                         } else {
-                            // Single Enter key press
                             val beforeNewline = clean.substringBefore('\n')
                             onTextChanged(beforeNewline)
                             onEnter()
@@ -156,6 +171,7 @@ fun BlockEditor(
                     }
                     else -> {
                         tfv = newValue
+                        lastCursorPos = newValue.selection.start
                         val clean = raw.removePrefix(sentinel)
                         onTextChanged(clean)
                     }

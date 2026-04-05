@@ -36,7 +36,7 @@ class EditUploadCoordinator @Inject constructor(
 
     suspend fun downloadOriginal(item: MediaItem): File = withContext(Dispatchers.IO) {
         // If already on device, use local file
-        if (item.storageStatus == StorageStatus.ON_DEVICE && item.localPath != null) {
+        if (item.storageStatus == StorageStatus.SYNCED && item.localPath != null) {
             return@withContext File(item.localPath)
         }
 

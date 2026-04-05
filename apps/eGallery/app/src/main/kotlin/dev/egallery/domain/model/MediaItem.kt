@@ -24,7 +24,7 @@ data class MediaItem(
 
 enum class MediaType { PHOTO, VIDEO, LIVE_PHOTO }
 
-enum class StorageStatus { ON_DEVICE, NAS_ONLY, UPLOAD_PENDING, UPLOAD_FAILED, TRASHED }
+enum class StorageStatus { DEVICE, NAS, SYNCED }
 
 sealed class LocalExpiry {
     data object Rolling : LocalExpiry()

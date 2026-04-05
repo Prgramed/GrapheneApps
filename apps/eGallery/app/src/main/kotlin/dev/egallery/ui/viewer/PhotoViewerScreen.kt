@@ -327,7 +327,7 @@ fun PhotoViewerScreen(
 
         // Download FAB
         AnimatedVisibility(
-            visible = uiVisible && currentItem?.storageStatus == StorageStatus.NAS_ONLY,
+            visible = uiVisible && currentItem?.storageStatus == StorageStatus.NAS,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
@@ -494,11 +494,9 @@ private fun BottomInfoBar(item: MediaItem) {
 @Composable
 private fun StorageChip(status: StorageStatus) {
     val (label, color) = when (status) {
-        StorageStatus.ON_DEVICE -> "On device" to Color(0xFF4CAF50)
-        StorageStatus.NAS_ONLY -> "On NAS" to Color(0xFF9E9E9E)
-        StorageStatus.UPLOAD_PENDING -> "Uploading..." to Color(0xFFFF9800)
-        StorageStatus.UPLOAD_FAILED -> "Upload failed" to Color(0xFFF44336)
-        StorageStatus.TRASHED -> "Trashed" to Color(0xFF9E9E9E)
+        StorageStatus.SYNCED -> "Synced" to Color(0xFF4CAF50)
+        StorageStatus.NAS -> "NAS only" to Color(0xFF9E9E9E)
+        StorageStatus.DEVICE -> "Device only" to Color(0xFFFF9800)
     }
 
     Text(

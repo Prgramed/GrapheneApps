@@ -3,14 +3,16 @@ package dev.egallery.ui.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dev.egallery.api.ImmichPhotoService
 import dev.egallery.api.dto.ImmichMapMarker
 import dev.egallery.data.CredentialStore
+import dev.egallery.data.db.dao.MediaDao
 import dev.egallery.util.ThumbnailUrlBuilder
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -25,8 +27,9 @@ data class PhotoCluster(
 
 @HiltViewModel
 class MapViewModel @Inject constructor(
-    private val immichApi: ImmichPhotoService,
+    private val mediaDao: MediaDao,
     private val credentialStore: CredentialStore,
+    private val immichApi: dev.egallery.api.ImmichPhotoService,
 ) : ViewModel() {
 
     private val _markers = MutableStateFlow<List<ImmichMapMarker>>(emptyList())
@@ -38,11 +41,25 @@ class MapViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             try {
-                val markers = kotlinx.coroutines.withTimeoutOrNull(15_000L) {
-                    immichApi.getMapMarkers()
+                // Try local DB first (instant)
+                val entities = withContext(Dispatchers.IO) { mediaDao.getWithLocation() }
+                if (entities.isNotEmpty()) {
+                    _markers.value = entities.map { entity ->
+                        ImmichMapMarker(
+                            id = entity.nasId,
+                            lat = entity.lat ?: 0.0,
+                            lon = entity.lng ?: 0.0,
+                        )
+                    }
+                    Timber.d("Loaded ${_markers.value.size} map markers from local DB")
+                } else {
+                    // Fallback to API if no local geotagged data
+                    val apiMarkers = kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+                        immichApi.getMapMarkers()
+                    }
+                    _markers.value = apiMarkers ?: emptyList()
+                    Timber.d("Loaded ${_markers.value.size} map markers from API (no local data)")
                 }
-                _markers.value = markers ?: emptyList()
-                Timber.d("Loaded ${_markers.value.size} map markers")
             } catch (e: Exception) {
                 Timber.w(e, "Failed to load map markers")
             } finally {

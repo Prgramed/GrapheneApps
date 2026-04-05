@@ -515,33 +515,20 @@ private fun PhotoGridCell(
             )
         }
 
-        // Upload status overlay
-        if (item.storageStatus == StorageStatus.UPLOAD_PENDING) {
+        // Device-only (needs upload)
+        if (item.storageStatus == StorageStatus.DEVICE) {
             Icon(
                 imageVector = Icons.Default.Sync,
-                contentDescription = "Uploading",
+                contentDescription = "Device only",
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(4.dp)
                     .size(16.dp),
-                tint = Color.White.copy(alpha = 0.7f),
+                tint = Color(0xFFFF9800),
             )
         }
-        if (item.storageStatus == StorageStatus.UPLOAD_FAILED) {
-            Icon(
-                imageVector = Icons.Default.ErrorOutline,
-                contentDescription = "Upload failed",
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(3.dp)
-                    .size(18.dp)
-                    .clip(CircleShape)
-                    .background(Color.Red),
-                tint = Color.White,
-            )
-        }
-        // Green check for items on device + synced to server
-        if (item.storageStatus == StorageStatus.ON_DEVICE && item.nasId.length > 10 && !item.nasId.startsWith("-")) {
+        // Synced to both
+        if (item.storageStatus == StorageStatus.SYNCED) {
             Icon(
                 imageVector = Icons.Default.CheckCircle,
                 contentDescription = "On device & NAS",
@@ -553,7 +540,7 @@ private fun PhotoGridCell(
             )
         }
         // NAS-only badge (not downloaded to device)
-        if (item.storageStatus == StorageStatus.NAS_ONLY) {
+        if (item.storageStatus == StorageStatus.NAS) {
             Icon(
                 imageVector = Icons.Filled.CloudDownload,
                 contentDescription = "On NAS only",

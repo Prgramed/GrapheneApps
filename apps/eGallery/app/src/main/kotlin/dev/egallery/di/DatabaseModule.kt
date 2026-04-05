@@ -25,13 +25,23 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(
         @ApplicationContext context: Context,
-    ): AppDatabase = Room.databaseBuilder(
-        context,
-        AppDatabase::class.java,
-        "egallery.db",
-    )
-        .fallbackToDestructiveMigration(dropAllTables = true)
-        .build()
+    ): AppDatabase {
+        val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // Migrate storage status: ON_DEVICE → SYNCED (if real nasId) or DEVICE (if temp)
+                db.execSQL("UPDATE media SET storageStatus = 'SYNCED' WHERE storageStatus = 'ON_DEVICE' AND length(nasId) > 10 AND nasId NOT LIKE '-%'")
+                db.execSQL("UPDATE media SET storageStatus = 'DEVICE' WHERE storageStatus = 'ON_DEVICE'")
+                db.execSQL("UPDATE media SET storageStatus = 'NAS' WHERE storageStatus = 'NAS_ONLY'")
+                db.execSQL("UPDATE media SET storageStatus = 'DEVICE' WHERE storageStatus = 'UPLOAD_PENDING'")
+                db.execSQL("UPDATE media SET storageStatus = 'DEVICE' WHERE storageStatus = 'UPLOAD_FAILED'")
+                db.execSQL("DELETE FROM media WHERE storageStatus = 'TRASHED'")
+            }
+        }
+        return Room.databaseBuilder(context, AppDatabase::class.java, "egallery.db")
+            .addMigrations(MIGRATION_5_6)
+            .fallbackToDestructiveMigration(dropAllTables = true)
+            .build()
+    }
 
     @Provides fun provideMediaDao(db: AppDatabase): MediaDao = db.mediaDao()
     @Provides fun provideAlbumDao(db: AppDatabase): AlbumDao = db.albumDao()

@@ -17,6 +17,7 @@ import dev.egallery.data.CredentialStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import timber.log.Timber
@@ -30,6 +31,8 @@ class EGalleryApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var credentialStore: CredentialStore
     @Inject lateinit var mediaDao: dev.egallery.data.db.dao.MediaDao
     @Inject lateinit var uploadQueueDao: dev.egallery.data.db.dao.UploadQueueDao
+    @Inject lateinit var syncEngine: dev.egallery.sync.NasSyncEngine
+    @Inject lateinit var prefsRepo: dev.egallery.data.preferences.AppPreferencesRepository
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -47,6 +50,55 @@ class EGalleryApp : Application(), Configuration.Provider, SingletonImageLoader.
         clearPoisonedCache()
         restoreWronglyTrashedItems()
         deduplicateByHash()
+
+        // Auto-sync on startup (fetch from server)
+        appScope.launch {
+            kotlinx.coroutines.delay(3000)
+            if (credentialStore.serverUrl.isNotBlank()) {
+                syncEngine.startQuickSync()
+            }
+        }
+
+        // Auto-upload scan on startup (detect new device photos + queue)
+        appScope.launch {
+            kotlinx.coroutines.delay(5000)
+            if (credentialStore.serverUrl.isNotBlank()) {
+                try {
+                    syncEngine.scanAndQueueUploads()
+                } catch (e: Exception) {
+                    timber.log.Timber.w(e, "Startup upload scan failed")
+                }
+            }
+        }
+
+        // Schedule periodic upload scan (every 30 min) if auto-upload is on
+        schedulePeriodicUploadScan()
+    }
+
+    private fun schedulePeriodicUploadScan() {
+        appScope.launch {
+            val autoUpload = prefsRepo.autoUploadEnabled.first()
+            val wm = androidx.work.WorkManager.getInstance(this@EGalleryApp)
+            if (autoUpload) {
+                val wifiOnly = prefsRepo.wifiOnlyUpload.first()
+                val networkType = if (wifiOnly) androidx.work.NetworkType.UNMETERED else androidx.work.NetworkType.CONNECTED
+                val request = androidx.work.PeriodicWorkRequestBuilder<dev.egallery.sync.UploadScanWorker>(
+                    30, java.util.concurrent.TimeUnit.MINUTES,
+                ).setConstraints(
+                    androidx.work.Constraints.Builder()
+                        .setRequiredNetworkType(networkType)
+                        .build(),
+                ).build()
+                wm.enqueueUniquePeriodicWork(
+                    dev.egallery.sync.UploadScanWorker.PERIODIC_WORK_NAME,
+                    androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+                    request,
+                )
+                timber.log.Timber.d("Periodic upload scan scheduled (every 30 min)")
+            } else {
+                wm.cancelUniqueWork(dev.egallery.sync.UploadScanWorker.PERIODIC_WORK_NAME)
+            }
+        }
     }
 
     /** One-time: merge duplicate entries that have the same nasHash but different nasIds */
@@ -65,7 +117,7 @@ class EGalleryApp : Application(), Configuration.Provider, SingletonImageLoader.
                         val withRealNasId = entries.firstOrNull { !it.nasId.startsWith("-") && it.nasId.length > 10 }
                         if (withRealNasId != null && withLocalPath != null && withRealNasId.nasId != withLocalPath.nasId) {
                             // Merge: keep real NAS entry, add localPath, delete temp entry
-                            mediaDao.updateStorageStatus(withRealNasId.nasId, "ON_DEVICE", withLocalPath.localPath)
+                            mediaDao.updateStorageStatus(withRealNasId.nasId, "SYNCED", withLocalPath.localPath)
                             mediaDao.deleteByNasId(withLocalPath.nasId)
                             merged++
                         }
@@ -130,12 +182,12 @@ class EGalleryApp : Application(), Configuration.Provider, SingletonImageLoader.
                     cleared += uploadQueueDao.deleteByPathContaining(pattern)
                 }
                 // Reset UPLOAD_FAILED/UPLOAD_PENDING to ON_DEVICE for these paths
-                for (status in listOf("UPLOAD_FAILED", "UPLOAD_PENDING")) {
+                for (status in listOf("DEVICE", "DEVICE")) {
                     val items = mediaDao.getByStorageStatus(status)
                     for (entity in items) {
                         val path = entity.localPath ?: continue
                         if (path.contains("/Android/media/") || path.contains("/WhatsApp/") || path.contains("/Telegram/")) {
-                            mediaDao.updateStorageStatus(entity.nasId, "ON_DEVICE", path)
+                            mediaDao.updateStorageStatus(entity.nasId, "SYNCED", path)
                             cleared++
                         }
                     }

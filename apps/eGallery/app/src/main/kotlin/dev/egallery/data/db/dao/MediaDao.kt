@@ -108,6 +108,9 @@ interface MediaDao {
     @Query("SELECT * FROM media WHERE nasHash = :hash LIMIT 1")
     suspend fun getByHash(hash: String): MediaEntity?
 
+    @Query("SELECT * FROM media WHERE storageStatus = :status")
+    suspend fun getByStatus(status: String): List<MediaEntity>
+
     @Query("SELECT nasHash FROM media WHERE nasHash IS NOT NULL GROUP BY nasHash HAVING COUNT(*) > 1")
     suspend fun findHashDuplicates(): List<String>
 

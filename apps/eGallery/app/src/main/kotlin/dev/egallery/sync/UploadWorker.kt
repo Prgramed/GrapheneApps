@@ -48,7 +48,11 @@ class UploadWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        setForeground(createForegroundInfo("Starting upload..."))
+        try {
+            setForeground(createForegroundInfo("Starting upload..."))
+        } catch (_: Exception) {
+            // Background start — foreground not allowed, continue without notification
+        }
 
         uploadStatus.setRunning(true)
         uploadStatus.update("Starting upload...")
@@ -149,8 +153,8 @@ class UploadWorker @AssistedInject constructor(
             uploadQueueDao.delete(item.id)
             mediaDao.getByLocalPath(item.localPath)?.let {
                 // Keep in timeline (ON_DEVICE) but don't try to upload
-                if (it.storageStatus == "UPLOAD_PENDING" || it.storageStatus == "UPLOAD_FAILED") {
-                    mediaDao.updateStorageStatus(it.nasId, "ON_DEVICE", it.localPath)
+                if (it.storageStatus == "DEVICE") {
+                    mediaDao.updateStorageStatus(it.nasId, "SYNCED", it.localPath)
                 }
             }
             return
@@ -176,7 +180,7 @@ class UploadWorker @AssistedInject constructor(
 
             val tempNasId = entity?.nasId ?: ""
             if (tempNasId.isNotBlank() && response.id.isNotBlank()) {
-                mediaDao.updateNasIdAndStatus(tempNasId, response.id, "ON_DEVICE")
+                mediaDao.updateNasIdAndStatus(tempNasId, response.id, "SYNCED")
             }
 
             uploadQueueDao.delete(item.id)
@@ -184,7 +188,7 @@ class UploadWorker @AssistedInject constructor(
             // Throttle all progress updates — every 5 uploads or on last item
             if (count % 5 == 0 || count == total) {
                 uploadStatus.update("Uploaded $count/$total: ${file.name}")
-                setForeground(createForegroundInfo("Uploaded $count/$total"))
+                try { setForeground(createForegroundInfo("Uploaded $count/$total")) } catch (_: Exception) {}
             }
             Timber.d("Uploaded ${file.name} -> immichId=${response.id}")
         } catch (e: Exception) {
@@ -236,7 +240,7 @@ class UploadWorker @AssistedInject constructor(
                         // Already on server — remove from queue, mark as ON_DEVICE
                         uploadQueueDao.delete(item.id)
                         mediaDao.getByLocalPath(item.localPath)?.let { entity ->
-                            mediaDao.updateStorageStatus(entity.nasId, "ON_DEVICE", entity.localPath)
+                            mediaDao.updateStorageStatus(entity.nasId, "SYNCED", entity.localPath)
                         }
                         remaining.remove(item)
                         Timber.d("Skipped duplicate: $filename")
@@ -284,7 +288,7 @@ class UploadWorker @AssistedInject constructor(
         uploadQueueDao.updateStatus(item.id, "FAILED", item.retryCount + 1)
         val entity = mediaDao.getByLocalPath(item.localPath)
         if (entity != null) {
-            mediaDao.updateStorageStatus(entity.nasId, "UPLOAD_FAILED", entity.localPath)
+            mediaDao.updateStorageStatus(entity.nasId, "DEVICE", entity.localPath)
         }
         Timber.w("Upload failed: ${item.localPath}")
     }

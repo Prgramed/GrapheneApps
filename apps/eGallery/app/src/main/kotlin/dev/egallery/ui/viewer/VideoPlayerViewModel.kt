@@ -52,10 +52,10 @@ class VideoPlayerViewModel @Inject constructor(
             _item.value = mediaItem
 
             when (mediaItem.storageStatus) {
-                StorageStatus.ON_DEVICE -> {
+                StorageStatus.SYNCED -> {
                     mediaItem.localPath?.let { _playerUri.value = File(it).toUri() }
                 }
-                StorageStatus.NAS_ONLY -> downloadAndPlay(mediaItem)
+                StorageStatus.NAS -> downloadAndPlay(mediaItem)
                 else -> {
                     // UPLOAD_PENDING / UPLOAD_FAILED — try local path
                     mediaItem.localPath?.let { _playerUri.value = File(it).toUri() }
@@ -93,7 +93,7 @@ class VideoPlayerViewModel @Inject constructor(
 
                     val thirtyDays = 30L * 24 * 60 * 60 * 1000
                     val updated = mediaItem.copy(
-                        storageStatus = StorageStatus.ON_DEVICE,
+                        storageStatus = StorageStatus.SYNCED,
                         localPath = destFile.absolutePath,
                         localExpiry = LocalExpiry.Fixed(System.currentTimeMillis() + thirtyDays),
                     )

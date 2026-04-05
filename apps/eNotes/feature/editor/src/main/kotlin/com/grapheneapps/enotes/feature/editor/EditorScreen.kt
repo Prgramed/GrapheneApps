@@ -5,6 +5,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -266,7 +269,27 @@ fun EditorScreen(
             )
 
             // Block list
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+            // Auto-scroll to keep focused block visible — nudge by one line height
+            androidx.compose.runtime.LaunchedEffect(uiState.focusedBlockId) {
+                val focusId = uiState.focusedBlockId ?: return@LaunchedEffect
+                val index = uiState.document.blocks.indexOfFirst { it.id == focusId }
+                if (index < 0) return@LaunchedEffect
+                val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                if (index > lastVisibleIndex) {
+                    // Scroll down just enough to reveal the new block (approx one line)
+                    listState.animateScrollBy(200f)
+                }
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    bottom = androidx.compose.foundation.layout.WindowInsets.ime.asPaddingValues().calculateBottomPadding(),
+                ),
+            ) {
                 itemsIndexed(
                     uiState.document.blocks,
                     key = { _, block -> block.id },

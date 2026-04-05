@@ -33,6 +33,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -87,7 +88,7 @@ class NasSyncEngine @Inject constructor(
     private suspend fun mergeWithExisting(item: dev.egallery.domain.model.MediaItem): dev.egallery.data.db.entity.MediaEntity {
         // Check by nasId first (existing server entry)
         val byNasId = mediaDao.getByNasId(item.nasId)
-        if (byNasId != null && byNasId.storageStatus != "NAS_ONLY") {
+        if (byNasId != null && byNasId.storageStatus != "NAS") {
             return item.copy(
                 storageStatus = dev.egallery.domain.model.StorageStatus.valueOf(byNasId.storageStatus),
                 localPath = byNasId.localPath,
@@ -102,7 +103,7 @@ class NasSyncEngine @Inject constructor(
                 // Found local duplicate — merge: delete temp entry, keep localPath
                 mediaDao.deleteByNasId(byHash.nasId)
                 return item.copy(
-                    storageStatus = dev.egallery.domain.model.StorageStatus.ON_DEVICE,
+                    storageStatus = dev.egallery.domain.model.StorageStatus.SYNCED,
                     localPath = byHash.localPath,
                 ).toEntity()
             }
@@ -201,13 +202,17 @@ class NasSyncEngine @Inject constructor(
             return false
         }
 
-        // Process upserts — these include checksums
+        // Process upserts — skip items that are TRASHED locally
         var upserted = 0
         if (response.upserted.isNotEmpty()) {
             val items = response.upserted.mapNotNull { asset ->
                 ImmichPhotoMapper.run { asset.toDomain() }
             }
-            val entities = items.map { item -> mergeWithExisting(item) }
+            val entities = items.mapNotNull { item ->
+                val existing = mediaDao.getByNasId(item.nasId)
+                if (existing?.trashedAt != null) return@mapNotNull null
+                mergeWithExisting(item)
+            }
             mediaDao.upsertAll(entities)
             upserted = entities.size
         }
@@ -216,16 +221,11 @@ class NasSyncEngine @Inject constructor(
         var deleted = 0
         for (deletedId in response.deleted) {
             val entity = mediaDao.getByNasId(deletedId) ?: continue
-            if (entity.storageStatus == "NAS_ONLY") {
+            if (entity.storageStatus == "NAS") {
                 mediaDao.deleteByNasId(deletedId)
                 deleted++
             }
         }
-
-        // Check for new device photos since last sync
-        _progress.value = "Checking new device photos..."
-        val newDevicePhotos = scanDevicePhotosSince(lastSyncMs)
-        val toUpload = queueNewDevicePhotosForUpload(newDevicePhotos)
 
         _progress.value = "Syncing albums..."
         syncAlbums()
@@ -233,8 +233,8 @@ class NasSyncEngine @Inject constructor(
         syncPeople()
 
         preferencesRepository.setLastSyncAt(System.currentTimeMillis())
-        _progress.value = "Done: $upserted updated, $deleted removed, $toUpload to upload"
-        Timber.d("Delta sync: $upserted upserted, $deleted deleted, $toUpload to upload")
+        _progress.value = "Done: $upserted updated, $deleted removed"
+        Timber.d("Delta sync: $upserted upserted, $deleted deleted")
         return true
     }
 
@@ -271,9 +271,11 @@ class NasSyncEngine @Inject constructor(
             val serverMatch = serverByChecksum[photo.sha1Base64]?.firstOrNull()
             if (serverMatch != null) {
                 // Photo exists on server — link local file to server entity
+                // But skip if locally trashed (don't un-trash)
+                if (serverMatch.trashedAt != null) continue
                 alreadyOnServer++
                 if (serverMatch.localPath == null) {
-                    mediaDao.updateStorageStatus(serverMatch.nasId, "ON_DEVICE", photo.path)
+                    mediaDao.updateStorageStatus(serverMatch.nasId, "SYNCED", photo.path)
                     linked++
                 }
             } else {
@@ -295,7 +297,7 @@ class NasSyncEngine @Inject constructor(
                         folderId = 0,
                         cacheKey = "",
                         localPath = photo.path,
-                        storageStatus = "UPLOAD_PENDING",
+                        storageStatus = "DEVICE",
                         nasHash = photo.sha1Base64,
                         localFileModifiedAt = photo.dateModified,
                     )
@@ -318,7 +320,7 @@ class NasSyncEngine @Inject constructor(
         if (orphaned.size <= allLocalIds.size / 10 || orphaned.size <= 100) {
             for (id in orphaned) {
                 val entity = mediaDao.getByNasId(id) ?: continue
-                if (entity.storageStatus == "NAS_ONLY") {
+                if (entity.storageStatus == "NAS") {
                     mediaDao.deleteByNasId(id)
                     removed++
                 }
@@ -364,25 +366,51 @@ class NasSyncEngine @Inject constructor(
             }
         }
 
-        // 2. Check for new device photos since last sync
-        _progress.value = "Checking new device photos..."
-        val newDevicePhotos = scanDevicePhotosSince(lastSyncAt)
-        val toUpload = queueNewDevicePhotosForUpload(newDevicePhotos)
-
         _progress.value = "Syncing albums..."
         syncAlbums()
         _progress.value = "Syncing people..."
         syncPeople()
 
         preferencesRepository.setLastSyncAt(System.currentTimeMillis())
-        _progress.value = if (newFromServer > 0 || toUpload > 0) {
-            "Done: $newFromServer from server, $toUpload to upload"
-        } else {
-            "Done: up to date"
-        }
+        _progress.value = if (newFromServer > 0) "Done: $newFromServer from server" else "Done: up to date"
     }
 
-    // ── Shared: queue new device photos for upload ──────────────
+    // ── Public: standalone upload scan (called by UploadScanWorker) ──
+
+    suspend fun scanAndQueueUploads(): Int {
+        // Simple: query Room for all DEVICE-only entries and queue them
+        val deviceOnly = mediaDao.getByStatus("DEVICE")
+        Timber.d("Upload scan: ${deviceOnly.size} device-only photos found")
+        var queued = 0
+        for (entry in deviceOnly) {
+            val path = entry.localPath ?: continue
+            if (!isUploadablePath(path) || entry.filename.contains(".VB-01.COVER.")) {
+                // Not uploadable — don't leave as DEVICE or it'll be re-queued forever
+                mediaDao.deleteByNasId(entry.nasId)
+                continue
+            }
+            // Check if already in upload queue
+            if (uploadQueueDao.existsByPath(path) != null) continue
+            uploadQueueDao.insert(UploadQueueEntity(localPath = path, targetFolderId = 0))
+            queued++
+        }
+        Timber.d("Upload scan: $queued new items queued")
+
+        // Re-queue failed uploads (max 5 retries)
+        val failed = uploadQueueDao.getFailed()
+        for (item in failed) {
+            if (item.retryCount < 5) {
+                uploadQueueDao.updateStatus(item.id, "PENDING", item.retryCount)
+            }
+        }
+
+        if (queued > 0 || failed.any { it.retryCount < 5 }) {
+            triggerUploadWorker()
+        }
+        return queued
+    }
+
+    // ── Internal: queue new device photos for upload ──────────────
 
     private suspend fun queueNewDevicePhotosForUpload(photos: List<LocalPhoto>): Int {
         if (photos.isEmpty()) return 0
@@ -411,8 +439,39 @@ class NasSyncEngine @Inject constructor(
                     if (photo.filename in rejectIds) continue
                     if (photo.filename.contains(".VB-01.COVER.")) continue
                     if (!isUploadablePath(photo.path)) continue
-                    if (mediaDao.getByLocalPath(photo.path) != null) continue
 
+                    val existing = mediaDao.getByLocalPath(photo.path)
+                    if (existing != null) {
+                        // Already on NAS (real UUID nasId) → skip
+                        if (existing.nasId.length > 10 && !existing.nasId.startsWith("-")) continue
+                        // Already queued for upload → skip
+                        if (existing.storageStatus == "DEVICE") continue
+                        // Check by hash if it's already on NAS under a different entry
+                        val nasEntry = photo.sha1Base64.let { hash -> if (hash.isNotBlank()) mediaDao.getByHash(hash) else null }
+                        if (nasEntry != null && nasEntry.nasId != existing.nasId && nasEntry.nasId.length > 10 && !nasEntry.nasId.startsWith("-")) {
+                            // Already on NAS — link local file to NAS entry, delete temp entry
+                            mediaDao.updateStorageStatus(nasEntry.nasId, "SYNCED", photo.path)
+                            if (existing.nasId != nasEntry.nasId) mediaDao.deleteByNasId(existing.nasId)
+                            continue
+                        }
+                        // Device-only with temp nasId → needs upload
+                        if (existing.storageStatus == "SYNCED" || existing.storageStatus == "DEVICE") {
+                            mediaDao.updateStorageStatus(existing.nasId, "DEVICE", existing.localPath)
+                            uploadQueueDao.insert(UploadQueueEntity(localPath = photo.path, targetFolderId = 0))
+                            toUpload++
+                        }
+                        continue
+                    }
+
+                    // Check by hash before creating new entry — might already be on NAS
+                    val nasByHash = photo.sha1Base64.let { hash -> if (hash.isNotBlank()) mediaDao.getByHash(hash) else null }
+                    if (nasByHash != null && nasByHash.nasId.length > 10 && !nasByHash.nasId.startsWith("-")) {
+                        // Already on NAS — just link local file
+                        mediaDao.updateStorageStatus(nasByHash.nasId, "SYNCED", photo.path)
+                        continue
+                    }
+
+                    // New photo — create entity + queue
                     val tempId = java.util.UUID.randomUUID().toString()
                     val entity = MediaEntity(
                         nasId = tempId,
@@ -423,7 +482,7 @@ class NasSyncEngine @Inject constructor(
                         folderId = 0,
                         cacheKey = "",
                         localPath = photo.path,
-                        storageStatus = "UPLOAD_PENDING",
+                        storageStatus = "DEVICE",
                         nasHash = photo.sha1Base64,
                         localFileModifiedAt = photo.dateModified,
                     )
@@ -435,7 +494,42 @@ class NasSyncEngine @Inject constructor(
                 Timber.w(e, "Bulk upload check failed, skipping batch")
             }
         }
+        // Re-queue failed uploads (max 5 retries)
+        val failed = uploadQueueDao.getFailed()
+        for (item in failed) {
+            if (item.retryCount < 5) {
+                uploadQueueDao.updateStatus(item.id, "PENDING", item.retryCount)
+                Timber.d("Re-queued failed upload: ${item.localPath} (retry ${item.retryCount + 1})")
+            }
+        }
+
+        // Trigger UploadWorker to process the queue
+        if (toUpload > 0 || failed.any { it.retryCount < 5 }) {
+            triggerUploadWorker()
+        }
+
         return toUpload
+    }
+
+    private fun triggerUploadWorker() {
+        try {
+            val wifiOnly = kotlinx.coroutines.runBlocking { preferencesRepository.wifiOnlyUpload.first() }
+            val networkType = if (wifiOnly) androidx.work.NetworkType.UNMETERED else androidx.work.NetworkType.CONNECTED
+            androidx.work.WorkManager.getInstance(appContext).enqueueUniqueWork(
+                UploadWorker.WORK_NAME,
+                androidx.work.ExistingWorkPolicy.KEEP,
+                androidx.work.OneTimeWorkRequestBuilder<UploadWorker>()
+                    .setConstraints(
+                        androidx.work.Constraints.Builder()
+                            .setRequiredNetworkType(networkType)
+                            .build(),
+                    )
+                    .build(),
+            )
+            Timber.d("Upload worker triggered")
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to trigger upload worker")
+        }
     }
 
     /** Returns false for third-party app directories that should not be uploaded. */

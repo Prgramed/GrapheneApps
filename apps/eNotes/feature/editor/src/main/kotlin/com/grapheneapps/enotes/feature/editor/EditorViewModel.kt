@@ -56,6 +56,9 @@ class EditorViewModel @Inject constructor(
     private val redoStack = mutableListOf<RichTextDocument>()
     private var saveJob: Job? = null
     private var isDirty = false
+    private var undoDebounceJob: Job? = null
+    private var lastUndoSnapshot: RichTextDocument? = null
+    private var isUndoRedoInProgress = false
     private var autoLockJob: Job? = null
 
     private fun startAutoLockTimer() {
@@ -123,7 +126,7 @@ class EditorViewModel @Inject constructor(
 
     fun onBlockTextChanged(blockId: String, newText: String) {
         isDirty = true
-        pushUndo()
+        if (!isUndoRedoInProgress) pushUndoDebounced()
         val blocks = _uiState.value.document.blocks.map { block ->
             if (block.id == blockId) {
                 // Adjust spans for text length changes
@@ -286,17 +289,32 @@ class EditorViewModel @Inject constructor(
     }
 
     fun undo() {
+        undoDebounceJob?.cancel()
+        lastUndoSnapshot?.let {
+            undoStack.add(it)
+            lastUndoSnapshot = null
+        }
         if (undoStack.isEmpty()) return
+        isUndoRedoInProgress = true
         redoStack.add(_uiState.value.document)
         _uiState.update { it.copy(document = undoStack.removeLast(), isSaved = false) }
         scheduleSave()
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(100)
+            isUndoRedoInProgress = false
+        }
     }
 
     fun redo() {
         if (redoStack.isEmpty()) return
+        isUndoRedoInProgress = true
         undoStack.add(_uiState.value.document)
         _uiState.update { it.copy(document = redoStack.removeLast(), isSaved = false) }
         scheduleSave()
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(100)
+            isUndoRedoInProgress = false
+        }
     }
 
     fun onBiometricSuccess() {
@@ -455,6 +473,24 @@ class EditorViewModel @Inject constructor(
         undoStack.add(_uiState.value.document)
         if (undoStack.size > 50) undoStack.removeFirst()
         redoStack.clear()
+    }
+
+    private fun pushUndoDebounced() {
+        // On first keystroke of a burst, save the snapshot immediately
+        if (undoDebounceJob == null || undoDebounceJob?.isActive != true) {
+            lastUndoSnapshot = _uiState.value.document
+        }
+        // Debounce: only commit to undo stack after 500ms pause
+        undoDebounceJob?.cancel()
+        undoDebounceJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(500)
+            lastUndoSnapshot?.let { snapshot ->
+                undoStack.add(snapshot)
+                if (undoStack.size > 50) undoStack.removeFirst()
+                redoStack.clear()
+                lastUndoSnapshot = null
+            }
+        }
     }
 
     private fun scheduleSave() {

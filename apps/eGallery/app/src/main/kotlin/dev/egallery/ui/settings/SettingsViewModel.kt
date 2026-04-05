@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -128,7 +129,51 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setAutoUploadEnabled(enabled: Boolean) {
-        viewModelScope.launch { preferencesRepository.setAutoUploadEnabled(enabled) }
+        viewModelScope.launch {
+            preferencesRepository.setAutoUploadEnabled(enabled)
+            val wm = androidx.work.WorkManager.getInstance(appContext)
+            if (enabled) {
+                val wifiOnly = preferencesRepository.wifiOnlyUpload.first()
+                val networkType = if (wifiOnly) androidx.work.NetworkType.UNMETERED else androidx.work.NetworkType.CONNECTED
+                val request = androidx.work.PeriodicWorkRequestBuilder<dev.egallery.sync.UploadScanWorker>(
+                    30, java.util.concurrent.TimeUnit.MINUTES,
+                ).setConstraints(
+                    androidx.work.Constraints.Builder().setRequiredNetworkType(networkType).build(),
+                ).build()
+                wm.enqueueUniquePeriodicWork(
+                    dev.egallery.sync.UploadScanWorker.PERIODIC_WORK_NAME,
+                    androidx.work.ExistingPeriodicWorkPolicy.REPLACE,
+                    request,
+                )
+                // Also run immediately
+                scanAndUploadNow()
+            } else {
+                wm.cancelUniqueWork(dev.egallery.sync.UploadScanWorker.PERIODIC_WORK_NAME)
+            }
+        }
+    }
+
+    private val _isScanning = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val isScanning: kotlinx.coroutines.flow.StateFlow<Boolean> = _isScanning
+
+    private val _scanStatus = kotlinx.coroutines.flow.MutableStateFlow("")
+    val scanStatus: kotlinx.coroutines.flow.StateFlow<String> = _scanStatus
+
+    fun scanAndUploadNow() {
+        if (_isScanning.value) return // Already running
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isScanning.value = true
+            _scanStatus.value = "Scanning device photos..."
+            try {
+                val queued = syncEngine.scanAndQueueUploads()
+                _scanStatus.value = if (queued > 0) "$queued new photos queued for upload" else "No new photos found"
+            } catch (e: Exception) {
+                _scanStatus.value = "Scan failed: ${e.message?.take(50)}"
+                timber.log.Timber.w(e, "Manual upload scan failed")
+            } finally {
+                _isScanning.value = false
+            }
+        }
     }
 
     fun setAutoDeleteCovers(enabled: Boolean) {
@@ -185,14 +230,14 @@ class SettingsViewModel @Inject constructor(
             for (item in failed) {
                 uploadQueueDao.delete(item.id)
                 mediaDao.getByLocalPath(item.localPath)?.let { entity ->
-                    if (entity.storageStatus == "UPLOAD_FAILED") {
-                        mediaDao.updateStorageStatus(entity.nasId, "ON_DEVICE", entity.localPath)
+                    if (entity.storageStatus == "DEVICE") {
+                        mediaDao.updateStorageStatus(entity.nasId, "SYNCED", entity.localPath)
                     }
                 }
             }
-            val failedMedia = mediaDao.getByStorageStatus("UPLOAD_FAILED")
+            val failedMedia = mediaDao.getByStorageStatus("DEVICE")
             for (entity in failedMedia) {
-                mediaDao.updateStorageStatus(entity.nasId, "ON_DEVICE", entity.localPath)
+                mediaDao.updateStorageStatus(entity.nasId, "SYNCED", entity.localPath)
             }
             _failedPaths.value = emptyList()
         }
@@ -217,13 +262,13 @@ class SettingsViewModel @Inject constructor(
                 uploadQueueDao.updateStatus(item.id, "PENDING", 0)
                 val entity = mediaDao.getByLocalPath(item.localPath)
                 if (entity != null) {
-                    mediaDao.updateStorageStatus(entity.nasId, "UPLOAD_PENDING", entity.localPath)
+                    mediaDao.updateStorageStatus(entity.nasId, "DEVICE", entity.localPath)
                 }
                 requeued++
             }
 
             // 2. Find orphaned UPLOAD_FAILED media entities with no queue entry
-            val failedMedia = mediaDao.getByStorageStatus("UPLOAD_FAILED")
+            val failedMedia = mediaDao.getByStorageStatus("DEVICE")
             timber.log.Timber.d("retryFailedUploads: ${failedMedia.size} UPLOAD_FAILED in media DB")
             for (entity in failedMedia) {
                 // Try to find the file: check localPath, then search by filename in DCIM
@@ -241,7 +286,7 @@ class SettingsViewModel @Inject constructor(
                     uploadQueueDao.insert(
                         dev.egallery.data.db.entity.UploadQueueEntity(localPath = filePath, targetFolderId = 0),
                     )
-                    mediaDao.updateStorageStatus(entity.nasId, "UPLOAD_PENDING", filePath)
+                    mediaDao.updateStorageStatus(entity.nasId, "DEVICE", filePath)
                     requeued++
                     timber.log.Timber.d("Re-queued: ${entity.nasId} -> $filePath")
                 } else {

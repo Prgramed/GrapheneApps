@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
                 folderId = 0,
                 cacheKey = "",
                 localPath = destFile.absolutePath,
-                storageStatus = "UPLOAD_PENDING",
+                storageStatus = "DEVICE",
                 lastSyncedAt = System.currentTimeMillis(),
             )
             mediaDao.upsert(entity)

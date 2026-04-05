@@ -27,7 +27,7 @@ class TrashViewModel @Inject constructor(
 
     fun restore(nasId: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            mediaDao.restore(nasId, "ON_DEVICE")
+            mediaDao.restore(nasId, "SYNCED")
         }
     }
 

@@ -37,13 +37,13 @@ class EvictionWorker @AssistedInject constructor(
         var evicted = 0
         for (entity in expired) {
             // Never evict items still pending upload
-            if (entity.storageStatus == "UPLOAD_PENDING" || entity.storageStatus == "UPLOAD_FAILED") {
+            if (entity.storageStatus == "DEVICE" || entity.storageStatus == "DEVICE") {
                 continue
             }
 
             val localPath = entity.localPath ?: continue
             storageManager.deleteLocalFile(localPath)
-            mediaDao.updateStorageStatus(entity.nasId, "NAS_ONLY", null)
+            mediaDao.updateStorageStatus(entity.nasId, "NAS", null)
             evicted++
         }
 

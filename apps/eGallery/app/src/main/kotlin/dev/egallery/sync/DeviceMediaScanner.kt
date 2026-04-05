@@ -110,7 +110,7 @@ class DeviceMediaScanner @Inject constructor(
                         folderId = 0,
                         cacheKey = "",
                         localPath = localPath,
-                        storageStatus = "ON_DEVICE",
+                        storageStatus = "DEVICE",
                         lastSyncedAt = System.currentTimeMillis(),
                     )
                     mediaDao.upsert(entity)
@@ -214,7 +214,7 @@ class DeviceMediaScanner @Inject constructor(
                             val existingByHash = mediaDao.getByHash(nasHash)
                             if (existingByHash != null) {
                                 // Photo already exists on NAS — update local path on the existing entry
-                                mediaDao.updateStorageStatus(existingByHash.nasId, "ON_DEVICE", localPath)
+                                mediaDao.updateStorageStatus(existingByHash.nasId, "SYNCED", localPath)
                                 imported++
                                 continue
                             }
@@ -238,7 +238,7 @@ class DeviceMediaScanner @Inject constructor(
                         folderId = 0,
                         cacheKey = "",
                         localPath = identifierPath,
-                        storageStatus = "ON_DEVICE",
+                        storageStatus = "DEVICE",
                         nasHash = nasHash,
                         lastSyncedAt = System.currentTimeMillis(),
                     )

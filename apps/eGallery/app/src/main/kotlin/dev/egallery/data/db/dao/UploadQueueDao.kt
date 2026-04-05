@@ -38,4 +38,7 @@ interface UploadQueueDao {
 
     @Query("DELETE FROM upload_queue WHERE localPath LIKE '%' || :pattern || '%'")
     suspend fun deleteByPathContaining(pattern: String): Int
+
+    @Query("SELECT * FROM upload_queue WHERE localPath = :path LIMIT 1")
+    suspend fun existsByPath(path: String): UploadQueueEntity?
 }

@@ -27,7 +27,7 @@ data class MediaEntity(
     val localPath: String? = null,
     val localExpiryType: String? = null, // "ROLLING" or "FIXED"
     val localExpiryAt: Long? = null, // epoch millis (only for FIXED)
-    val storageStatus: String, // "ON_DEVICE", "NAS_ONLY", "UPLOAD_PENDING", "UPLOAD_FAILED"
+    val storageStatus: String, // "DEVICE", "NAS", "SYNCED"
     val lat: Double? = null,
     val lng: Double? = null,
     val nasHash: String? = null,

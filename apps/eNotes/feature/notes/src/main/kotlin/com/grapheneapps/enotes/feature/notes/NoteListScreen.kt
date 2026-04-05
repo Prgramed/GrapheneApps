@@ -303,15 +303,17 @@ private fun NoteRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = extractPreview(note.bodyJson),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    lineHeight = 18.sp,
-                )
+                if (!note.isLocked) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = extractPreview(note.bodyJson),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 18.sp,
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = formatDate(note.editedAt),

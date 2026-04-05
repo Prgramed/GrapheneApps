@@ -234,7 +234,7 @@ class TimelineViewModel @Inject constructor(
                 try {
                     srcFile.copyTo(destFile, overwrite = true)
                     srcFile.delete()
-                    mediaDao.updateStorageStatus(nasId, "ON_DEVICE", destFile.absolutePath)
+                    mediaDao.updateStorageStatus(nasId, "SYNCED", destFile.absolutePath)
                 } catch (e: Exception) {
                     Timber.w(e, "Failed to move $nasId")
                 }

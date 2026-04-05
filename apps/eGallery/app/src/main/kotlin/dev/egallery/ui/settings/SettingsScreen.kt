@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -236,6 +238,35 @@ fun SettingsScreen(
             // Upload queue status
             val failedUploads by viewModel.failedUploadCount.collectAsState()
             val totalUploads by viewModel.totalUploadCount.collectAsState()
+            // Scan & Upload — always visible
+            val isScanning by viewModel.isScanning.collectAsState()
+            val scanStatus by viewModel.scanStatus.collectAsState()
+            OutlinedButton(
+                onClick = { viewModel.scanAndUploadNow() },
+                enabled = !isScanning,
+            ) {
+                if (isScanning) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Scanning...")
+                } else {
+                    Text("Scan & Upload")
+                }
+            }
+            if (scanStatus.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = scanStatus,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (scanStatus.contains("failed", ignoreCase = true)) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.primary,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+
             if (totalUploads == 0 && !isUploading) {
                 Text(
                     text = "No uploads in queue",
