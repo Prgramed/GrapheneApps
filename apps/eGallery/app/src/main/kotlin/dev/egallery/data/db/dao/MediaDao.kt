@@ -111,11 +111,17 @@ interface MediaDao {
     @Query("SELECT * FROM media WHERE storageStatus = :status")
     suspend fun getByStatus(status: String): List<MediaEntity>
 
-    @Query("SELECT nasHash FROM media WHERE nasHash IS NOT NULL GROUP BY nasHash HAVING COUNT(*) > 1")
+    @Query("SELECT nasHash FROM media WHERE nasHash IS NOT NULL AND nasHash != '' GROUP BY nasHash HAVING COUNT(*) > 1")
     suspend fun findHashDuplicates(): List<String>
 
     @Query("SELECT * FROM media WHERE nasHash = :hash")
     suspend fun getAllByHash(hash: String): List<MediaEntity>
+
+    @Query("SELECT filename FROM media WHERE storageStatus != 'TRASHED' GROUP BY filename HAVING COUNT(*) > 1")
+    suspend fun findFilenameDuplicates(): List<String>
+
+    @Query("SELECT * FROM media WHERE filename = :filename AND storageStatus != 'TRASHED'")
+    suspend fun getAllByFilename(filename: String): List<MediaEntity>
 
     @Query("SELECT * FROM media WHERE localPath = :localPath LIMIT 1")
     suspend fun getByLocalPath(localPath: String): MediaEntity?
@@ -129,8 +135,8 @@ interface MediaDao {
     @Query("SELECT nasId FROM media")
     suspend fun getAllNasIds(): List<String>
 
-    @Query("SELECT nasId FROM media WHERE storageStatus != 'TRASHED' ORDER BY captureDate DESC")
-    suspend fun getAllNasIdsOrdered(): List<String>
+    @Query("SELECT nasId FROM media WHERE storageStatus != 'TRASHED' ORDER BY captureDate DESC LIMIT :limit OFFSET :offset")
+    suspend fun getNasIdsOrderedChunk(limit: Int, offset: Int): List<String>
 
     @Query("SELECT COUNT(*) FROM media WHERE nasId IS NOT NULL AND nasId != ''")
     suspend fun getNasItemCount(): Int
@@ -206,6 +212,9 @@ interface MediaDao {
 
     @Query("UPDATE media SET nasHash = :hash WHERE nasId = :nasId")
     suspend fun updateHash(nasId: String, hash: String)
+
+    @Query("UPDATE media SET lat = :lat, lng = :lng WHERE nasId = :nasId")
+    suspend fun updateLatLng(nasId: String, lat: Double, lng: Double)
 
     @Query("SELECT localPath, nasHash, localFileModifiedAt FROM media WHERE localPath IS NOT NULL AND nasHash IS NOT NULL")
     suspend fun getLocalHashCache(): List<LocalHashCacheEntry>

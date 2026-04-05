@@ -99,7 +99,17 @@ class ViewerViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            _timelineIds.value = mediaDao.getAllNasIdsOrdered()
+            // Load IDs in chunks to avoid CursorWindow overflow on large libraries
+            val allIds = mutableListOf<String>()
+            var offset = 0
+            val chunkSize = 5000
+            while (true) {
+                val chunk = mediaDao.getNasIdsOrderedChunk(chunkSize, offset)
+                if (chunk.isEmpty()) break
+                allIds.addAll(chunk)
+                offset += chunkSize
+            }
+            _timelineIds.value = allIds
             _currentItem.value = mediaRepository.getItemDetail(initialNasId)
         }
     }
@@ -129,7 +139,7 @@ class ViewerViewModel @Inject constructor(
             }
         }
         if (credentialStore.serverUrl.isNotBlank()) {
-            return ThumbnailUrlBuilder.preview(credentialStore.serverUrl, item.nasId)
+            return ThumbnailUrlBuilder.original(credentialStore.serverUrl, item.nasId)
         }
         return ""
     }

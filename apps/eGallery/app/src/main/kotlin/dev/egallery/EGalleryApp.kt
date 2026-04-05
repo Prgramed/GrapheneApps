@@ -49,7 +49,7 @@ class EGalleryApp : Application(), Configuration.Provider, SingletonImageLoader.
         installCrashHandler()
         clearPoisonedCache()
         restoreWronglyTrashedItems()
-        deduplicateByHash()
+        deduplicateEntries()
 
         // Auto-sync on startup (fetch from server)
         appScope.launch {
@@ -101,34 +101,66 @@ class EGalleryApp : Application(), Configuration.Provider, SingletonImageLoader.
         }
     }
 
-    /** One-time: merge duplicate entries that have the same nasHash but different nasIds */
-    private fun deduplicateByHash() {
-        val prefs = getSharedPreferences("cache_version", MODE_PRIVATE)
-        if (prefs.getInt("dedup_v", 0) < 1) {
-            appScope.launch {
-                try {
-                    val duplicates = mediaDao.findHashDuplicates()
-                    var merged = 0
-                    for (dup in duplicates) {
-                        // Keep the entry with a real nasId (not temp UUID), merge localPath
-                        val entries = mediaDao.getAllByHash(dup)
-                        if (entries.size < 2) continue
-                        val withLocalPath = entries.firstOrNull { it.localPath != null }
-                        val withRealNasId = entries.firstOrNull { !it.nasId.startsWith("-") && it.nasId.length > 10 }
-                        if (withRealNasId != null && withLocalPath != null && withRealNasId.nasId != withLocalPath.nasId) {
-                            // Merge: keep real NAS entry, add localPath, delete temp entry
-                            mediaDao.updateStorageStatus(withRealNasId.nasId, "SYNCED", withLocalPath.localPath)
-                            mediaDao.deleteByNasId(withLocalPath.nasId)
-                            merged++
-                        }
-                    }
-                    if (merged > 0) Timber.d("Deduplicated $merged entries by hash")
-                    prefs.edit().putInt("dedup_v", 1).apply()
-                } catch (e: Exception) {
-                    Timber.w(e, "Dedup failed")
+    /** Merge duplicate entries — by hash and by filename — runs every startup */
+    private fun deduplicateEntries() {
+        appScope.launch {
+            try {
+                var merged = 0
+
+                // Pass 1: Dedup by hash
+                val hashDupes = mediaDao.findHashDuplicates()
+                for (hash in hashDupes) {
+                    val entries = mediaDao.getAllByHash(hash)
+                    if (entries.size < 2) continue
+                    merged += mergeEntries(entries)
                 }
+
+                // Pass 2: Dedup by filename (catches unhashed device entries from quickScan)
+                val filenameDupes = mediaDao.findFilenameDuplicates()
+                for (filename in filenameDupes) {
+                    val entries = mediaDao.getAllByFilename(filename)
+                    if (entries.size < 2) continue
+                    // Only merge if there's a mix of real and temp nasIds
+                    val hasReal = entries.any { isRealNasId(it.nasId) }
+                    val hasTemp = entries.any { !isRealNasId(it.nasId) }
+                    if (hasReal && hasTemp) {
+                        merged += mergeEntries(entries)
+                    }
+                }
+
+                if (merged > 0) Timber.d("Deduplicated $merged entries")
+            } catch (e: Exception) {
+                Timber.w(e, "Dedup failed")
             }
         }
+    }
+
+    private suspend fun mergeEntries(entries: List<dev.egallery.data.db.entity.MediaEntity>): Int {
+        // Prefer: real nasId > has localPath > newest captureDate
+        val best = entries.sortedWith(compareByDescending<dev.egallery.data.db.entity.MediaEntity> {
+            isRealNasId(it.nasId)
+        }.thenByDescending {
+            it.localPath != null
+        }.thenByDescending {
+            it.captureDate
+        }).first()
+        // Merge localPath from any entry into the best one
+        val localPath = entries.firstOrNull { it.localPath != null }?.localPath
+        if (localPath != null && best.localPath == null) {
+            mediaDao.updateStorageStatus(best.nasId, "SYNCED", localPath)
+        }
+        var count = 0
+        for (entry in entries) {
+            if (entry.nasId != best.nasId) {
+                mediaDao.deleteByNasId(entry.nasId)
+                count++
+            }
+        }
+        return count
+    }
+
+    private fun isRealNasId(nasId: String): Boolean {
+        return nasId.length > 10 && !nasId.startsWith("-") && nasId.toIntOrNull() == null
     }
 
     private fun clearPoisonedCache() {

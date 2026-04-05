@@ -100,6 +100,31 @@ class DeviceMediaScanner @Inject constructor(
                     val dateModified = cursor.getLong(dateModCol) * 1000L
                     val captureDate = if (dateTaken > 0) dateTaken else dateModified
 
+                    // Compute hash so server sync can merge by hash (prevents duplicates)
+                    val file = File(localPath)
+                    var nasHash: String? = null
+                    if (file.exists() && file.canRead()) {
+                        nasHash = try { HashUtil.sha1Base64(file) } catch (_: Exception) { null }
+                        // If hash matches an existing server entry, link instead of creating duplicate
+                        if (nasHash != null) {
+                            val existing = mediaDao.getByHash(nasHash)
+                            if (existing != null) {
+                                mediaDao.updateStorageStatus(existing.nasId, "SYNCED", localPath)
+                                imported++
+                                continue
+                            }
+                        }
+                    }
+
+                    // Also check by filename — if a server entry with same name exists, link it
+                    val byFilename = mediaDao.searchByFilename(filename)
+                    val serverEntry = byFilename.firstOrNull { it.filename == filename && it.nasId.length > 10 && !it.nasId.startsWith("-") }
+                    if (serverEntry != null) {
+                        mediaDao.updateStorageStatus(serverEntry.nasId, "SYNCED", localPath)
+                        imported++
+                        continue
+                    }
+
                     val tempNasId = tempIdCounter.getAndDecrement().toString()
                     val entity = MediaEntity(
                         nasId = tempNasId,
@@ -111,6 +136,7 @@ class DeviceMediaScanner @Inject constructor(
                         cacheKey = "",
                         localPath = localPath,
                         storageStatus = "DEVICE",
+                        nasHash = nasHash,
                         lastSyncedAt = System.currentTimeMillis(),
                     )
                     mediaDao.upsert(entity)

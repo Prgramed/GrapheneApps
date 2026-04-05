@@ -11,34 +11,53 @@ import android.graphics.drawable.GradientDrawable
 import android.location.LocationManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.SingletonImageLoader
+import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.toBitmap
@@ -48,7 +67,6 @@ import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.tilesource.XYTileSource
-import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
@@ -63,6 +81,7 @@ private val DarkMapTileSource = XYTileSource(
     ),
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
     onPhotoClick: (String) -> Unit,
@@ -72,7 +91,8 @@ fun MapScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val mapViewRef = remember { androidx.compose.runtime.mutableStateOf<MapView?>(null) }
+    val mapViewRef = remember { mutableStateOf<MapView?>(null) }
+    val selectedCluster by viewModel.selectedCluster.collectAsState()
 
     DisposableEffect(Unit) {
         Configuration.getInstance().apply {
@@ -116,12 +136,23 @@ fun MapScreen(
     val validMarkers = remember(allMarkers) {
         allMarkers.filter { it.lat != 0.0 && it.lon != 0.0 }
     }
+    val currentMarkers = rememberUpdatedState(validMarkers)
+    val onClusterClick: (PhotoCluster) -> Unit = remember { { cluster -> viewModel.selectCluster(cluster) } }
+    // Use saved position if available, otherwise first marker
     val centerPoint = remember(validMarkers) {
-        if (validMarkers.isNotEmpty()) {
+        if (viewModel.savedCenterLat != null) {
+            GeoPoint(viewModel.savedCenterLat!!, viewModel.savedCenterLon!!)
+        } else if (validMarkers.isNotEmpty()) {
             GeoPoint(validMarkers.first().lat, validMarkers.first().lon)
         } else {
             GeoPoint(51.5, -0.1)
         }
+    }
+
+    // Re-add markers whenever data changes (e.g. API returns)
+    LaunchedEffect(validMarkers) {
+        val mapView = mapViewRef.value ?: return@LaunchedEffect
+        addMarkersAsync(mapView, viewModel, validMarkers, onPhotoClick, onClusterClick, scope)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -135,26 +166,27 @@ fun MapScreen(
                     zoomController.setVisibility(
                         org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER,
                     )
-                    controller.setZoom(6.0)
+                    controller.setZoom(viewModel.savedZoom)
                     controller.setCenter(centerPoint)
                     minZoomLevel = 2.0
                     maxZoomLevel = 19.0
 
-                    // Initial markers at default zoom
-                    scope.launch {
-                        addMarkersAsync(this@apply, viewModel, validMarkers, onPhotoClick, scope)
-                    }
-
-                    // Rebuild markers on zoom change (throttled)
+                    // Save position + rebuild markers on zoom/scroll change
                     var lastZoomInt = zoomLevelDouble.toInt()
                     addMapListener(object : MapListener {
-                        override fun onScroll(event: ScrollEvent?): Boolean = false
+                        override fun onScroll(event: ScrollEvent?): Boolean {
+                            val center = mapCenter
+                            viewModel.saveMapPosition(zoomLevelDouble, center.latitude, center.longitude)
+                            return false
+                        }
                         override fun onZoom(event: ZoomEvent?): Boolean {
+                            val center = mapCenter
+                            viewModel.saveMapPosition(zoomLevelDouble, center.latitude, center.longitude)
                             val newZoomInt = zoomLevelDouble.toInt()
                             if (newZoomInt != lastZoomInt) {
                                 lastZoomInt = newZoomInt
                                 scope.launch {
-                                    addMarkersAsync(this@apply, viewModel, validMarkers, onPhotoClick, scope)
+                                    addMarkersAsync(this@apply, viewModel, currentMarkers.value, onPhotoClick, onClusterClick, scope)
                                 }
                             }
                             return false
@@ -191,6 +223,65 @@ fun MapScreen(
             Icon(Icons.Default.MyLocation, "My location")
         }
     }
+
+    // Cluster photo grid bottom sheet
+    selectedCluster?.let { cluster ->
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        // Filter to valid server IDs only (temp negative IDs have no server thumbnail)
+        val validPhotos = remember(cluster) {
+            cluster.markers.filter { it.id.length > 10 && !it.id.startsWith("-") }
+        }
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.selectCluster(null) },
+            sheetState = sheetState,
+        ) {
+            Text(
+                text = "${validPhotos.size} photos",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(400.dp)
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(validPhotos) { marker ->
+                    Box(
+                        modifier = Modifier
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable {
+                                // Save map position before navigating
+                                mapViewRef.value?.let { mv ->
+                                    val c = mv.mapCenter
+                                    viewModel.saveMapPosition(mv.zoomLevelDouble, c.latitude, c.longitude)
+                                }
+                                onPhotoClick(marker.id)
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(viewModel.thumbnailUrl(marker.id))
+                                .size(256)
+                                .memoryCacheKey("map_thumb_${marker.id}")
+                                .build(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            imageLoader = SingletonImageLoader.get(context),
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
 }
 
 private fun goToMyLocation(context: android.content.Context, mapView: MapView?) {
@@ -208,12 +299,14 @@ private fun goToMyLocation(context: android.content.Context, mapView: MapView?) 
     } catch (_: SecurityException) { }
 }
 
-private fun clusterPrecisionForZoom(zoom: Double): Int = when {
-    zoom >= 16 -> 6
-    zoom >= 14 -> 5
-    zoom >= 11 -> 4
-    zoom >= 8 -> 3
-    else -> 2
+// Returns cell size in degrees for clustering at a given zoom level
+private fun clusterCellSizeForZoom(zoom: Double): Double = when {
+    zoom >= 16 -> 0.001   // ~100m
+    zoom >= 14 -> 0.01    // ~1km
+    zoom >= 11 -> 0.1     // ~10km
+    zoom >= 8 -> 1.0      // ~100km
+    zoom >= 5 -> 5.0      // ~500km
+    else -> 20.0           // ~2000km
 }
 
 private suspend fun addMarkersAsync(
@@ -221,13 +314,14 @@ private suspend fun addMarkersAsync(
     viewModel: MapViewModel,
     items: List<dev.egallery.api.dto.ImmichMapMarker>,
     onPhotoClick: (String) -> Unit,
+    onClusterClick: (PhotoCluster) -> Unit,
     scope: kotlinx.coroutines.CoroutineScope,
 ) {
-    val precision = clusterPrecisionForZoom(mapView.zoomLevelDouble)
+    val cellSize = clusterCellSizeForZoom(mapView.zoomLevelDouble)
 
     // Cluster off main thread
     val clusters = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-        viewModel.cluster(items, precision)
+        viewModel.cluster(items, cellSize)
     }
 
     // Cap rendered markers to prevent UI freeze
@@ -275,20 +369,7 @@ private suspend fun addMarkersAsync(
             } else {
                 title = "${cluster.count} photos"
                 setOnMarkerClickListener { _, _ ->
-                    // Small clusters or high zoom: open first photo
-                    if (cluster.count <= 5 || mapView.zoomLevelDouble >= 14) {
-                        onPhotoClick(cluster.markers.first().id)
-                    } else {
-                        val lats = cluster.markers.map { it.lat }
-                        val lngs = cluster.markers.map { it.lon }
-                        if (lats.isNotEmpty() && lngs.isNotEmpty()) {
-                            val box = BoundingBox(
-                                lats.max(), lngs.max(),
-                                lats.min(), lngs.min(),
-                            )
-                            mapView.zoomToBoundingBox(box.increaseByScale(1.3f), true)
-                        }
-                    }
+                    onClusterClick(cluster)
                     true
                 }
                 icon = createClusterDrawable(mapView.context, cluster.count)

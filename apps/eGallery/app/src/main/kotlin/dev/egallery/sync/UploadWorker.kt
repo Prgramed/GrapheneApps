@@ -180,7 +180,13 @@ class UploadWorker @AssistedInject constructor(
 
             val tempNasId = entity?.nasId ?: ""
             if (tempNasId.isNotBlank() && response.id.isNotBlank()) {
-                mediaDao.updateNasIdAndStatus(tempNasId, response.id, "SYNCED")
+                try {
+                    mediaDao.updateNasIdAndStatus(tempNasId, response.id, "SYNCED")
+                } catch (_: android.database.sqlite.SQLiteConstraintException) {
+                    // Real nasId already exists (synced from server) — delete temp, update existing
+                    mediaDao.deleteByNasId(tempNasId)
+                    mediaDao.updateStorageStatus(response.id, "SYNCED", entity?.localPath)
+                }
             }
 
             uploadQueueDao.delete(item.id)

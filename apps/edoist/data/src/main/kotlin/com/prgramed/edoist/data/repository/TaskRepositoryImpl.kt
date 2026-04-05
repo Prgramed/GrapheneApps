@@ -159,8 +159,10 @@ class TaskRepositoryImpl @Inject constructor(
     override suspend fun createTask(task: Task): String {
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
+        val maxSort = taskDao.getMaxSortOrder(task.projectId)
         val entity = task.copy(
             id = id,
+            sortOrder = maxSort + 1,
             createdAtMillis = now,
             updatedAtMillis = now,
         ).toEntity()

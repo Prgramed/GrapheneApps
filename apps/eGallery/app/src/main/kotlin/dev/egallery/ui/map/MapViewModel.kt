@@ -38,40 +38,68 @@ class MapViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _selectedCluster = MutableStateFlow<PhotoCluster?>(null)
+    val selectedCluster: StateFlow<PhotoCluster?> = _selectedCluster.asStateFlow()
+
+    // Saved map position (survives navigation)
+    var savedZoom: Double = 6.0
+    var savedCenterLat: Double? = null
+    var savedCenterLon: Double? = null
+
+    fun selectCluster(cluster: PhotoCluster?) {
+        _selectedCluster.value = cluster
+    }
+
+    fun saveMapPosition(zoom: Double, lat: Double, lon: Double) {
+        savedZoom = zoom
+        savedCenterLat = lat
+        savedCenterLon = lon
+    }
+
     init {
         viewModelScope.launch {
             try {
-                // Try local DB first (instant)
-                val entities = withContext(Dispatchers.IO) { mediaDao.getWithLocation() }
-                if (entities.isNotEmpty()) {
-                    _markers.value = entities.map { entity ->
+                // Show cached local markers instantly while API loads
+                val cached = withContext(Dispatchers.IO) { mediaDao.getWithLocation() }
+                if (cached.isNotEmpty()) {
+                    _markers.value = cached.map { entity ->
                         ImmichMapMarker(
                             id = entity.nasId,
                             lat = entity.lat ?: 0.0,
                             lon = entity.lng ?: 0.0,
                         )
                     }
-                    Timber.d("Loaded ${_markers.value.size} map markers from local DB")
-                } else {
-                    // Fallback to API if no local geotagged data
-                    val apiMarkers = kotlinx.coroutines.withTimeoutOrNull(15_000L) {
-                        immichApi.getMapMarkers()
+                    Timber.d("Showing ${cached.size} cached map markers")
+                }
+
+                // Always fetch from API (time bucket sync doesn't include lat/lng)
+                val apiMarkers = withContext(Dispatchers.IO) {
+                    immichApi.getMapMarkers()
+                }
+                _markers.value = apiMarkers
+                Timber.d("Loaded ${apiMarkers.size} map markers from API")
+
+                // Cache lat/lng into Room for instant display next time
+                withContext(Dispatchers.IO) {
+                    for (marker in apiMarkers) {
+                        if (marker.lat != 0.0 || marker.lon != 0.0) {
+                            mediaDao.updateLatLng(marker.id, marker.lat, marker.lon)
+                        }
                     }
-                    _markers.value = apiMarkers ?: emptyList()
-                    Timber.d("Loaded ${_markers.value.size} map markers from API (no local data)")
                 }
             } catch (e: Exception) {
-                Timber.w(e, "Failed to load map markers")
+                Timber.w(e, "Failed to load map markers from API")
+                // Keep whatever cached markers we have
             } finally {
                 _isLoading.value = false
             }
         }
     }
 
-    fun cluster(markers: List<ImmichMapMarker>, precision: Int = 3): List<PhotoCluster> {
+    fun cluster(markers: List<ImmichMapMarker>, cellSize: Double = 1.0): List<PhotoCluster> {
         val groups = markers.groupBy { marker ->
-            val latCell = (marker.lat * Math.pow(10.0, precision.toDouble())).toInt()
-            val lngCell = (marker.lon * Math.pow(10.0, precision.toDouble())).toInt()
+            val latCell = (marker.lat / cellSize).toInt()
+            val lngCell = (marker.lon / cellSize).toInt()
             latCell to lngCell
         }
         return groups.map { (_, groupMarkers) ->

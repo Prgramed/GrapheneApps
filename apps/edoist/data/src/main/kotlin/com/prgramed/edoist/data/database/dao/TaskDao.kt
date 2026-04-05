@@ -307,4 +307,7 @@ interface TaskDao {
         """,
     )
     fun getTodayTaskCount(todayEpochDay: Long): Flow<Int>
+
+    @Query("SELECT COALESCE(MAX(sort_order), 0) FROM tasks WHERE project_id = :projectId")
+    suspend fun getMaxSortOrder(projectId: String): Int
 }

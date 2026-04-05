@@ -217,6 +217,7 @@ fun PhotoViewerScreen(
                     model = item?.let { viewModel.imageUrl(it) },
                     contentDescription = item?.filename,
                     sharedModifier = sharedModifier,
+                    resetKey = nasId,
                 )
 
                 // Video play overlay
@@ -401,9 +402,16 @@ private fun ZoomableImage(
     model: Any?,
     contentDescription: String?,
     sharedModifier: Modifier = Modifier,
+    resetKey: Any? = null,
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+
+    // Reset zoom when navigating to a different image
+    androidx.compose.runtime.LaunchedEffect(resetKey) {
+        scale = 1f
+        offset = Offset.Zero
+    }
 
     Box(
         modifier = Modifier

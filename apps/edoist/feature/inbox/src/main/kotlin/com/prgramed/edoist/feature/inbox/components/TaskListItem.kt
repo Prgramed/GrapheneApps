@@ -39,6 +39,7 @@ fun TaskListItem(
     onCheckedChange: (Boolean) -> Unit,
     onClick: () -> Unit,
     showProject: Boolean = false,
+    projectColor: Long? = null,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -51,6 +52,7 @@ fun TaskListItem(
         PriorityCheckbox(
             isCompleted = task.isCompleted,
             priority = task.priority,
+            projectColor = projectColor,
             onCheckedChange = onCheckedChange,
         )
 
@@ -118,9 +120,12 @@ fun TaskListItem(
 private fun PriorityCheckbox(
     isCompleted: Boolean,
     priority: Priority,
+    projectColor: Long? = null,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    val borderColor = Color(priority.colorArgb)
+    // Use project color for checkbox (like Todoist), fall back to priority color
+    val borderColor = if (projectColor != null) Color(projectColor)
+        else Color(priority.colorArgb)
 
     IconButton(
         onClick = { onCheckedChange(!isCompleted) },

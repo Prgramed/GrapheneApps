@@ -61,6 +61,7 @@ import kotlinx.datetime.todayIn
 fun ProjectDetailScreen(
     onBack: () -> Unit,
     onTaskClick: (String) -> Unit,
+    onAddTask: (projectId: String, sectionId: String?) -> Unit = { _, _ -> },
     viewModel: ProjectDetailViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -122,6 +123,10 @@ fun ProjectDetailScreen(
                         },
                         onToggleSection = viewModel::toggleSectionCollapsed,
                         onCreateSection = { name -> viewModel.createSection(name) },
+                        onAddTask = { sectionId ->
+                            uiState.project?.id?.let { pid -> onAddTask(pid, sectionId) }
+                        },
+                        projectColor = uiState.project?.color,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(padding),
@@ -158,6 +163,8 @@ private fun ListViewContent(
     onCheckedChange: (String, Boolean) -> Unit,
     onToggleSection: (String) -> Unit,
     onCreateSection: (String) -> Unit = {},
+    onAddTask: (sectionId: String) -> Unit = {},
+    projectColor: Long? = null,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(modifier = modifier) {
@@ -170,6 +177,7 @@ private fun ListViewContent(
                 task = task,
                 onCheckedChange = { checked -> onCheckedChange(task.id, checked) },
                 onClick = { onTaskClick(task.id) },
+                projectColor = projectColor,
             )
         }
 
@@ -181,7 +189,7 @@ private fun ListViewContent(
                     taskCount = section.tasks.size,
                     isCollapsed = section.isCollapsed,
                     onToggle = { onToggleSection(section.id) },
-                    onAddTask = { onTaskClick("new?sectionId=${section.id}") },
+                    onAddTask = { onAddTask(section.id) },
                 )
             }
 

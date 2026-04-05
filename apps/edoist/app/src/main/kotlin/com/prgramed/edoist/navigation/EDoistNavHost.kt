@@ -157,6 +157,9 @@ fun EDoistNavHost(modifier: Modifier = Modifier) {
                     onTaskClick = { taskId ->
                         navController.navigate(EDoistDestinations.taskDetail(taskId))
                     },
+                    onAddTask = { projectId, sectionId ->
+                        navController.navigate(EDoistDestinations.taskNew(projectId, sectionId))
+                    },
                 )
             }
             composable(
