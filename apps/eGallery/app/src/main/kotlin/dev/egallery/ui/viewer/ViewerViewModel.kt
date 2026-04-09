@@ -97,20 +97,21 @@ class ViewerViewModel @Inject constructor(
         }
     }
 
+    // Fast lookup for local paths — populated alongside timeline IDs
+    private val entryMap = mutableMapOf<String, dev.egallery.data.db.dao.ViewerEntry>()
+
     init {
+        // Show current photo immediately
         viewModelScope.launch {
-            // Load IDs in chunks to avoid CursorWindow overflow on large libraries
-            val allIds = mutableListOf<String>()
-            var offset = 0
-            val chunkSize = 5000
-            while (true) {
-                val chunk = mediaDao.getNasIdsOrderedChunk(chunkSize, offset)
-                if (chunk.isEmpty()) break
-                allIds.addAll(chunk)
-                offset += chunkSize
-            }
-            _timelineIds.value = allIds
             _currentItem.value = mediaRepository.getItemDetail(initialNasId)
+        }
+        // Load lightweight viewer entries for all timeline items
+        viewModelScope.launch(Dispatchers.IO) {
+            val entries = mediaDao.getViewerEntries()
+            for (entry in entries) {
+                entryMap[entry.nasId] = entry
+            }
+            _timelineIds.value = entries.map { it.nasId }
         }
     }
 
@@ -125,7 +126,41 @@ class ViewerViewModel @Inject constructor(
         }
     }
 
+    fun resolveImage(nasId: String): Any {
+        val entry = entryMap[nasId]
+        if (entry != null) {
+            val isVideo = entry.mediaType == "VIDEO"
+            if (!isVideo && entry.localPath != null) {
+                if (entry.localPath.startsWith("content://")) return android.net.Uri.parse(entry.localPath)
+                val file = File(entry.localPath)
+                if (file.exists()) return file
+            }
+            // Videos: use the same thumbnail URL the timeline grid already cached
+            if (isVideo && credentialStore.serverUrl.isNotBlank() && nasId.length > 10) {
+                return ThumbnailUrlBuilder.thumbnail(credentialStore.serverUrl, nasId)
+            }
+        }
+        // Fallback: server thumbnail (likely already in Coil cache from timeline)
+        if (credentialStore.serverUrl.isNotBlank() && nasId.length > 10) {
+            return ThumbnailUrlBuilder.thumbnail(credentialStore.serverUrl, nasId)
+        }
+        return ""
+    }
+
     fun imageUrl(item: MediaItem): Any {
+        // Videos: always use server thumbnail (Coil can't decode video files as images)
+        if (item.mediaType == dev.egallery.domain.model.MediaType.VIDEO) {
+            if (credentialStore.serverUrl.isNotBlank()) {
+                return ThumbnailUrlBuilder.preview(credentialStore.serverUrl, item.nasId)
+            }
+            // Fallback: local video file (Coil's VideoFrameDecoder can extract a frame)
+            if (item.localPath != null && !item.localPath.startsWith("content://")) {
+                val file = File(item.localPath)
+                if (file.exists()) return file
+            }
+            return ""
+        }
+
         if (item.localPath != null) {
             if (item.localPath.startsWith("content://")) {
                 return android.net.Uri.parse(item.localPath)

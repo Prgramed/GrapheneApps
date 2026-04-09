@@ -338,7 +338,15 @@ class NowPlayingViewModel @Inject constructor(
             }
         } else {
             controller?.let { mc ->
-                if (mc.isPlaying) mc.pause() else mc.play()
+                if (mc.isPlaying) {
+                    mc.pause()
+                } else {
+                    // If player is idle (e.g. after cold restart), re-prepare before playing
+                    if (mc.playbackState == Player.STATE_IDLE || mc.playbackState == Player.STATE_ENDED) {
+                        mc.prepare()
+                    }
+                    mc.play()
+                }
             }
         }
     }

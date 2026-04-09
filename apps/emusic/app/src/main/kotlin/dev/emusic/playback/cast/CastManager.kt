@@ -22,7 +22,7 @@ class CastManager @Inject constructor(
     private val upnpController: UpnpController,
     private val urlBuilder: SubsonicUrlBuilder,
 ) {
-    private val scope = CoroutineScope(SupervisorJob())
+    private val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
 
     private val _devices = MutableStateFlow<List<CastDevice>>(emptyList())
     val devices: StateFlow<List<CastDevice>> = _devices.asStateFlow()

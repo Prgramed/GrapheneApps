@@ -37,8 +37,14 @@ class DownloadManager @Inject constructor(
         // Check if already downloaded on disk
         if (track.localPath != null) return false
 
-        // Prune any stale completed/failed work for this track so KEEP doesn't block
-        workManager.pruneWork()
+        val workName = "download_${track.id}"
+
+        // Check existing work state — skip if already active (enqueued or running)
+        val existing = workManager.getWorkInfosForUniqueWork(workName).get()
+        val currentState = existing.firstOrNull()?.state
+        if (currentState != null && !currentState.isFinished) {
+            return false
+        }
 
         // Always use CONNECTED — VPN (Tailscale) may report as metered even on WiFi
         val networkType = NetworkType.CONNECTED
@@ -58,9 +64,10 @@ class DownloadManager @Inject constructor(
             .addTag("album_${track.albumId}")
             .build()
 
+        // REPLACE clears any stale finished work atomically — no pruneWork race
         workManager.enqueueUniqueWork(
-            "download_${track.id}",
-            ExistingWorkPolicy.KEEP,
+            workName,
+            ExistingWorkPolicy.REPLACE,
             request,
         )
         return true

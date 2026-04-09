@@ -19,7 +19,7 @@ class RadioEngine @Inject constructor(
     private val queueManager: QueueManager,
     private val dataStore: DataStore<Preferences>,
 ) {
-    private val scope = CoroutineScope(SupervisorJob())
+    private val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
 
     var isActive: Boolean = false
         private set

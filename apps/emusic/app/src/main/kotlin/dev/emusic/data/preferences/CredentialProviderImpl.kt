@@ -3,10 +3,8 @@ package dev.emusic.data.preferences
 import dev.emusic.data.api.CredentialProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,9 +17,7 @@ class CredentialProviderImpl @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob())
 
     @Volatile
-    private var cached: AppPreferences = runBlocking {
-        preferencesRepository.preferencesFlow.first()
-    }
+    private var cached: AppPreferences = AppPreferences()
 
     init {
         preferencesRepository.preferencesFlow

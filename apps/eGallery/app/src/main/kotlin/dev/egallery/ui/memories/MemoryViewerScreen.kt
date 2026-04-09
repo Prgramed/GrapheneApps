@@ -79,33 +79,23 @@ fun MemoryViewerScreen(
         } else null
     }
 
-    // Fade in music on start, fade out on exit
-    DisposableEffect(mediaPlayer) {
+    // Fade in music
+    LaunchedEffect(mediaPlayer) {
         mediaPlayer?.let { mp ->
             mp.start()
-            // Fade in over 2 seconds
-            val fadeThread = Thread {
-                try {
-                    for (i in 0..20) {
-                        val vol = i / 20f * 0.4f // Max 40% volume
-                        mp.setVolume(vol, vol)
-                        Thread.sleep(100)
-                    }
-                } catch (_: Exception) {}
+            for (i in 0..20) {
+                val vol = i / 20f * 0.4f
+                mp.setVolume(vol, vol)
+                kotlinx.coroutines.delay(100)
             }
-            fadeThread.start()
         }
+    }
+
+    // Clean up on exit
+    DisposableEffect(mediaPlayer) {
         onDispose {
             mediaPlayer?.let { mp ->
-                // Quick fade out
-                try {
-                    for (i in 20 downTo 0) {
-                        val vol = i / 20f * 0.4f
-                        mp.setVolume(vol, vol)
-                        Thread.sleep(30)
-                    }
-                } catch (_: Exception) {}
-                mp.stop()
+                try { mp.stop() } catch (_: Exception) {}
                 mp.release()
             }
         }

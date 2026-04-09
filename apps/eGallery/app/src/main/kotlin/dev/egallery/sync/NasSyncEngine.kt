@@ -246,13 +246,11 @@ class NasSyncEngine @Inject constructor(
             upserted = entities.size
         }
 
-        // Process deletions
+        // Process deletions (batch)
         var deleted = 0
-        for (deletedId in response.deleted) {
-            val entity = mediaDao.getByNasId(deletedId) ?: continue
-            if (entity.storageStatus == "NAS") {
-                mediaDao.deleteByNasId(deletedId)
-                deleted++
+        if (response.deleted.isNotEmpty()) {
+            for (chunk in response.deleted.chunked(500)) {
+                deleted += mediaDao.deleteNasOnlyByIds(chunk)
             }
         }
 
@@ -347,12 +345,9 @@ class NasSyncEngine @Inject constructor(
         // Only delete NAS_ONLY items (don't touch local/pending/failed items)
         var removed = 0
         if (orphaned.size <= allLocalIds.size / 10 || orphaned.size <= 100) {
-            for (id in orphaned) {
-                val entity = mediaDao.getByNasId(id) ?: continue
-                if (entity.storageStatus == "NAS") {
-                    mediaDao.deleteByNasId(id)
-                    removed++
-                }
+            // Batch delete in chunks (Room limits IN clause to ~999 params)
+            for (chunk in orphaned.chunked(500)) {
+                removed += mediaDao.deleteNasOnlyByIds(chunk)
             }
         } else {
             Timber.w("Skipping server deletion check: ${orphaned.size} orphans (>10%), likely incomplete fetch")
@@ -540,9 +535,9 @@ class NasSyncEngine @Inject constructor(
         return toUpload
     }
 
-    private fun triggerUploadWorker() {
+    private suspend fun triggerUploadWorker() {
         try {
-            val wifiOnly = kotlinx.coroutines.runBlocking { preferencesRepository.wifiOnlyUpload.first() }
+            val wifiOnly = preferencesRepository.wifiOnlyUpload.first()
             val networkType = if (wifiOnly) androidx.work.NetworkType.UNMETERED else androidx.work.NetworkType.CONNECTED
             androidx.work.WorkManager.getInstance(appContext).enqueueUniqueWork(
                 UploadWorker.WORK_NAME,

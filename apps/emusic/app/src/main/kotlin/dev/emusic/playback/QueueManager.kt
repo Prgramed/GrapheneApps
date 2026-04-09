@@ -63,6 +63,7 @@ class QueueManager @Inject constructor(
     }
 
     fun play(tracks: List<Track>, startIndex: Int = 0) {
+        isUserInitiated = true
         _isLiveStream.value = false
         radioNowPlayingBridge.onStationStopped()
         _queue.value = tracks
@@ -191,6 +192,10 @@ class QueueManager @Inject constructor(
         _queue.value = tracks
         _currentIndex.value = index.coerceIn(0, (tracks.size - 1).coerceAtLeast(0))
     }
+
+    /** True when queue was set by user action (play/shuffle), false when restored from DataStore. */
+    @Volatile
+    var isUserInitiated: Boolean = false
 
     var restoredShuffle: Boolean = false
         private set

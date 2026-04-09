@@ -8,6 +8,7 @@ import dev.egallery.data.db.entity.AlbumEntity
 import dev.egallery.domain.model.Album
 import dev.egallery.domain.model.AlbumType
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import timber.log.Timber
 import javax.inject.Inject
@@ -22,7 +23,7 @@ class AlbumRepositoryImpl @Inject constructor(
 ) : AlbumRepository {
 
     override fun observeAll(): Flow<List<Album>> =
-        albumDao.getAll().map { entities -> entities.map { it.toDomain() } }
+        albumDao.getAll().distinctUntilChanged().map { entities -> entities.map { it.toDomain() } }
 
     override suspend fun getById(id: String): Album? =
         albumDao.getById(id)?.toDomain()

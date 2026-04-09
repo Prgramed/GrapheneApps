@@ -8,12 +8,11 @@ import dev.emusic.data.db.dao.ScrobbleDao
 import dev.emusic.data.db.entity.ScrobbleEntity
 import dev.emusic.data.preferences.AppPreferencesRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,40 +22,50 @@ class ScrobbleManager @Inject constructor(
     private val scrobbleDao: ScrobbleDao,
     private val preferencesRepository: AppPreferencesRepository,
 ) {
-    private val scope = CoroutineScope(SupervisorJob())
+    private val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
 
     private var lastScrobbledTrackId: String? = null
     private var lastNowPlayingTrackId: String? = null
+    private var scrobbleJob: Job? = null
 
     fun startObserving(player: ExoPlayer) {
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 lastScrobbledTrackId = null
+                scrobbleJob?.cancel()
                 mediaItem?.mediaId?.let { trackId ->
                     fireNowPlaying(trackId)
+                    // Schedule scrobble after 30 seconds of playback
+                    scrobbleJob = scope.launch {
+                        delay(30_000)
+                        if (player.isPlaying && player.currentMediaItem?.mediaId == trackId) {
+                            fireScrobble(trackId, player.duration.coerceAtLeast(0))
+                        }
+                    }
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isPlaying) {
+                    scrobbleJob?.cancel()
+                } else {
+                    // Resume scrobble timer if not yet scrobbled
+                    val trackId = player.currentMediaItem?.mediaId ?: return
+                    if (trackId != lastScrobbledTrackId && player.currentPosition >= 30_000) {
+                        fireScrobble(trackId, player.duration.coerceAtLeast(0))
+                    } else if (trackId != lastScrobbledTrackId) {
+                        val remaining = (30_000 - player.currentPosition).coerceAtLeast(1000)
+                        scrobbleJob?.cancel()
+                        scrobbleJob = scope.launch {
+                            delay(remaining)
+                            if (player.isPlaying && player.currentMediaItem?.mediaId == trackId) {
+                                fireScrobble(trackId, player.duration.coerceAtLeast(0))
+                            }
+                        }
+                    }
                 }
             }
         })
-
-        // Position ticker — check every 15s
-        scope.launch {
-            while (true) {
-                delay(15_000)
-                val playerState = withContext(Dispatchers.Main) {
-                    if (!player.isPlaying) return@withContext null
-                    Triple(
-                        player.currentMediaItem?.mediaId ?: return@withContext null,
-                        player.currentPosition,
-                        player.duration.coerceAtLeast(0),
-                    )
-                } ?: continue
-
-                val (trackId, positionMs, durationMs) = playerState
-                if (positionMs >= 30_000 && trackId != lastScrobbledTrackId) {
-                    fireScrobble(trackId, durationMs)
-                }
-            }
-        }
     }
 
     private fun fireNowPlaying(trackId: String) {
@@ -72,17 +81,16 @@ class ScrobbleManager @Inject constructor(
     }
 
     private fun fireScrobble(trackId: String, durationMs: Long) {
+        if (trackId == lastScrobbledTrackId) return
         lastScrobbledTrackId = trackId
 
         scope.launch {
             if (!isScrobblingEnabled()) return@launch
 
-            // API scrobble
             try {
                 apiService.scrobble(trackId, submission = true)
             } catch (_: Exception) { }
 
-            // Local record
             scrobbleDao.insert(
                 ScrobbleEntity(
                     trackId = trackId,

@@ -37,8 +37,13 @@ object DatabaseModule {
                 db.execSQL("DELETE FROM media WHERE storageStatus = 'TRASHED'")
             }
         }
+        val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_media_storageStatus_captureDate` ON `media` (`storageStatus`, `captureDate`)")
+            }
+        }
         return Room.databaseBuilder(context, AppDatabase::class.java, "egallery.db")
-            .addMigrations(MIGRATION_5_6)
+            .addMigrations(MIGRATION_5_6, MIGRATION_6_7)
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
     }

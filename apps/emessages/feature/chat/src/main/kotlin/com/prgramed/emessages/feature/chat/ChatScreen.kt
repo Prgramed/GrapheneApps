@@ -93,7 +93,7 @@ fun ChatScreen(
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val linkPreviews by viewModel.linkPreviews.collectAsStateWithLifecycle()
+    val linkPreviews = viewModel.linkPreviews
     val listState = rememberLazyListState()
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current

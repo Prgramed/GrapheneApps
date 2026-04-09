@@ -17,6 +17,7 @@ import dev.egallery.domain.model.MediaType
 import dev.egallery.domain.model.StorageStatus
 import dev.egallery.util.StorageManager
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import timber.log.Timber
 import javax.inject.Inject
@@ -39,10 +40,10 @@ class MediaRepositoryImpl @Inject constructor(
         ).flow.map { pagingData -> pagingData.map { it.toDomain() } }
 
     override fun observeFolder(folderId: Int): Flow<List<MediaItem>> =
-        mediaDao.getByFolder(folderId).map { entities -> entities.map { it.toDomain() } }
+        mediaDao.getByFolder(folderId).distinctUntilChanged().map { entities -> entities.map { it.toDomain() } }
 
     override fun observeAlbum(albumId: String): Flow<List<MediaItem>> =
-        mediaDao.getByAlbum(albumId).map { entities -> entities.map { it.toDomain() } }
+        mediaDao.getByAlbum(albumId).distinctUntilChanged().map { entities -> entities.map { it.toDomain() } }
 
     override suspend fun getItemDetail(nasId: String): MediaItem? =
         mediaDao.getByNasId(nasId)?.toDomain()

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,7 +24,7 @@ class BatteryAwareQualityManager @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val preferencesRepository: AppPreferencesRepository,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _maxBitRate = MutableStateFlow(0)
     val maxBitRate: StateFlow<Int> = _maxBitRate.asStateFlow()
 
@@ -67,5 +68,10 @@ class BatteryAwareQualityManager @Inject constructor(
 
         val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         context.registerReceiver(batteryReceiver, filter)
+    }
+
+    fun release() {
+        try { context.unregisterReceiver(batteryReceiver) } catch (_: Exception) { }
+        scope.cancel()
     }
 }

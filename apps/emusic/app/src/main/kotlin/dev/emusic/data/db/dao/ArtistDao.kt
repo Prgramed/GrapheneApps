@@ -25,6 +25,9 @@ interface ArtistDao {
     @Query("DELETE FROM artists WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    @Query("DELETE FROM artists WHERE id NOT IN (:keepIds)")
+    suspend fun deleteNotIn(keepIds: List<String>)
+
     @Query("SELECT id FROM artists")
     suspend fun getAllIds(): List<String>
 

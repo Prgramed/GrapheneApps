@@ -37,12 +37,9 @@ class PlaylistRepositoryImpl @Inject constructor(
         playlistDao.upsertAll(entities)
 
         // Strip playlists deleted from server
-        val serverIds = playlists.mapNotNull { it.id }.toSet()
-        val localIds = playlistDao.getAllIds()
-        for (localId in localIds) {
-            if (localId !in serverIds) {
-                playlistDao.deleteById(localId)
-            }
+        val serverIds = playlists.mapNotNull { it.id }
+        if (serverIds.isNotEmpty()) {
+            playlistDao.deleteNotIn(serverIds)
         }
 
         for (dto in playlists) {

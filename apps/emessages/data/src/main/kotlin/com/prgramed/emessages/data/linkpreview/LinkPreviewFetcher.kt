@@ -35,21 +35,20 @@ class LinkPreviewFetcher @Inject constructor(
         // 1. Memory cache
         memCache[url]?.let { return it }
 
-        // 2. Disk cache
-        val diskJson = diskPrefs.getString(url, null)
-        if (diskJson != null) {
-            val preview = deserialize(diskJson)
-            if (preview != null) {
-                memCache[url] = preview
-                return preview
-            }
-        }
-
-        // 3. Failed URL cooldown
+        // 2. Failed URL cooldown (cheap check before IO)
         val failedAt = failedUrls[url]
         if (failedAt != null && System.currentTimeMillis() - failedAt < failRetryMs) return null
 
         return withContext(Dispatchers.IO) {
+            // Disk cache (must be on IO — SharedPreferences blocks on first access)
+            val diskJson = diskPrefs.getString(url, null)
+            if (diskJson != null) {
+                val preview = deserialize(diskJson)
+                if (preview != null) {
+                    memCache[url] = preview
+                    return@withContext preview
+                }
+            }
             try {
                 val isMeta = url.contains("instagram.com") || url.contains("facebook.com") || url.contains("threads.net")
                 val ua = if (isMeta) "facebookexternalhit/1.1"

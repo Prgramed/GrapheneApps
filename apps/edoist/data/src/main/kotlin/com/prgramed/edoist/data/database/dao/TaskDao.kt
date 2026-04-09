@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import androidx.room.Upsert
 import com.prgramed.edoist.data.database.entity.TaskEntity
 import com.prgramed.edoist.data.database.entity.TaskLabelCrossRef
 import com.prgramed.edoist.data.database.relation.TaskWithLabels
@@ -18,16 +19,16 @@ interface TaskDao {
 
     // ── Inserts ──────────────────────────────────────────────────────────
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insert(task: TaskEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insertAll(tasks: List<TaskEntity>)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insertTaskLabelCrossRef(crossRef: TaskLabelCrossRef)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insertTaskLabelCrossRefs(crossRefs: List<TaskLabelCrossRef>)
 
     @Query("SELECT label_id FROM task_label_cross_ref WHERE task_id = :taskId")

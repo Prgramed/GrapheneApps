@@ -1,5 +1,6 @@
 package com.prgramed.edoist.data.sync
 
+import androidx.room.withTransaction
 import com.prgramed.edoist.data.database.EDoistDatabase
 import com.prgramed.edoist.data.database.entity.LabelEntity
 import com.prgramed.edoist.data.database.entity.ProjectEntity
@@ -51,9 +52,8 @@ class SyncManager @Inject constructor(
                 localPayload
             }
 
-            // Only upload if local has changes (tasks modified since last sync)
-            val hasLocalChanges = localPayload.tasks.isNotEmpty() || serverBytes == null
-            val uploaded = if (hasLocalChanges) {
+            // Always upload the merged payload to keep server in sync
+            val uploaded = if (mergedPayload.tasks.isNotEmpty() || mergedPayload.projects.isNotEmpty() || serverBytes == null) {
                 webDavClient.upload(
                     url = url,
                     username = username,
@@ -66,7 +66,8 @@ class SyncManager @Inject constructor(
             if (!uploaded) return SyncResult.FAILED
 
             // Apply merged data locally if we merged with server
-            if (serverBytes != null) {
+            // Guard: never apply an empty payload — it means server data was lost/corrupt
+            if (serverBytes != null && mergedPayload.tasks.isNotEmpty()) {
                 applyPayloadLocally(mergedPayload)
             }
 
@@ -102,11 +103,9 @@ class SyncManager @Inject constructor(
         val sectionDao = database.sectionDao()
         val labelDao = database.labelDao()
 
-        // Only fetch data modified since last successful sync
-        val lastSync = database.syncMetadataDao().get()
-        val sinceMillis = if (lastSync?.lastSyncStatus == "SUCCESS") (lastSync.lastSyncMillis ?: 0L) else 0L
-
-        val allTasks = taskDao.getTasksModifiedSince(sinceMillis)
+        // Always send ALL tasks — delta sync is unsafe because merge-by-ID
+        // needs complete data from both sides to produce a correct result.
+        val allTasks = taskDao.getTasksModifiedSince(0L)
         val allProjects = projectDao.getAllActive()
         val allLabels = labelDao.getAll()
 
@@ -227,83 +226,85 @@ class SyncManager @Inject constructor(
     }
 
     private suspend fun applyPayloadLocally(payload: SyncPayload) {
-        val taskDao = database.taskDao()
-        val projectDao = database.projectDao()
-        val labelDao = database.labelDao()
+        database.withTransaction {
+            val taskDao = database.taskDao()
+            val projectDao = database.projectDao()
+            val labelDao = database.labelDao()
 
-        // Apply projects first (foreign key dependency)
-        payload.projects.forEach { project ->
-            projectDao.insert(
-                ProjectEntity(
-                    id = project.id,
-                    name = project.name,
-                    color = project.color,
-                    iconName = project.iconName,
-                    isInbox = project.isInbox,
-                    isArchived = project.isArchived,
-                    defaultView = project.defaultView,
-                    sortOrder = project.sortOrder,
-                    createdAtMillis = project.createdAtMillis,
-                    updatedAtMillis = project.updatedAtMillis,
-                ),
-            )
-        }
-
-        // Apply sections
-        payload.sections.forEach { section ->
-            database.sectionDao().insert(
-                SectionEntity(
-                    id = section.id,
-                    name = section.name,
-                    projectId = section.projectId,
-                    sortOrder = section.sortOrder,
-                    isCollapsed = section.isCollapsed,
-                    createdAtMillis = section.createdAtMillis,
-                ),
-            )
-        }
-
-        // Apply labels
-        payload.labels.forEach { label ->
-            labelDao.insert(
-                LabelEntity(
-                    id = label.id,
-                    name = label.name,
-                    color = label.color,
-                    sortOrder = label.sortOrder,
-                ),
-            )
-        }
-
-        // Apply tasks
-        payload.tasks.forEach { task ->
-            taskDao.insert(
-                TaskEntity(
-                    id = task.id,
-                    title = task.title,
-                    description = task.description,
-                    projectId = task.projectId,
-                    sectionId = task.sectionId,
-                    parentTaskId = task.parentTaskId,
-                    priority = task.priority,
-                    dueDateEpochDay = task.dueDateEpochDay,
-                    dueTimeMinuteOfDay = task.dueTimeMinuteOfDay,
-                    dueTimezone = task.dueTimezone,
-                    recurrenceRule = task.recurrenceRule,
-                    isCompleted = task.isCompleted,
-                    completedAtMillis = task.completedAtMillis,
-                    sortOrder = task.sortOrder,
-                    createdAtMillis = task.createdAtMillis,
-                    updatedAtMillis = task.updatedAtMillis,
-                ),
-            )
-
-            // Apply label cross refs
-            taskDao.deleteLabelsForTask(task.id)
-            task.labelIds.forEach { labelId ->
-                taskDao.insertTaskLabelCrossRef(
-                    TaskLabelCrossRef(taskId = task.id, labelId = labelId),
+            // Apply projects first (foreign key dependency)
+            payload.projects.forEach { project ->
+                projectDao.insert(
+                    ProjectEntity(
+                        id = project.id,
+                        name = project.name,
+                        color = project.color,
+                        iconName = project.iconName,
+                        isInbox = project.isInbox,
+                        isArchived = project.isArchived,
+                        defaultView = project.defaultView,
+                        sortOrder = project.sortOrder,
+                        createdAtMillis = project.createdAtMillis,
+                        updatedAtMillis = project.updatedAtMillis,
+                    ),
                 )
+            }
+
+            // Apply sections
+            payload.sections.forEach { section ->
+                database.sectionDao().insert(
+                    SectionEntity(
+                        id = section.id,
+                        name = section.name,
+                        projectId = section.projectId,
+                        sortOrder = section.sortOrder,
+                        isCollapsed = section.isCollapsed,
+                        createdAtMillis = section.createdAtMillis,
+                    ),
+                )
+            }
+
+            // Apply labels
+            payload.labels.forEach { label ->
+                labelDao.insert(
+                    LabelEntity(
+                        id = label.id,
+                        name = label.name,
+                        color = label.color,
+                        sortOrder = label.sortOrder,
+                    ),
+                )
+            }
+
+            // Apply tasks
+            payload.tasks.forEach { task ->
+                taskDao.insert(
+                    TaskEntity(
+                        id = task.id,
+                        title = task.title,
+                        description = task.description,
+                        projectId = task.projectId,
+                        sectionId = task.sectionId,
+                        parentTaskId = task.parentTaskId,
+                        priority = task.priority,
+                        dueDateEpochDay = task.dueDateEpochDay,
+                        dueTimeMinuteOfDay = task.dueTimeMinuteOfDay,
+                        dueTimezone = task.dueTimezone,
+                        recurrenceRule = task.recurrenceRule,
+                        isCompleted = task.isCompleted,
+                        completedAtMillis = task.completedAtMillis,
+                        sortOrder = task.sortOrder,
+                        createdAtMillis = task.createdAtMillis,
+                        updatedAtMillis = task.updatedAtMillis,
+                    ),
+                )
+
+                // Apply label cross refs
+                taskDao.deleteLabelsForTask(task.id)
+                task.labelIds.forEach { labelId ->
+                    taskDao.insertTaskLabelCrossRef(
+                        TaskLabelCrossRef(taskId = task.id, labelId = labelId),
+                    )
+                }
             }
         }
     }

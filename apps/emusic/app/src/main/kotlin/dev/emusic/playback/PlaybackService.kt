@@ -334,21 +334,21 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            android.util.Log.d("BrowseTree", "onGetChildren: parentId=$parentId page=$page pageSize=$pageSize")
-            return try {
-                val children = if (parentId == BrowseTree.ROOT) {
-                    browseTree.getRootItems()
-                } else {
-                    kotlinx.coroutines.runBlocking {
-                        browseTree.getChildren(parentId, page, pageSize)
-                    }
-                }
-                Futures.immediateFuture(
-                    LibraryResult.ofItemList(ImmutableList.copyOf(children), params),
+            if (parentId == BrowseTree.ROOT) {
+                return Futures.immediateFuture(
+                    LibraryResult.ofItemList(ImmutableList.copyOf(browseTree.getRootItems()), params),
                 )
-            } catch (e: Exception) {
-                Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_UNKNOWN))
             }
+            val future = com.google.common.util.concurrent.SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
+            serviceScope.launch {
+                try {
+                    val children = browseTree.getChildren(parentId, page, pageSize)
+                    future.set(LibraryResult.ofItemList(ImmutableList.copyOf(children), params))
+                } catch (e: Exception) {
+                    future.set(LibraryResult.ofError(LibraryResult.RESULT_ERROR_UNKNOWN))
+                }
+            }
+            return future
         }
 
         override fun onAddMediaItems(
@@ -356,22 +356,18 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> {
-            return try {
-                val resolved = kotlinx.coroutines.runBlocking {
-                    mediaItems.mapNotNull { item ->
+            val future = com.google.common.util.concurrent.SettableFuture.create<MutableList<MediaItem>>()
+            serviceScope.launch {
+                try {
+                    val resolved = mediaItems.mapNotNull { item ->
                         resolveTrackToPlayable(item.mediaId)
                     }.toMutableList()
+                    future.set(if (resolved.isEmpty()) mediaItems else resolved)
+                } catch (e: Exception) {
+                    future.set(mediaItems)
                 }
-                if (resolved.isEmpty()) {
-                    // If we can't resolve, pass through the original items
-                    Futures.immediateFuture(mediaItems)
-                } else {
-                    Futures.immediateFuture(resolved)
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("BrowseTree", "onAddMediaItems failed", e)
-                Futures.immediateFuture(mediaItems)
             }
+            return future
         }
     }
 
@@ -399,16 +395,16 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val player = mediaSession?.player ?: return
-        if (!player.playWhenReady || player.mediaItemCount == 0) {
-            stopSelf()
-        }
+        // Always stop when app is swiped away — persist position first
+        player?.let { queueManager.persistPositionMs(it.currentPosition) }
+        stopSelf()
     }
 
     override fun onDestroy() {
         // Persist final position
         player?.let { queueManager.persistPositionMs(it.currentPosition) }
         equalizerManager.release()
+        batteryAwareQualityManager.release()
         serviceScope.cancel()
         mediaSession?.run {
             player.release()
@@ -503,7 +499,10 @@ class PlaybackService : MediaLibraryService() {
             return
         }
 
-        val mediaItems = tracks.map { track -> track.toMediaItem(maxBitRate) }
+        // Build media items off main thread
+        val mediaItems = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            tracks.map { track -> track.toMediaItem(maxBitRate) }
+        }
         val startPosition = if (!hasRestoredPosition) {
             hasRestoredPosition = true
             queueManager.restoredPositionMs
@@ -513,8 +512,11 @@ class PlaybackService : MediaLibraryService() {
 
         backfillJob?.cancel()
 
-        if (isInitialQueueLoad && tracks.size > 50) {
-            // Cold start: load small window for instant playback, backfill rest
+        val userInitiated = queueManager.isUserInitiated
+        queueManager.isUserInitiated = false
+
+        if (isInitialQueueLoad && !userInitiated && tracks.size > 50) {
+            // Cold restore: load small window, don't auto-play
             isInitialQueueLoad = false
             val windowStart = (currentIndex - 3).coerceAtLeast(0)
             val windowEnd = (currentIndex + 10).coerceAtMost(tracks.size)
@@ -525,15 +527,19 @@ class PlaybackService : MediaLibraryService() {
             exoPlayer.shuffleModeEnabled = queueManager.restoredShuffle
             exoPlayer.repeatMode = queueManager.restoredRepeat
             exoPlayer.prepare()
-            // Don't auto-play on cold start
 
             backfillJob = serviceScope.launch {
-                kotlinx.coroutines.delay(500)
+                kotlinx.coroutines.delay(800)
                 val p = player ?: return@launch
-                val nowIndex = queueManager.currentIndex.value
+                val nowIndex = p.currentMediaItemIndex
                 val nowPos = p.currentPosition
-                p.setMediaItems(mediaItems, nowIndex.coerceAtLeast(0), nowPos)
-                p.prepare()
+                // Only backfill if items actually changed (avoid re-trigger loop)
+                if (p.mediaItemCount != mediaItems.size) {
+                    val wasPlaying = p.isPlaying
+                    p.setMediaItems(mediaItems, nowIndex.coerceAtLeast(0), nowPos)
+                    p.prepare()
+                    if (wasPlaying) p.play()
+                }
             }
         } else {
             isInitialQueueLoad = false
@@ -547,6 +553,9 @@ class PlaybackService : MediaLibraryService() {
 
     private fun Track.toMediaItem(maxBitRate: Int): MediaItem {
         val uri = streamResolver.resolveUri(this, maxBitRate)
+        val artworkUri = albumId?.let {
+            android.net.Uri.parse(urlBuilder.getCoverArtUrlWithAuth(it))
+        }
         return MediaItem.Builder()
             .setMediaId(id)
             .setUri(uri)
@@ -557,6 +566,7 @@ class PlaybackService : MediaLibraryService() {
                     .setAlbumTitle(album)
                     .setTrackNumber(trackNumber)
                     .setDiscNumber(discNumber)
+                    .setArtworkUri(artworkUri)
                     .build(),
             )
             .build()

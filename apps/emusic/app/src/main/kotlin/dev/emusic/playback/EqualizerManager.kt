@@ -47,7 +47,7 @@ class EqualizerManager @Inject constructor(
         )
     }
 
-    private val scope = CoroutineScope(SupervisorJob())
+    private val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
     private var restoreJob: kotlinx.coroutines.Job? = null
     private var equalizer: Equalizer? = null
     private var bassBoost: BassBoost? = null

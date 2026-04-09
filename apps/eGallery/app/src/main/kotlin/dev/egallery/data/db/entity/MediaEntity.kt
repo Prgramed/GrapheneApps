@@ -10,6 +10,7 @@ import androidx.room.PrimaryKey
         Index("captureDate"),
         Index("folderId"),
         Index("storageStatus"),
+        Index("storageStatus", "captureDate"),
         Index("lat", "lng"),
         Index("nasHash"),
     ],

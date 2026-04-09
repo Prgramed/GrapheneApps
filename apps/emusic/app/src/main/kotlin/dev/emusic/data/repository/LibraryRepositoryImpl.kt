@@ -46,11 +46,8 @@ class LibraryRepositoryImpl @Inject constructor(
             ?: return
         artistDao.upsertAll(artists)
         // Cleanup artists deleted from server
-        val serverIds = artists.map { it.id }.toSet()
-        val localIds = artistDao.getAllIds()
-        for (localId in localIds) {
-            if (localId !in serverIds) artistDao.deleteById(localId)
-        }
+        val serverIds = artists.map { it.id }
+        artistDao.deleteNotIn(serverIds)
     }
 
     override suspend fun syncAlbums() {
@@ -78,10 +75,7 @@ class LibraryRepositoryImpl @Inject constructor(
         }
         // Cleanup albums deleted from server
         if (serverAlbumIds.isNotEmpty()) {
-            val localIds = albumDao.getAllIds()
-            for (localId in localIds) {
-                if (localId !in serverAlbumIds) albumDao.deleteById(localId)
-            }
+            albumDao.deleteNotIn(serverAlbumIds.toList())
         }
     }
 

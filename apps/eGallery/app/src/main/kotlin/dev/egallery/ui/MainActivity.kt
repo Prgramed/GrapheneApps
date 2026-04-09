@@ -34,6 +34,7 @@ import com.grapheneapps.core.designsystem.theme.GrapheneAppsTheme
 import dagger.hilt.android.AndroidEntryPoint
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -77,7 +78,9 @@ class MainActivity : ComponentActivity() {
         requestMediaPermissionsAndScan()
         enableEdgeToEdge()
         setContent {
-            val pendingCount by uploadQueueDao.getAll().map { it.size }
+            val pendingCount by uploadQueueDao.getAll()
+                .distinctUntilChanged()
+                .map { it.size }
                 .collectAsState(initial = 0)
             GrapheneAppsTheme {
                 EGalleryNavGraph(

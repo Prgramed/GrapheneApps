@@ -15,6 +15,12 @@ data class LocalHashCacheEntry(
     val localFileModifiedAt: Long?,
 )
 
+data class ViewerEntry(
+    val nasId: String,
+    val localPath: String?,
+    val mediaType: String,
+)
+
 @Dao
 interface MediaDao {
 
@@ -138,6 +144,9 @@ interface MediaDao {
     @Query("SELECT nasId FROM media WHERE storageStatus != 'TRASHED' ORDER BY captureDate DESC LIMIT :limit OFFSET :offset")
     suspend fun getNasIdsOrderedChunk(limit: Int, offset: Int): List<String>
 
+    @Query("SELECT nasId, localPath, mediaType FROM media WHERE storageStatus != 'TRASHED' ORDER BY captureDate DESC")
+    suspend fun getViewerEntries(): List<ViewerEntry>
+
     @Query("SELECT COUNT(*) FROM media WHERE nasId IS NOT NULL AND nasId != ''")
     suspend fun getNasItemCount(): Int
 
@@ -146,6 +155,12 @@ interface MediaDao {
 
     @Query("DELETE FROM media WHERE nasId = :nasId")
     suspend fun deleteByNasId(nasId: String)
+
+    @Query("DELETE FROM media WHERE nasId IN (:nasIds) AND storageStatus = 'NAS'")
+    suspend fun deleteNasOnlyByIds(nasIds: List<String>): Int
+
+    @Query("DELETE FROM media WHERE nasId IN (:nasIds)")
+    suspend fun deleteByNasIds(nasIds: List<String>): Int
 
     @Query("UPDATE media SET thumbnailPath = NULL WHERE thumbnailPath = 'cached' OR thumbnailPath = 'none'")
     suspend fun resetStaleThumbnailPaths(): Int

@@ -14,17 +14,26 @@ import javax.inject.Singleton
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
+
+data class CompassReading(
+    val heading: Float,
+    val needsCalibration: Boolean,
+)
 
 @Singleton
 class CompassSensorManager @Inject constructor(
     @param:ApplicationContext private val context: Context,
 ) {
-    fun headingUpdates(): Flow<Float> = callbackFlow {
+    fun headingUpdates(): Flow<CompassReading> = callbackFlow {
         val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        val magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        val rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        val useRotationVector = rotationVectorSensor != null
 
-        if (accelerometer == null || magnetometer == null) {
+        val accelerometer = if (!useRotationVector) sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) else null
+        val magnetometer = if (!useRotationVector) sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD) else null
+
+        if (!useRotationVector && (accelerometer == null || magnetometer == null)) {
             close(IllegalStateException("Compass sensor not available on this device"))
             return@callbackFlow
         }
@@ -34,50 +43,76 @@ class CompassSensorManager @Inject constructor(
         var hasGravity = false
         var hasMagnetic = false
         var smoothedHeading = Float.NaN
+        var needsCalibration = false
 
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
-                when (event.sensor.type) {
-                    Sensor.TYPE_ACCELEROMETER -> {
-                        lowPassFilter(event.values, gravity, SENSOR_ALPHA)
-                        hasGravity = true
-                    }
-                    Sensor.TYPE_MAGNETIC_FIELD -> {
-                        lowPassFilter(event.values, geomagnetic, SENSOR_ALPHA)
-                        hasMagnetic = true
-                    }
-                }
+                val rotationMatrix: FloatArray
 
-                if (hasGravity && hasMagnetic) {
-                    val rotationMatrix = FloatArray(9)
-                    val inclinationMatrix = FloatArray(9)
-                    if (SensorManager.getRotationMatrix(
-                            rotationMatrix, inclinationMatrix, gravity, geomagnetic,
-                        )
-                    ) {
-                        val orientation = FloatArray(3)
-                        SensorManager.getOrientation(rotationMatrix, orientation)
-                        val rawDegrees =
-                            ((Math.toDegrees(orientation[0].toDouble()) + 360) % 360).toFloat()
-
-                        smoothedHeading = if (smoothedHeading.isNaN()) {
-                            rawDegrees
-                        } else {
-                            circularLerp(smoothedHeading, rawDegrees, HEADING_ALPHA)
+                if (useRotationVector && event.sensor.type == Sensor.TYPE_ROTATION_VECTOR) {
+                    rotationMatrix = FloatArray(9)
+                    SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                } else {
+                    when (event.sensor.type) {
+                        Sensor.TYPE_ACCELEROMETER -> {
+                            lowPassFilter(event.values, gravity, SENSOR_ALPHA)
+                            hasGravity = true
                         }
-
-                        trySend(smoothedHeading)
+                        Sensor.TYPE_MAGNETIC_FIELD -> {
+                            lowPassFilter(event.values, geomagnetic, SENSOR_ALPHA)
+                            hasMagnetic = true
+                        }
+                        else -> return
                     }
+                    if (!hasGravity || !hasMagnetic) return
+
+                    rotationMatrix = FloatArray(9)
+                    val inclinationMatrix = FloatArray(9)
+                    if (!SensorManager.getRotationMatrix(rotationMatrix, inclinationMatrix, gravity, geomagnetic)) return
                 }
+
+                // Extract heading from rotation matrix — tilt-independent.
+                // Rotation matrix columns map device axes to world (X=East, Y=North, Z=Up).
+                // Device -Z axis = back of phone = direction user faces.
+                // Project -Z onto horizontal plane to get heading at any tilt.
+                val fwdEast = -rotationMatrix[2].toDouble()
+                val fwdNorth = -rotationMatrix[5].toDouble()
+                val horizontalMag = sqrt(fwdEast * fwdEast + fwdNorth * fwdNorth)
+
+                val rawDegrees = if (horizontalMag < 0.15) {
+                    // Phone is nearly flat — use Y axis (top of phone) instead
+                    val topEast = rotationMatrix[1].toDouble()
+                    val topNorth = rotationMatrix[4].toDouble()
+                    ((Math.toDegrees(atan2(topEast, topNorth)) + 360) % 360).toFloat()
+                } else {
+                    ((Math.toDegrees(atan2(fwdEast, fwdNorth)) + 360) % 360).toFloat()
+                }
+
+                smoothedHeading = if (smoothedHeading.isNaN()) {
+                    rawDegrees
+                } else {
+                    circularLerp(smoothedHeading, rawDegrees, HEADING_ALPHA)
+                }
+
+                trySend(CompassReading(smoothedHeading, needsCalibration))
             }
 
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+                if (sensor?.type == Sensor.TYPE_MAGNETIC_FIELD ||
+                    sensor?.type == Sensor.TYPE_ROTATION_VECTOR
+                ) {
+                    needsCalibration = accuracy == SensorManager.SENSOR_STATUS_UNRELIABLE
+                }
+            }
         }
 
-        // 150ms (6.67Hz) — smooth for compass, 33% less CPU than 10Hz
-        val sensorRate = 150_000 // microseconds
-        sensorManager.registerListener(listener, accelerometer, sensorRate)
-        sensorManager.registerListener(listener, magnetometer, sensorRate)
+        val sensorRate = 150_000 // microseconds (6.67Hz)
+        if (useRotationVector) {
+            sensorManager.registerListener(listener, rotationVectorSensor, sensorRate)
+        } else {
+            sensorManager.registerListener(listener, accelerometer, sensorRate)
+            sensorManager.registerListener(listener, magnetometer, sensorRate)
+        }
 
         awaitClose { sensorManager.unregisterListener(listener) }
     }
@@ -97,7 +132,7 @@ class CompassSensorManager @Inject constructor(
     }
 
     companion object {
-        private const val SENSOR_ALPHA = 0.1f
-        private const val HEADING_ALPHA = 0.15f
+        private const val SENSOR_ALPHA = 0.25f
+        private const val HEADING_ALPHA = 0.3f
     }
 }

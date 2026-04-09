@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -80,12 +82,12 @@ fun QiblaScreen(
 
                 val animatedHeading by animateFloatAsState(
                     targetValue = headingTarget,
-                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+                    animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f),
                     label = "heading",
                 )
                 val animatedRelative by animateFloatAsState(
                     targetValue = relativeTarget,
-                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+                    animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f),
                     label = "relative",
                 )
 
@@ -107,6 +109,30 @@ fun QiblaScreen(
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                     )
+
+                    if (uiState.needsCalibration) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF2A1A0A), RoundedCornerShape(8.dp))
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "Compass needs calibration",
+                                color = Peach,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Move phone in a figure-8",
+                                color = TextMuted,
+                                fontSize = 12.sp,
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.weight(1f))
 

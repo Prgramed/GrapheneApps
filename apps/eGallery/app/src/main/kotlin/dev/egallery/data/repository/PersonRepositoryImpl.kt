@@ -4,6 +4,7 @@ import dev.egallery.data.db.dao.PersonDao
 import dev.egallery.data.db.entity.PersonEntity
 import dev.egallery.domain.model.Person
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -14,7 +15,7 @@ class PersonRepositoryImpl @Inject constructor(
 ) : PersonRepository {
 
     override fun observeAll(): Flow<List<Person>> =
-        personDao.getAll().map { entities -> entities.map { it.toDomain() } }
+        personDao.getAll().distinctUntilChanged().map { entities -> entities.map { it.toDomain() } }
 }
 
 fun PersonEntity.toDomain(): Person = Person(

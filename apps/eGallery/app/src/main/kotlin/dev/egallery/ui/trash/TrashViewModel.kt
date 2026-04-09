@@ -10,6 +10,7 @@ import dev.egallery.domain.model.MediaItem
 import dev.egallery.util.StorageManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -21,7 +22,7 @@ class TrashViewModel @Inject constructor(
     private val credentialStore: CredentialStore,
 ) : ViewModel() {
 
-    val trashItems: Flow<List<MediaItem>> = mediaDao.getTrash().map { entities ->
+    val trashItems: Flow<List<MediaItem>> = mediaDao.getTrash().distinctUntilChanged().map { entities ->
         entities.map { it.toDomain() }
     }
 

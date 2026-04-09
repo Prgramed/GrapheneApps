@@ -32,6 +32,7 @@ class QiblaViewModel @Inject constructor(
                     qiblaDirection = direction,
                     cityName = location.cityName,
                     isLoading = false,
+                    needsCalibration = direction.needsCalibration,
                 )
             }.catch { e -> emit(QiblaUiState(isLoading = false, error = e.message)) }
         }

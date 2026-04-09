@@ -248,33 +248,31 @@ class TimelineViewModel @Inject constructor(
     }
 
     fun thumbnailModel(item: MediaItem): Any {
-        // 1. Local file (on-device photos, uploaded items that still have local copy)
+        // Videos: prefer server thumbnail (Immich generates reliable video thumbs)
+        if (item.mediaType == dev.egallery.domain.model.MediaType.VIDEO) {
+            if (credentialStore.serverUrl.isNotBlank() && item.nasId.length > 10) {
+                return ThumbnailUrlBuilder.thumbnail(credentialStore.serverUrl, item.nasId)
+            }
+            // Fallback: local video file (Coil's VideoFrameDecoder extracts first frame)
+            if (item.localPath != null && !item.localPath.startsWith("content://")) {
+                val file = java.io.File(item.localPath)
+                if (file.exists()) return file
+            }
+            return ""
+        }
+        // Photos: prefer local file (faster, no network)
         if (item.localPath != null) {
             if (item.localPath.startsWith("content://")) return android.net.Uri.parse(item.localPath)
             val file = java.io.File(item.localPath)
             if (file.exists()) return file
         }
-        // 2. Server thumbnail
         if (credentialStore.serverUrl.isNotBlank()) {
             return ThumbnailUrlBuilder.thumbnail(credentialStore.serverUrl, item.nasId)
         }
         return ""
     }
 
-    fun prefetchVisibleThumbnails(visibleNasIds: List<String>) {
-        if (visibleNasIds.isEmpty()) return
-        val request = OneTimeWorkRequestBuilder<ThumbnailPrefetchWorker>()
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build(),
-            )
-            .setInputData(
-                workDataOf(ThumbnailPrefetchWorker.KEY_PRIORITY_IDS to visibleNasIds.toTypedArray()),
-            )
-            .build()
-        WorkManager.getInstance(appContext).enqueue(request)
-    }
+    // Thumbnail prefetching removed — Coil's built-in memory + disk cache handles this
 
     // Auto-detect new photos/videos while app is open
     private val mediaObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {

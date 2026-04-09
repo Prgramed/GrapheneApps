@@ -7,4 +7,5 @@ data class QiblaUiState(
     val cityName: String? = null,
     val isLoading: Boolean = true,
     val error: String? = null,
+    val needsCalibration: Boolean = false,
 )

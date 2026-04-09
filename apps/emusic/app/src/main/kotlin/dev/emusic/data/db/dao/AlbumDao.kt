@@ -45,6 +45,9 @@ interface AlbumDao {
     @Query("DELETE FROM albums WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    @Query("DELETE FROM albums WHERE id NOT IN (:keepIds)")
+    suspend fun deleteNotIn(keepIds: List<String>)
+
     @Query("DELETE FROM albums")
     suspend fun deleteAll()
 

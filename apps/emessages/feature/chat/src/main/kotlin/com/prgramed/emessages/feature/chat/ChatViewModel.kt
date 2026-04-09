@@ -65,8 +65,7 @@ class ChatViewModel @Inject constructor(
 
     private val olderMessages = mutableListOf<Message>()
 
-    private val _linkPreviews = MutableStateFlow<Map<Long, LinkPreview>>(emptyMap())
-    val linkPreviews: StateFlow<Map<Long, LinkPreview>> = _linkPreviews.asStateFlow()
+    val linkPreviews = androidx.compose.runtime.mutableStateMapOf<Long, LinkPreview>()
 
     private val urlPattern = java.util.regex.Pattern.compile(
         "(https?://[\\w\\-._~:/?#\\[\\]@!\$&'()*+,;=%]+)",
@@ -279,12 +278,11 @@ class ChatViewModel @Inject constructor(
         return SegmentInfo(segments, remaining, limit)
     }
 
-    private val linkPreviewSemaphore = kotlinx.coroutines.sync.Semaphore(6)
+    private val linkPreviewSemaphore = kotlinx.coroutines.sync.Semaphore(2)
 
     private fun fetchLinkPreviews(messages: List<Message>) {
-        val current = _linkPreviews.value
         messages.takeLast(30).forEach { message ->
-            if (message.id in current) return@forEach
+            if (message.id in linkPreviews) return@forEach
             val matcher = urlPattern.matcher(message.body)
             if (matcher.find()) {
                 val url = matcher.group() ?: return@forEach
@@ -292,7 +290,7 @@ class ChatViewModel @Inject constructor(
                     linkPreviewSemaphore.withPermit {
                         val preview = linkPreviewFetcher.fetch(url)
                         if (preview != null) {
-                            _linkPreviews.update { it + (message.id to preview) }
+                            linkPreviews[message.id] = preview
                         }
                     }
                 }

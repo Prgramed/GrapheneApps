@@ -133,38 +133,39 @@ class DownloadWorker @AssistedInject constructor(
             throw Exception("HTTP ${response.code}")
         }
 
-        val body = response.body ?: throw Exception("Empty response body")
-        val contentLength = body.contentLength()
-        val totalSize = if (response.code == 206) existingSize + contentLength else contentLength
-        val append = response.code == 206
+        response.use { resp ->
+            val body = resp.body ?: throw Exception("Empty response body")
+            val contentLength = body.contentLength()
+            val totalSize = if (resp.code == 206) existingSize + contentLength else contentLength
+            val append = resp.code == 206
 
-        FileOutputStream(destFile, append).use { output ->
-            body.byteStream().use { input ->
-                val buffer = ByteArray(8192)
-                var bytesWritten = if (append) existingSize else 0L
-                var read: Int
-                var lastNotifiedPct = -1
+            FileOutputStream(destFile, append).use { output ->
+                body.byteStream().use { input ->
+                    val buffer = ByteArray(8192)
+                    var bytesWritten = if (append) existingSize else 0L
+                    var read: Int
+                    var lastNotifiedPct = -1
 
-                while (input.read(buffer).also { read = it } != -1) {
-                    output.write(buffer, 0, read)
-                    bytesWritten += read
+                    while (input.read(buffer).also { read = it } != -1) {
+                        output.write(buffer, 0, read)
+                        bytesWritten += read
 
-                    if (totalSize > 0) {
-                        val pct = ((bytesWritten * 100) / totalSize).toInt()
-                        setProgressAsync(workDataOf(KEY_PROGRESS to pct))
+                        if (totalSize > 0) {
+                            val pct = ((bytesWritten * 100) / totalSize).toInt()
+                            setProgressAsync(workDataOf(KEY_PROGRESS to pct))
 
-                        // Update notification every 5%
-                        if (pct / 5 > lastNotifiedPct / 5) {
-                            lastNotifiedPct = pct
-                            val notification = NotificationCompat.Builder(applicationContext, NotificationHelper.CHANNEL_DOWNLOAD)
-                                .setSmallIcon(android.R.drawable.stat_sys_download)
-                                .setContentTitle("Downloading")
-                                .setContentText(title)
-                                .setProgress(100, pct, false)
-                                .setOngoing(true)
-                                .setGroup("album_$albumId")
-                                .build()
-                            notificationManager.notify(notificationId, notification)
+                            if (pct / 5 > lastNotifiedPct / 5) {
+                                lastNotifiedPct = pct
+                                val notification = NotificationCompat.Builder(applicationContext, NotificationHelper.CHANNEL_DOWNLOAD)
+                                    .setSmallIcon(android.R.drawable.stat_sys_download)
+                                    .setContentTitle("Downloading")
+                                    .setContentText(title)
+                                    .setProgress(100, pct, false)
+                                    .setOngoing(true)
+                                    .setGroup("album_$albumId")
+                                    .build()
+                                notificationManager.notify(notificationId, notification)
+                            }
                         }
                     }
                 }

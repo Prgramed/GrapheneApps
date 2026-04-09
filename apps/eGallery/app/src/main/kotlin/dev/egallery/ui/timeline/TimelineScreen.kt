@@ -134,18 +134,7 @@ fun TimelineScreen(
         }
     }
 
-    // Viewport-priority thumbnail prefetch: when scroll settles, prefetch visible items
-    LaunchedEffect(gridState) {
-        snapshotFlow { gridState.isScrollInProgress }.collect { scrolling ->
-            if (!scrolling) {
-                val visibleNasIds = gridState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
-                    val item = items.peek(info.index)
-                    (item as? TimelineItem.PhotoCell)?.item?.nasId
-                }
-                viewModel.prefetchVisibleThumbnails(visibleNasIds.take(6))
-            }
-        }
-    }
+    // Coil handles thumbnail caching via memory + disk cache — no explicit prefetch needed
 
     Scaffold(
         topBar = {

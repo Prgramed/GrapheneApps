@@ -6,13 +6,14 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Upsert
 import com.prgramed.edoist.data.database.entity.LabelEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface LabelDao {
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insert(label: LabelEntity)
 
     @Update

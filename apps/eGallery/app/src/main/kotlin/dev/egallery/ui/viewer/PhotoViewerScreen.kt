@@ -10,8 +10,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.pager.PagerDefaults
@@ -122,14 +123,22 @@ fun PhotoViewerScreen(
     }
     val dismissThreshold = 300f
 
+    // Show cached thumbnail immediately while IDs load
     if (timelineIds.isEmpty()) {
         Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color.White)
+            currentItem?.let { item ->
+                AsyncImage(
+                    model = viewModel.imageUrl(item),
+                    contentDescription = item.filename,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
         return
     }
 
-    val initialIndex = remember(timelineIds, viewModel.initialNasId) {
+    val initialIndex = remember(viewModel.initialNasId) {
         timelineIds.indexOf(viewModel.initialNasId).coerceAtLeast(0)
     }
     val pagerState = rememberPagerState(initialPage = initialIndex) { timelineIds.size }
@@ -171,16 +180,26 @@ fun PhotoViewerScreen(
                 interactionSource = remember { MutableInteractionSource() },
             ) { uiVisible = !uiVisible }
             .pointerInput(Unit) {
+                var isDismissing = false
                 detectVerticalDragGestures(
+                    onDragStart = { isDismissing = false },
                     onDragEnd = {
-                        if (dismissOffsetY > dismissThreshold) {
+                        if (isDismissing && dismissOffsetY > dismissThreshold) {
                             onBack()
                         }
                         dismissOffsetY = 0f
+                        isDismissing = false
                     },
-                    onDragCancel = { dismissOffsetY = 0f },
-                    onVerticalDrag = { _, dragAmount ->
-                        if (dragAmount > 0 || dismissOffsetY > 0) {
+                    onDragCancel = {
+                        dismissOffsetY = 0f
+                        isDismissing = false
+                    },
+                    onVerticalDrag = { change, dragAmount ->
+                        // Only start dismiss if dragging downward with enough intent
+                        if (!isDismissing && dragAmount > 8f && dismissOffsetY == 0f) {
+                            isDismissing = true
+                        }
+                        if (isDismissing) {
                             dismissOffsetY = (dismissOffsetY + dragAmount).coerceAtLeast(0f)
                         }
                     },
@@ -202,6 +221,9 @@ fun PhotoViewerScreen(
             val nasId = timelineIds.getOrElse(page) { return@HorizontalPager }
             val item = if (page == pagerState.currentPage) currentItem else null
 
+            // Use local file if available (instant, full quality), else server preview
+            val imageModel = viewModel.resolveImage(nasId)
+
             Box(contentAlignment = Alignment.Center) {
                 val sharedModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
                     with(sharedTransitionScope) {
@@ -214,8 +236,9 @@ fun PhotoViewerScreen(
                     Modifier
                 }
                 ZoomableImage(
-                    model = item?.let { viewModel.imageUrl(it) },
+                    model = imageModel,
                     contentDescription = item?.filename,
+                    nasId = nasId,
                     sharedModifier = sharedModifier,
                     resetKey = nasId,
                 )
@@ -401,14 +424,14 @@ fun PhotoViewerScreen(
 private fun ZoomableImage(
     model: Any?,
     contentDescription: String?,
+    nasId: String = "",
     sharedModifier: Modifier = Modifier,
     resetKey: Any? = null,
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
-    // Reset zoom when navigating to a different image
-    androidx.compose.runtime.LaunchedEffect(resetKey) {
+    LaunchedEffect(resetKey) {
         scale = 1f
         offset = Offset.Zero
     }
@@ -416,31 +439,36 @@ private fun ZoomableImage(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(scale > 1f) {
-                if (scale > 1f) {
-                    // When zoomed: handle pan + pinch
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        scale = (scale * zoom).coerceIn(1f, 4f)
-                        if (scale > 1f) {
-                            offset = Offset(x = offset.x + pan.x, y = offset.y + pan.y)
-                        } else {
-                            offset = Offset.Zero
-                        }
-                    }
-                } else {
-                    // At 1x: only detect pinch-to-zoom via multi-touch, let pager handle single-finger swipe
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            if (event.changes.size >= 2) {
-                                // Two fingers — handle zoom
-                                val zoomChange = event.calculateZoom()
-                                if (zoomChange != 1f) {
-                                    scale = (scale * zoomChange).coerceIn(1f, 4f)
-                                    event.changes.forEach { it.consume() }
-                                }
+            .pointerInput(scale) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val fingerCount = event.changes.count { it.pressed }
+
+                        if (fingerCount >= 2) {
+                            // Pinch zoom — always handle
+                            val zoomChange = event.calculateZoom()
+                            if (zoomChange != 1f) {
+                                val newScale = (scale * zoomChange).coerceIn(1f, 4f)
+                                scale = newScale
+                                if (newScale <= 1f) offset = Offset.Zero
+                                event.changes.forEach { it.consume() }
+                            }
+                            // Also handle pan while pinching
+                            val panChange = event.calculatePan()
+                            if (scale > 1f && panChange != Offset.Zero) {
+                                offset += panChange
+                                event.changes.forEach { it.consume() }
+                            }
+                        } else if (fingerCount == 1 && scale > 1f) {
+                            // Single finger pan when zoomed in
+                            val panChange = event.calculatePan()
+                            if (panChange != Offset.Zero) {
+                                offset += panChange
+                                event.changes.forEach { it.consume() }
                             }
                         }
+                        // At 1x zoom with single finger: don't consume — let pager handle swipe
                     }
                 }
             }
@@ -458,8 +486,18 @@ private fun ZoomableImage(
             },
         contentAlignment = Alignment.Center,
     ) {
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val isLocalFile = model is java.io.File || model is android.net.Uri
         AsyncImage(
-            model = model,
+            model = remember(model) {
+                coil3.request.ImageRequest.Builder(context)
+                    .data(model)
+                    .apply {
+                        if (isLocalFile) size(coil3.size.Size.ORIGINAL)
+                        else memoryCacheKey("thumb_$nasId")
+                    }
+                    .build()
+            },
             contentDescription = contentDescription,
             contentScale = ContentScale.Fit,
             modifier = sharedModifier

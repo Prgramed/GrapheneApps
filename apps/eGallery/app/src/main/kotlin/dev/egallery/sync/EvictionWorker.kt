@@ -55,13 +55,17 @@ class EvictionWorker @AssistedInject constructor(
         val trashCutoff = now - TRASH_RETENTION_MS
         val expiredTrash = mediaDao.getExpiredTrash(trashCutoff)
         val serverDeleteIds = mutableListOf<String>()
+        val deleteIds = mutableListOf<String>()
         for (entity in expiredTrash) {
             entity.localPath?.let { storageManager.deleteLocalFile(it) }
-            // Collect valid Immich UUIDs for server deletion
             if (entity.nasId.length > 10 && !entity.nasId.startsWith("-")) {
                 serverDeleteIds.add(entity.nasId)
             }
-            mediaDao.permanentDelete(entity.nasId)
+            deleteIds.add(entity.nasId)
+        }
+        // Batch delete from Room
+        for (chunk in deleteIds.chunked(500)) {
+            mediaDao.deleteByNasIds(chunk)
         }
         // Delete from Immich server too
         if (serverDeleteIds.isNotEmpty()) {

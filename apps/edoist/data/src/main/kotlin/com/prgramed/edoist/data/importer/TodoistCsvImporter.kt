@@ -79,17 +79,17 @@ class TodoistCsvImporter @Inject constructor(
         val now = System.currentTimeMillis()
         val projectId = UUID.randomUUID().toString()
 
-        // Check if project already exists (by name)
+        // Reuse existing project if one with the same name exists
         val existingProjects = database.projectDao().getAllActive()
         val isInbox = projectName.equals("Inbox", ignoreCase = true)
-        val actualProjectId = if (isInbox) {
-            existingProjects.find { it.isInbox }?.id ?: projectId
-        } else {
-            projectId
+        val existingMatch = when {
+            isInbox -> existingProjects.find { it.isInbox }
+            else -> existingProjects.find { it.name.equals(projectName, ignoreCase = true) }
         }
+        val actualProjectId = existingMatch?.id ?: projectId
 
-        // Create project if not inbox
-        if (!isInbox) {
+        // Create project only if no existing match
+        if (existingMatch == null && !isInbox) {
             val sortOrder = existingProjects.size
             database.projectDao().insert(
                 ProjectEntity(
@@ -130,6 +130,10 @@ class TodoistCsvImporter @Inject constructor(
         val parentStack = mutableListOf<String>() // stack of task IDs by indent
         var currentSectionId: String? = null
 
+        // Pre-load existing sections for this project so we can reuse by name
+        val existingSections = database.sectionDao().getByProjectId(actualProjectId)
+            .associateBy { it.name.lowercase() }
+
         for (i in 1 until lines.size) {
             val row = lines[i]
             if (row.size <= typeCol || row.size <= contentCol) continue
@@ -140,19 +144,24 @@ class TodoistCsvImporter @Inject constructor(
 
             when (type) {
                 "section" -> {
-                    val sectionId = UUID.randomUUID().toString()
-                    database.sectionDao().insert(
-                        SectionEntity(
-                            id = sectionId,
-                            name = content,
-                            projectId = actualProjectId,
-                            sortOrder = sectionsImported,
-                            isCollapsed = false,
-                            createdAtMillis = now,
-                        ),
-                    )
-                    currentSectionId = sectionId
-                    sectionsImported++
+                    val existingSection = existingSections[content.lowercase()]
+                    if (existingSection != null) {
+                        currentSectionId = existingSection.id
+                    } else {
+                        val sectionId = UUID.randomUUID().toString()
+                        database.sectionDao().insert(
+                            SectionEntity(
+                                id = sectionId,
+                                name = content,
+                                projectId = actualProjectId,
+                                sortOrder = existingSections.size + sectionsImported,
+                                isCollapsed = false,
+                                createdAtMillis = now,
+                            ),
+                        )
+                        currentSectionId = sectionId
+                        sectionsImported++
+                    }
                     parentStack.clear()
                 }
 

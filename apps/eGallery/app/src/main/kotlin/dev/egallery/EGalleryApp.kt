@@ -103,28 +103,33 @@ class EGalleryApp : Application(), Configuration.Provider, SingletonImageLoader.
 
     /** Merge duplicate entries — by hash and by filename — runs every startup */
     private fun deduplicateEntries() {
-        appScope.launch {
+        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 var merged = 0
 
-                // Pass 1: Dedup by hash
+                // Pass 1: Dedup by hash — skip if none
                 val hashDupes = mediaDao.findHashDuplicates()
-                for (hash in hashDupes) {
-                    val entries = mediaDao.getAllByHash(hash)
-                    if (entries.size < 2) continue
-                    merged += mergeEntries(entries)
+                if (hashDupes.isNotEmpty()) {
+                    Timber.d("Found ${hashDupes.size} hash duplicates to merge")
+                    for (hash in hashDupes) {
+                        val entries = mediaDao.getAllByHash(hash)
+                        if (entries.size < 2) continue
+                        merged += mergeEntries(entries)
+                    }
                 }
 
-                // Pass 2: Dedup by filename (catches unhashed device entries from quickScan)
+                // Pass 2: Dedup by filename — skip if none
                 val filenameDupes = mediaDao.findFilenameDuplicates()
-                for (filename in filenameDupes) {
-                    val entries = mediaDao.getAllByFilename(filename)
-                    if (entries.size < 2) continue
-                    // Only merge if there's a mix of real and temp nasIds
-                    val hasReal = entries.any { isRealNasId(it.nasId) }
-                    val hasTemp = entries.any { !isRealNasId(it.nasId) }
-                    if (hasReal && hasTemp) {
-                        merged += mergeEntries(entries)
+                if (filenameDupes.isNotEmpty()) {
+                    Timber.d("Found ${filenameDupes.size} filename duplicates to merge")
+                    for (filename in filenameDupes) {
+                        val entries = mediaDao.getAllByFilename(filename)
+                        if (entries.size < 2) continue
+                        val hasReal = entries.any { isRealNasId(it.nasId) }
+                        val hasTemp = entries.any { !isRealNasId(it.nasId) }
+                        if (hasReal && hasTemp) {
+                            merged += mergeEntries(entries)
+                        }
                     }
                 }
 

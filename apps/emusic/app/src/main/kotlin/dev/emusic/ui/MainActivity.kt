@@ -87,33 +87,45 @@ class MainActivity : ComponentActivity() {
                 var playbackProgress by remember { mutableStateOf(0f) }
                 var controller by remember { mutableStateOf<MediaController?>(null) }
 
-                DisposableEffect(controllerFuture) {
-                    val listener = Runnable {
-                        val mc = controllerFuture.get()
-                        controller = mc
-                        isPlaying = mc.isPlaying
-                        mc.addListener(object : Player.Listener {
-                            override fun onIsPlayingChanged(playing: Boolean) {
-                                isPlaying = playing
+                val playerListener = remember {
+                    object : Player.Listener {
+                        override fun onIsPlayingChanged(playing: Boolean) {
+                            isPlaying = playing
+                        }
+                        override fun onPositionDiscontinuity(
+                            oldPosition: Player.PositionInfo,
+                            newPosition: Player.PositionInfo,
+                            reason: Int,
+                        ) {
+                            controller?.let { mc ->
+                                val duration = mc.duration
+                                if (duration > 0) playbackProgress = mc.currentPosition.toFloat() / duration
                             }
-                        })
-                    }
-                    controllerFuture.addListener(listener, MoreExecutors.directExecutor())
-                    onDispose {
-                        controller?.removeListener(object : Player.Listener {})
+                        }
                     }
                 }
 
-                // Poll playback progress — only when playing
+                DisposableEffect(controllerFuture) {
+                    val runnable = Runnable {
+                        val mc = controllerFuture.get()
+                        controller = mc
+                        isPlaying = mc.isPlaying
+                        mc.addListener(playerListener)
+                    }
+                    controllerFuture.addListener(runnable, MoreExecutors.directExecutor())
+                    onDispose {
+                        controller?.removeListener(playerListener)
+                    }
+                }
+
+                // Light polling only while playing (for progress bar smoothness)
                 androidx.compose.runtime.LaunchedEffect(controller, isPlaying) {
                     while (isPlaying) {
                         controller?.let { mc ->
                             val duration = mc.duration
-                            if (duration > 0) {
-                                playbackProgress = mc.currentPosition.toFloat() / duration
-                            }
+                            if (duration > 0) playbackProgress = mc.currentPosition.toFloat() / duration
                         }
-                        kotlinx.coroutines.delay(1000)
+                        kotlinx.coroutines.delay(3000)
                     }
                 }
 
