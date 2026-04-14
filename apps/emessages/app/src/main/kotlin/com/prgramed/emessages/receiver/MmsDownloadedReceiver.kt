@@ -64,7 +64,7 @@ class MmsDownloadedReceiver : BroadcastReceiver() {
         val sender = getMmsSender(context, mmsId)
         val body = getMmsBody(context, mmsId) ?: "MMS received"
 
-        // Pre-cache image thumbnails for smooth scrolling
+        // Pre-cache image + video thumbnails for smooth scrolling
         try {
             val partUri = android.net.Uri.parse("content://mms/part")
             context.contentResolver.query(
@@ -75,10 +75,13 @@ class MmsDownloadedReceiver : BroadcastReceiver() {
                 val ctIdx = cursor.getColumnIndex("ct")
                 while (cursor.moveToNext()) {
                     val ct = cursor.getString(ctIdx) ?: continue
-                    if (ct.startsWith("image/")) {
-                        val partId = cursor.getLong(idIdx)
-                        val contentUri = android.net.Uri.parse("content://mms/part/$partId")
-                        com.prgramed.emessages.data.message.ThumbnailCache.cache(context, contentUri, mmsId)
+                    val partId = cursor.getLong(idIdx)
+                    val contentUri = android.net.Uri.parse("content://mms/part/$partId")
+                    when {
+                        ct.startsWith("image/") ->
+                            com.prgramed.emessages.data.message.ThumbnailCache.cache(context, contentUri, mmsId)
+                        ct.startsWith("video/") ->
+                            com.prgramed.emessages.data.message.ThumbnailCache.cacheVideo(context, contentUri, mmsId)
                     }
                 }
             }

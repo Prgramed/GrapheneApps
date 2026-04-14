@@ -54,6 +54,9 @@ interface AlbumDao {
     @Query("SELECT COUNT(*) FROM albums")
     suspend fun count(): Int
 
+    @Query("SELECT COALESCE(SUM(trackCount), 0) FROM albums")
+    suspend fun getTotalTrackCount(): Int
+
     @Query("SELECT id FROM albums")
     suspend fun getAllIds(): List<String>
 

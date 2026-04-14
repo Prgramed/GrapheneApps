@@ -1,6 +1,9 @@
 package com.grapheneapps.enotes.data.repository
 
+import androidx.room.withTransaction
+import com.grapheneapps.enotes.data.db.AppDatabase
 import com.grapheneapps.enotes.data.db.dao.FolderDao
+import com.grapheneapps.enotes.data.db.dao.NoteDao
 import com.grapheneapps.enotes.data.db.entity.toDomain
 import com.grapheneapps.enotes.data.db.entity.toEntity
 import com.grapheneapps.enotes.domain.model.Folder
@@ -13,6 +16,8 @@ import javax.inject.Singleton
 @Singleton
 class FolderRepositoryImpl @Inject constructor(
     private val folderDao: FolderDao,
+    private val noteDao: NoteDao,
+    private val database: AppDatabase,
 ) : FolderRepository {
 
     override fun observeAll(): Flow<List<Folder>> =
@@ -32,6 +37,11 @@ class FolderRepositoryImpl @Inject constructor(
     }
 
     override suspend fun delete(id: String) {
-        folderDao.delete(id)
+        // Clear folderId on any notes in this folder before deletion so they
+        // don't end up with dangling references. Done in a single transaction.
+        database.withTransaction {
+            noteDao.clearFolder(id)
+            folderDao.delete(id)
+        }
     }
 }

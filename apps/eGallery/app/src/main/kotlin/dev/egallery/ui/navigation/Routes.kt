@@ -13,10 +13,12 @@ object Routes {
     const val TRASH = "trash"
     const val EDIT = "edit/{nasId}"
     const val URI_VIEWER = "uri_viewer/{uri}"
+    const val URI_VIDEO_PLAYER = "uri_video_player/{uri}"
     const val PHOTO_VIEWER = "photo_viewer/{nasId}"
     const val VIDEO_PLAYER = "video_player/{nasId}"
 
     fun uriViewer(uri: String): String = "uri_viewer/${android.net.Uri.encode(uri)}"
+    fun uriVideoPlayer(uri: String): String = "uri_video_player/${android.net.Uri.encode(uri)}"
     fun edit(nasId: String): String = "edit/$nasId"
     fun albumDetail(albumId: String): String = "album_detail/$albumId"
     fun personDetail(personId: String): String = "person_detail/$personId"

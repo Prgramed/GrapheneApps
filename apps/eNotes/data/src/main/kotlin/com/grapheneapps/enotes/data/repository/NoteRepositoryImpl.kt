@@ -1,5 +1,6 @@
 package com.grapheneapps.enotes.data.repository
 
+import com.grapheneapps.enotes.data.db.dao.AttachmentDao
 import com.grapheneapps.enotes.data.db.dao.NoteDao
 import com.grapheneapps.enotes.data.db.dao.NoteRevisionDao
 import com.grapheneapps.enotes.data.db.entity.NoteRevisionEntity
@@ -9,6 +10,8 @@ import com.grapheneapps.enotes.domain.model.Note
 import com.grapheneapps.enotes.domain.repository.NoteRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import timber.log.Timber
+import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -17,6 +20,7 @@ import javax.inject.Singleton
 class NoteRepositoryImpl @Inject constructor(
     private val noteDao: NoteDao,
     private val noteRevisionDao: NoteRevisionDao,
+    private val attachmentDao: AttachmentDao,
 ) : NoteRepository {
 
     override fun observeAll(): Flow<List<Note>> =
@@ -60,6 +64,21 @@ class NoteRepositoryImpl @Inject constructor(
     }
 
     override suspend fun permanentlyDelete(id: String) {
+        // Clean up attachment files on disk before deleting the note row.
+        // Room's FK CASCADE will remove the `attachments` table rows automatically.
+        val attachments = attachmentDao.getByNote(id)
+        for (attachment in attachments) {
+            attachment.localPath?.let { path ->
+                try {
+                    val file = File(path)
+                    if (file.exists() && !file.delete()) {
+                        Timber.w("Failed to delete attachment file: $path")
+                    }
+                } catch (e: Exception) {
+                    Timber.w(e, "Error deleting attachment file: $path")
+                }
+            }
+        }
         noteDao.delete(id)
     }
 

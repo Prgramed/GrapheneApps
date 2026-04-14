@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
 
     // Intent-derived state
     private val startUri = mutableStateOf<String?>(null)
+    private val startIsVideo = mutableStateOf(false)
     private val pickerMode = mutableStateOf(false)
 
     private val mediaPermissionLauncher = registerForActivityResult(
@@ -93,6 +94,7 @@ class MainActivity : ComponentActivity() {
                         finish()
                     },
                     startUri = startUri.value,
+                    startIsVideo = startIsVideo.value,
                 )
             }
         }
@@ -103,6 +105,11 @@ class MainActivity : ComponentActivity() {
         resolveIntent(intent)
     }
 
+    private fun isVideoExtension(uri: Uri): Boolean {
+        val last = uri.lastPathSegment?.substringAfterLast('.', "")?.lowercase() ?: return false
+        return last in setOf("mp4", "mov", "m4v", "3gp", "3gpp", "3gpp2", "mkv", "webm", "avi", "ts")
+    }
+
     private fun resolveIntent(intent: Intent?) {
         when (intent?.action) {
             Intent.ACTION_VIEW -> {
@@ -110,6 +117,11 @@ class MainActivity : ComponentActivity() {
                 Timber.d("ACTION_VIEW: $uri (type: ${intent.type})")
                 if (uri != null) {
                     startUri.value = uri.toString()
+                    // Detect video from MIME type or file extension so we route
+                    // to the ExoPlayer-backed screen instead of the image viewer.
+                    val mimeType = intent.type ?: contentResolver.getType(uri)
+                    startIsVideo.value = mimeType?.startsWith("video/") == true ||
+                        isVideoExtension(uri)
                 }
             }
             Intent.ACTION_GET_CONTENT -> {

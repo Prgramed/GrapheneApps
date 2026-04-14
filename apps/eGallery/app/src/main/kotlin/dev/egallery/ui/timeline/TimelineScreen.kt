@@ -134,6 +134,21 @@ fun TimelineScreen(
         }
     }
 
+    // Auto-scan for new device photos every time the timeline becomes visible
+    // (app open / resume from background / tab switch). quickScanRecentFiles
+    // early-exits after 20 consecutive known files, so this is cheap when the
+    // library is stable and only does work when actually new photos exist.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.syncNow()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // Coil handles thumbnail caching via memory + disk cache — no explicit prefetch needed
 
     Scaffold(
@@ -236,23 +251,38 @@ fun TimelineScreen(
                 }
 
                 items.itemCount == 0 && items.loadState.refresh is LoadState.NotLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
+                    // Wrap empty state in PullToRefreshBox so the user can still
+                    // pull-to-refresh to rescan device + pull from NAS.
+                    PullToRefreshBox(
+                        isRefreshing = isSyncing,
+                        onRefresh = { viewModel.syncNow(force = true) },
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.PhotoLibrary,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Text(
-                                text = "No photos yet\nSync from Settings to load from NAS",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        androidx.compose.foundation.lazy.LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillParentMaxSize(),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(
+                                            Icons.Default.PhotoLibrary,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(48.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                        )
+                                        Spacer(Modifier.height(12.dp))
+                                        Text(
+                                            text = "No photos yet\nPull down to scan device, or Force Full Resync from Settings",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -260,7 +290,7 @@ fun TimelineScreen(
                 else -> {
                     PullToRefreshBox(
                         isRefreshing = isSyncing,
-                        onRefresh = { viewModel.syncNow() },
+                        onRefresh = { viewModel.syncNow(force = true) },
                     ) {
                     // Fetch memories on first composition
                     LaunchedEffect(Unit) { viewModel.fetchMemories() }

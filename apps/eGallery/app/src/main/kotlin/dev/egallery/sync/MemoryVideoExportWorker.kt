@@ -126,12 +126,15 @@ class MemoryVideoExportWorker @AssistedInject constructor(
     }
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID, "Memory Export",
-            NotificationManager.IMPORTANCE_LOW,
-        ).apply { description = "Memory video export progress" }
-        (applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-            .createNotificationChannel(channel)
+        val nm = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "Memory Export Progress", NotificationManager.IMPORTANCE_LOW)
+                .apply { description = "Memory video export progress" },
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_DONE_ID, "Memory Export Complete", NotificationManager.IMPORTANCE_DEFAULT)
+                .apply { description = "Notification when memory video is ready" },
+        )
     }
 
     private fun createForegroundInfo(progress: String): ForegroundInfo {
@@ -159,11 +162,12 @@ class MemoryVideoExportWorker @AssistedInject constructor(
             )
         }
 
-        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_DONE_ID)
             .setContentTitle("Memory Video Saved")
             .setContentText("Tap to open")
             .setSmallIcon(android.R.drawable.ic_menu_gallery)
             .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .apply { if (pendingIntent != null) setContentIntent(pendingIntent) }
             .build()
 
@@ -174,6 +178,7 @@ class MemoryVideoExportWorker @AssistedInject constructor(
     companion object {
         const val KEY_ASSET_IDS = "asset_ids"
         private const val CHANNEL_ID = "memory_export"
+        private const val CHANNEL_DONE_ID = "memory_export_done"
         private const val NOTIFICATION_ID = 9001
 
         fun enqueue(context: Context, assetIds: List<String>) {

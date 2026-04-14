@@ -31,15 +31,60 @@ class EvictionWorker @AssistedInject constructor(
 
         val now = System.currentTimeMillis()
         val rollingCutoff = now - ROLLING_WINDOW_MS
+        // Rolling cache window based on captureDate: keep anything captured in
+        // the last year on device, evict older SYNCED entries, download recent
+        // NAS-only entries that are within the window.
+        val captureCutoff = now - ROLLING_WINDOW_MS
 
+        // Step 1: evict SYNCED entries whose captureDate is outside the window.
+        val oldSynced = try { mediaDao.getSyncedOlderThan(captureCutoff) } catch (_: Exception) { emptyList() }
+        var evictedByCapture = 0
+        for (entity in oldSynced) {
+            val localPath = entity.localPath ?: continue
+            storageManager.deleteLocalFile(localPath)
+            mediaDao.updateStorageStatus(entity.nasId, "NAS", null)
+            evictedByCapture++
+        }
+        if (evictedByCapture > 0) {
+            Timber.d("Eviction (captureDate): $evictedByCapture local files removed")
+        }
+
+        // Step 2: download NAS-only entries whose captureDate is within the window.
+        val toDownload = try { mediaDao.getNasOnlyWithin(captureCutoff) } catch (_: Exception) { emptyList() }
+        var downloaded = 0
+        var downloadFailed = 0
+        for (entity in toDownload) {
+            if (isStopped) break
+            try {
+                val destFile = storageManager.localFilePath(entity.nasId, entity.filename)
+                if (destFile.exists() && destFile.length() > 0) {
+                    // File already exists locally — just relink in DB.
+                    mediaDao.updateStorageStatus(entity.nasId, "SYNCED", destFile.absolutePath)
+                    downloaded++
+                    continue
+                }
+                val response = immichApi.downloadOriginal(entity.nasId)
+                response.byteStream().use { input ->
+                    destFile.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+                }
+                mediaDao.updateStorageStatus(entity.nasId, "SYNCED", destFile.absolutePath)
+                downloaded++
+            } catch (e: Exception) {
+                downloadFailed++
+                if (downloadFailed <= 3) Timber.w(e, "Auto-download failed for ${entity.nasId}")
+            }
+        }
+        if (downloaded > 0 || downloadFailed > 0) {
+            Timber.d("Auto-download: $downloaded succeeded, $downloadFailed failed (out of ${toDownload.size})")
+        }
+
+        // Step 3: legacy expiry (ROLLING/FIXED tagged entries) for any manually-cached items.
         val expired = mediaDao.getExpiredLocalFiles(rollingCutoff, now)
 
         var evicted = 0
         for (entity in expired) {
             // Never evict items still pending upload
-            if (entity.storageStatus == "DEVICE" || entity.storageStatus == "DEVICE") {
-                continue
-            }
+            if (entity.storageStatus == "DEVICE") continue
 
             val localPath = entity.localPath ?: continue
             storageManager.deleteLocalFile(localPath)
@@ -48,7 +93,7 @@ class EvictionWorker @AssistedInject constructor(
         }
 
         if (evicted > 0) {
-            Timber.d("Evicted $evicted local files (${expired.size} candidates)")
+            Timber.d("Eviction (legacy expiry): $evicted local files removed")
         }
 
         // Auto-purge trashed items older than 30 days

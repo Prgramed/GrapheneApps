@@ -24,6 +24,9 @@ enum class SortOrder(val label: String) {
 
 data class NoteListUiState(
     val notes: List<Note> = emptyList(),
+    /** Pre-computed plain-text previews keyed by note id. Computed once per emission
+     *  so the list doesn't run regex on every recomposition per item. */
+    val previews: Map<String, String> = emptyMap(),
     val isLoading: Boolean = true,
     val sortOrder: SortOrder = SortOrder.DATE_EDITED,
     val isGalleryView: Boolean = false,
@@ -52,7 +55,14 @@ class NoteListViewModel @Inject constructor(
             }
             flow.collect { notes ->
                 val sorted = sortNotes(notes, _uiState.value.sortOrder)
-                _uiState.value = _uiState.value.copy(notes = sorted, isLoading = false)
+                val previews = sorted.associate { note ->
+                    note.id to if (note.isLocked) "" else extractPreview(note.bodyJson)
+                }
+                _uiState.value = _uiState.value.copy(
+                    notes = sorted,
+                    previews = previews,
+                    isLoading = false,
+                )
             }
         }
     }
@@ -78,6 +88,10 @@ class NoteListViewModel @Inject constructor(
 
     fun deleteNote(id: String) {
         viewModelScope.launch { noteRepository.softDelete(id) }
+    }
+
+    fun restoreNote(id: String) {
+        viewModelScope.launch { noteRepository.restore(id) }
     }
 
     fun togglePin(note: Note) {

@@ -22,8 +22,10 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
+        // Currently at schema version 1.
+        // ANY future schema change MUST ship a Migration — never add
+        // fallbackToDestructiveMigration here, it would wipe all user notes.
         Room.databaseBuilder(context, AppDatabase::class.java, "enotes.db")
-            .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
 
     @Provides

@@ -34,12 +34,22 @@ class DeviceMediaScanner @Inject constructor(
      * files already in Room. No hashing — just inserts so they appear in timeline.
      */
     suspend fun quickScanRecentFiles() = withContext(Dispatchers.IO) {
+        // Pre-load DB snapshots once so the per-row scan is pure in-memory work.
+        // Previously we did a DB round trip per MediaStore row (getByLocalPath +
+        // searchByFilename) — that's tens of thousands of queries for a large
+        // library and was the real source of the "too slow" scan.
+        val knownPaths = HashSet<String>().apply { addAll(mediaDao.getAllLocalPaths()) }
+        val serverByFilename = HashMap<String, String>().apply {
+            for (ref in mediaDao.getServerFilenames()) put(ref.filename, ref.nasId)
+        }
+        Timber.d("Quick scan prelude: ${knownPaths.size} known paths, ${serverByFilename.size} server filenames")
+
         var imported = 0
         for ((uri, mediaType) in listOf(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI to "PHOTO",
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI to "VIDEO",
         )) {
-            imported += scanMediaStoreUntilKnown(uri, mediaType)
+            imported += scanMediaStoreUntilKnown(uri, mediaType, knownPaths, serverByFilename)
         }
         if (imported > 0) Timber.d("Quick scan: imported $imported new files")
         imported
@@ -48,7 +58,16 @@ class DeviceMediaScanner @Inject constructor(
     private suspend fun scanMediaStoreUntilKnown(
         uri: android.net.Uri,
         mediaType: String,
+        knownPaths: HashSet<String>,
+        serverByFilename: HashMap<String, String>,
     ): Int {
+        // FAST PATH. No SHA1 hashing, no per-file Room upserts.
+        //
+        // Hashing thousands of files inline locks up the IO thread and each upsert
+        // invalidates the timeline PagingSource — which made the grid unusable
+        // while the scan ran (especially when the DB was empty and no early-exit
+        // watermark existed). Hash-based NAS linking belongs to the full sync
+        // (scanIfNeeded / doFullSync / forceRescan).
         val projection = arrayOf(
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
@@ -58,7 +77,8 @@ class DeviceMediaScanner @Inject constructor(
             MediaStore.MediaColumns.DATE_TAKEN,
             MediaStore.MediaColumns.DATE_MODIFIED,
         )
-        var imported = 0
+        val toInsert = mutableListOf<MediaEntity>()
+        val filenameLinks = mutableListOf<Pair<String, String>>() // nasId -> localPath
         var consecutiveKnown = 0
         try {
             context.contentResolver.query(
@@ -86,10 +106,9 @@ class DeviceMediaScanner @Inject constructor(
                     }
                     if (localPath == null) continue
 
-                    // Already in Room? Count consecutive known files to detect "caught up"
-                    if (mediaDao.getByLocalPath(localPath) != null) {
+                    // Already in Room? Count consecutive known files to early-exit.
+                    if (localPath in knownPaths) {
                         consecutiveKnown++
-                        // After 20 consecutive known files, we're caught up
                         if (consecutiveKnown >= 20) break
                         continue
                     }
@@ -100,34 +119,17 @@ class DeviceMediaScanner @Inject constructor(
                     val dateModified = cursor.getLong(dateModCol) * 1000L
                     val captureDate = if (dateTaken > 0) dateTaken else dateModified
 
-                    // Compute hash so server sync can merge by hash (prevents duplicates)
-                    val file = File(localPath)
-                    var nasHash: String? = null
-                    if (file.exists() && file.canRead()) {
-                        nasHash = try { HashUtil.sha1Base64(file) } catch (_: Exception) { null }
-                        // If hash matches an existing server entry, link instead of creating duplicate
-                        if (nasHash != null) {
-                            val existing = mediaDao.getByHash(nasHash)
-                            if (existing != null) {
-                                mediaDao.updateStorageStatus(existing.nasId, "SYNCED", localPath)
-                                imported++
-                                continue
-                            }
-                        }
-                    }
-
-                    // Also check by filename — if a server entry with same name exists, link it
-                    val byFilename = mediaDao.searchByFilename(filename)
-                    val serverEntry = byFilename.firstOrNull { it.filename == filename && it.nasId.length > 10 && !it.nasId.startsWith("-") }
-                    if (serverEntry != null) {
-                        mediaDao.updateStorageStatus(serverEntry.nasId, "SYNCED", localPath)
-                        imported++
+                    // Filename-based NAS link. In-memory map lookup; no DB query.
+                    val serverNasId = serverByFilename[filename]
+                    if (serverNasId != null) {
+                        filenameLinks += serverNasId to localPath
+                        // Mark path as known so subsequent iterations short-circuit.
+                        knownPaths += localPath
                         continue
                     }
 
-                    val tempNasId = tempIdCounter.getAndDecrement().toString()
-                    val entity = MediaEntity(
-                        nasId = tempNasId,
+                    toInsert += MediaEntity(
+                        nasId = tempIdCounter.getAndDecrement().toString(),
                         filename = filename,
                         captureDate = captureDate,
                         fileSize = fileSize,
@@ -136,17 +138,29 @@ class DeviceMediaScanner @Inject constructor(
                         cacheKey = "",
                         localPath = localPath,
                         storageStatus = "DEVICE",
-                        nasHash = nasHash,
+                        nasHash = null, // deferred to full sync
                         lastSyncedAt = System.currentTimeMillis(),
                     )
-                    mediaDao.upsert(entity)
-                    imported++
+                    knownPaths += localPath
                 }
             }
         } catch (e: Exception) {
             Timber.w(e, "Quick scan failed for $mediaType")
         }
-        return imported
+
+        // Batch writes. One upsert + a handful of updates triggers one Paging
+        // invalidation cycle instead of N.
+        if (filenameLinks.isNotEmpty()) {
+            for ((nasId, path) in filenameLinks) {
+                mediaDao.updateStorageStatus(nasId, "SYNCED", path)
+            }
+        }
+        if (toInsert.isNotEmpty()) {
+            for (chunk in toInsert.chunked(500)) {
+                mediaDao.upsertAll(chunk)
+            }
+        }
+        return toInsert.size + filenameLinks.size
     }
 
     suspend fun scanIfNeeded() {

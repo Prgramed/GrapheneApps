@@ -41,6 +41,29 @@ object DatabaseModule {
                             """.trimIndent(),
                         )
                     }
+
+                    override fun onOpen(db: SupportSQLiteDatabase) {
+                        super.onOpen(db)
+                        // Self-heal duplicate inbox projects: move tasks to the oldest
+                        // inbox, then delete the rest. Protects against edge cases where
+                        // multiple inboxes were created across imports or migrations.
+                        db.execSQL(
+                            """
+                            UPDATE tasks SET project_id = (
+                                SELECT id FROM projects WHERE is_inbox = 1 ORDER BY created_at_millis ASC LIMIT 1
+                            ) WHERE project_id IN (
+                                SELECT id FROM projects WHERE is_inbox = 1 ORDER BY created_at_millis ASC LIMIT -1 OFFSET 1
+                            )
+                            """.trimIndent(),
+                        )
+                        db.execSQL(
+                            """
+                            DELETE FROM projects WHERE is_inbox = 1 AND id != (
+                                SELECT id FROM projects WHERE is_inbox = 1 ORDER BY created_at_millis ASC LIMIT 1
+                            )
+                            """.trimIndent(),
+                        )
+                    }
                 },
             )
             .build()

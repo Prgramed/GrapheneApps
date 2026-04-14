@@ -6,6 +6,7 @@ import com.prgramed.edoist.data.database.entity.LabelEntity
 import com.prgramed.edoist.data.database.entity.TaskEntity
 import com.prgramed.edoist.data.database.entity.TaskLabelCrossRef
 import com.prgramed.edoist.data.database.relation.TaskWithLabels
+import com.prgramed.edoist.data.sync.DeletionTracker
 import com.prgramed.edoist.domain.model.Label
 import com.prgramed.edoist.domain.model.Priority
 import com.prgramed.edoist.domain.model.RecurrenceRule
@@ -24,6 +25,7 @@ import javax.inject.Singleton
 class TaskRepositoryImpl @Inject constructor(
     private val taskDao: TaskDao,
     private val labelDao: LabelDao,
+    private val deletionTracker: DeletionTracker,
 ) : TaskRepository {
 
     // ── Mapping ────────────────────────────────────────────────────────────
@@ -90,17 +92,20 @@ class TaskRepositoryImpl @Inject constructor(
         ).mapToDomain()
     }
 
-    override fun getInboxTasks(): Flow<List<Task>> =
-        taskDao.getInboxTasks().mapToDomain()
+    override fun getInboxTasks(includeCompleted: Boolean): Flow<List<Task>> =
+        if (includeCompleted) taskDao.getInboxTasksAll().mapToDomain()
+        else taskDao.getInboxTasks().mapToDomain()
 
     override fun getTasksByProject(projectId: String): Flow<List<Task>> =
         taskDao.getTasksByProject(projectId).mapToDomain()
 
-    override fun getTasksBySection(sectionId: String): Flow<List<Task>> =
-        taskDao.getTasksBySection(sectionId).mapToDomain()
+    override fun getTasksBySection(sectionId: String, includeCompleted: Boolean): Flow<List<Task>> =
+        if (includeCompleted) taskDao.getTasksBySectionAll(sectionId).mapToDomain()
+        else taskDao.getTasksBySection(sectionId).mapToDomain()
 
-    override fun getUnsectionedTasksByProject(projectId: String): Flow<List<Task>> =
-        taskDao.getUnsectionedTasksByProject(projectId).mapToDomain()
+    override fun getUnsectionedTasksByProject(projectId: String, includeCompleted: Boolean): Flow<List<Task>> =
+        if (includeCompleted) taskDao.getUnsectionedTasksByProjectAll(projectId).mapToDomain()
+        else taskDao.getUnsectionedTasksByProject(projectId).mapToDomain()
 
     override fun getTasksByLabel(labelId: String): Flow<List<Task>> =
         taskDao.getTasksByLabel(labelId).mapToDomain()
@@ -135,8 +140,8 @@ class TaskRepositoryImpl @Inject constructor(
         taskDao.searchTasks(query).mapToDomain()
 
     override fun getCompletedTasks(projectId: String?): Flow<List<Task>> {
-        val pid = projectId ?: return taskDao.getCompletedTasks("").mapToDomain()
-        return taskDao.getCompletedTasks(pid).mapToDomain()
+        if (projectId == null) return taskDao.getAllCompletedTasks().mapToDomain()
+        return taskDao.getCompletedTasks(projectId).mapToDomain()
     }
 
     override fun getTodayTaskCount(today: LocalDate): Flow<Int> =
@@ -225,6 +230,7 @@ class TaskRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteTask(taskId: String) {
+        deletionTracker.trackTaskDeletion(taskId)
         taskDao.deleteById(taskId)
     }
 

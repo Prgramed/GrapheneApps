@@ -1,17 +1,21 @@
 package com.grapheneapps.enotes.feature.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.grapheneapps.enotes.data.preferences.AppPreferencesRepository
 import com.grapheneapps.enotes.data.sync.SyncEngine
+import com.grapheneapps.enotes.data.sync.SyncWorker
 import com.grapheneapps.enotes.data.sync.WebDavClient
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 data class SettingsUiState(
@@ -36,6 +40,7 @@ class SettingsViewModel @Inject constructor(
     private val syncEngine: SyncEngine,
     private val webDavClient: WebDavClient,
     private val joplinImporter: com.grapheneapps.enotes.data.joplin.JoplinImporter,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -44,7 +49,7 @@ class SettingsViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             preferencesRepository.preferencesFlow
-                .catch { }
+                .catch { e -> Timber.e(e, "Failed to load preferences") }
                 .collect { prefs ->
                     _uiState.update {
                         it.copy(
@@ -59,11 +64,21 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    private fun reschedulePeriodicSync(intervalMinutes: Int, hasCredentials: Boolean) {
+        if (intervalMinutes > 0 && hasCredentials) {
+            SyncWorker.enqueuePeriodic(appContext, intervalMinutes.toLong())
+        } else {
+            SyncWorker.cancel(appContext)
+        }
+    }
+
     fun saveCredentials(url: String, username: String, password: String) {
         viewModelScope.launch {
-            preferencesRepository.updateWebDavUrl(url.trim())
+            val trimmedUrl = url.trim()
+            preferencesRepository.updateWebDavUrl(trimmedUrl)
             preferencesRepository.updateWebDavUsername(username.trim())
             preferencesRepository.updateWebDavPassword(password.trim())
+            reschedulePeriodicSync(_uiState.value.syncIntervalMinutes, trimmedUrl.isNotBlank())
             _uiState.update { it.copy(message = "Saved") }
         }
     }
@@ -109,6 +124,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesRepository.updateSyncInterval(minutes)
             _uiState.update { it.copy(syncIntervalMinutes = minutes) }
+            reschedulePeriodicSync(minutes, _uiState.value.webDavUrl.isNotBlank())
         }
     }
 

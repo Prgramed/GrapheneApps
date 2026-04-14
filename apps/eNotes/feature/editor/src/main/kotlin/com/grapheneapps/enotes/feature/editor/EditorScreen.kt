@@ -48,13 +48,18 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.FragmentActivity
 import com.grapheneapps.enotes.data.security.BiometricHelper
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.runBlocking
 import com.grapheneapps.enotes.feature.editor.components.BlockEditor
 import com.grapheneapps.enotes.feature.editor.components.FormatToolbar
 import com.grapheneapps.enotes.feature.editor.model.Block
@@ -69,6 +74,20 @@ fun EditorScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val shareText by viewModel.shareText.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    // Flush pending edits on ON_STOP so backgrounding the app persists the current
+    // text even if the 3-second save debounce hasn't fired yet.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                // runBlocking is safe here — save is bounded (no network)
+                runBlocking { viewModel.flushNow() }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Handle share intent
     shareText?.let { text ->
@@ -117,9 +136,6 @@ fun EditorScreen(
 
     // Track which block is focused for formatting commands
     val focusedBlockId = uiState.focusedBlockId ?: uiState.document.blocks.firstOrNull()?.id
-
-    // Cycle heading levels on toolbar tap
-    var headingCycleState = 0
 
     Scaffold(
         topBar = {
@@ -192,33 +208,69 @@ fun EditorScreen(
             )
         },
         bottomBar = {
+            // Hoist the toolbar callbacks so they aren't rebuilt on every
+            // keystroke-driven recomposition. Only onHeading depends on the
+            // current document state at call time; the rest only need the
+            // focused block id and the (stable) viewModel.
+            val onBold = remember(focusedBlockId, viewModel) {
+                { focusedBlockId?.let { viewModel.applySpan(it, 0, 0, SpanStyle.BOLD) }; Unit }
+            }
+            val onItalic = remember(focusedBlockId, viewModel) {
+                { focusedBlockId?.let { viewModel.applySpan(it, 0, 0, SpanStyle.ITALIC) }; Unit }
+            }
+            val onUnderline = remember(focusedBlockId, viewModel) {
+                { focusedBlockId?.let { viewModel.applySpan(it, 0, 0, SpanStyle.UNDERLINE) }; Unit }
+            }
+            val onStrikethrough = remember(focusedBlockId, viewModel) {
+                { focusedBlockId?.let { viewModel.applySpan(it, 0, 0, SpanStyle.STRIKETHROUGH) }; Unit }
+            }
+            val onHeading = remember(focusedBlockId, uiState.document, viewModel) {
+                {
+                    focusedBlockId?.let { id ->
+                        val block = uiState.document.blocks.find { it.id == id }
+                        val nextType = when (block) {
+                            is Block.Heading -> when (block.level) {
+                                1 -> "heading2"
+                                2 -> "heading3"
+                                else -> "paragraph"
+                            }
+                            else -> "heading1"
+                        }
+                        viewModel.setBlockType(id, nextType)
+                    }
+                    Unit
+                }
+            }
+            val onBulletList = remember(focusedBlockId, viewModel) {
+                { focusedBlockId?.let { viewModel.setBlockType(it, "bullet") }; Unit }
+            }
+            val onNumberedList = remember(focusedBlockId, viewModel) {
+                { focusedBlockId?.let { viewModel.setBlockType(it, "numbered") }; Unit }
+            }
+            val onChecklist = remember(focusedBlockId, viewModel) {
+                { focusedBlockId?.let { viewModel.setBlockType(it, "checklist") }; Unit }
+            }
+            val onCodeBlock = remember(focusedBlockId, viewModel) {
+                { focusedBlockId?.let { viewModel.setBlockType(it, "code") }; Unit }
+            }
+            val onDivider = remember(viewModel) { { viewModel.insertDivider() } }
+            val onUndo = remember(viewModel) { { viewModel.undo() } }
+            val onRedo = remember(viewModel) { { viewModel.redo() } }
+
             Column(modifier = Modifier.windowInsetsPadding(WindowInsets.ime)) {
                 FormatToolbar(
-                    onBold = { focusedBlockId?.let { viewModel.applySpan(it, 0, 0, SpanStyle.BOLD) } },
-                    onItalic = { focusedBlockId?.let { viewModel.applySpan(it, 0, 0, SpanStyle.ITALIC) } },
-                    onUnderline = { focusedBlockId?.let { viewModel.applySpan(it, 0, 0, SpanStyle.UNDERLINE) } },
-                    onStrikethrough = { focusedBlockId?.let { viewModel.applySpan(it, 0, 0, SpanStyle.STRIKETHROUGH) } },
-                    onHeading = {
-                        focusedBlockId?.let { id ->
-                            val block = uiState.document.blocks.find { it.id == id }
-                            val nextType = when (block) {
-                                is Block.Heading -> when (block.level) {
-                                    1 -> "heading2"
-                                    2 -> "heading3"
-                                    else -> "paragraph"
-                                }
-                                else -> "heading1"
-                            }
-                            viewModel.setBlockType(id, nextType)
-                        }
-                    },
-                    onBulletList = { focusedBlockId?.let { viewModel.setBlockType(it, "bullet") } },
-                    onNumberedList = { focusedBlockId?.let { viewModel.setBlockType(it, "numbered") } },
-                    onChecklist = { focusedBlockId?.let { viewModel.setBlockType(it, "checklist") } },
-                    onCodeBlock = { focusedBlockId?.let { viewModel.setBlockType(it, "code") } },
-                    onDivider = { viewModel.insertDivider() },
-                    onUndo = { viewModel.undo() },
-                    onRedo = { viewModel.redo() },
+                    onBold = onBold,
+                    onItalic = onItalic,
+                    onUnderline = onUnderline,
+                    onStrikethrough = onStrikethrough,
+                    onHeading = onHeading,
+                    onBulletList = onBulletList,
+                    onNumberedList = onNumberedList,
+                    onChecklist = onChecklist,
+                    onCodeBlock = onCodeBlock,
+                    onDivider = onDivider,
+                    onUndo = onUndo,
+                    onRedo = onRedo,
                 )
             }
         },

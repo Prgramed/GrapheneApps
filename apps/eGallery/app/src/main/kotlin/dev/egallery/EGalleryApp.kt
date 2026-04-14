@@ -187,6 +187,17 @@ class EGalleryApp : Application(), Configuration.Provider, SingletonImageLoader.
                 prefs.edit().putInt("restore_v", 2).apply()
             }
         }
+        // One-time: undo mass over-trashing caused by the server-trash reconciliation
+        // bug (searchMetadata isTrashed=true returned non-trashed assets). Only restores
+        // items trashed in the last 2 hours so legitimate trash stays put.
+        if (prefs.getInt("restore_v", 0) < 3) {
+            appScope.launch {
+                val since = System.currentTimeMillis() - 2L * 60 * 60 * 1000
+                val count = mediaDao.restoreRecentlyTrashed(since)
+                Timber.d("Restored $count items wrongly trashed in the last 2h")
+                prefs.edit().putInt("restore_v", 3).apply()
+            }
+        }
         // One-time: reset old thumbnail markers so prefetch worker re-downloads them
         if (prefs.getInt("thumb_reset_v", 0) < 1) {
             appScope.launch {

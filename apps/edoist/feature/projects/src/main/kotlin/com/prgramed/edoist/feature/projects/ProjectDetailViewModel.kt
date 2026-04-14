@@ -5,12 +5,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.prgramed.edoist.domain.model.ViewType
 import com.prgramed.edoist.domain.repository.ProjectRepository
+import com.prgramed.edoist.domain.repository.UserPreferencesRepository
 import com.prgramed.edoist.domain.usecase.CompleteTaskUseCase
 import com.prgramed.edoist.domain.usecase.GetProjectWithTasksUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -18,37 +21,44 @@ import javax.inject.Inject
 @HiltViewModel
 class ProjectDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    getProjectWithTasksUseCase: GetProjectWithTasksUseCase,
+    private val getProjectWithTasksUseCase: GetProjectWithTasksUseCase,
     private val projectRepository: ProjectRepository,
     private val completeTaskUseCase: CompleteTaskUseCase,
+    userPreferencesRepository: UserPreferencesRepository,
 ) : ViewModel() {
 
     private val projectId: String = checkNotNull(savedStateHandle["projectId"])
     private val viewTypeFlow = MutableStateFlow(ViewType.LIST)
     private val collapsedSections = MutableStateFlow<Set<String>>(emptySet())
 
-    val uiState = combine(
-        getProjectWithTasksUseCase(projectId),
-        viewTypeFlow,
-        collapsedSections,
-    ) { projectWithTasks, viewType, collapsed ->
-        val sections = projectWithTasks.sections.map { section ->
-            section.copy(isCollapsed = section.id in collapsed)
-        }
+    private val showCompletedFlow = userPreferencesRepository.getPreferences()
+        .map { it.showCompletedTasks }
 
-        ProjectDetailUiState(
-            project = projectWithTasks.project,
-            unsectionedTasks = projectWithTasks.unsectionedTasks,
-            sections = sections,
-            viewType = projectWithTasks.project.defaultView.takeIf { viewType == ViewType.LIST && !viewTypeExplicitlySet }
-                ?: viewType,
-            isLoading = false,
+    val uiState = showCompletedFlow
+        .flatMapLatest { showCompleted ->
+            combine(
+                getProjectWithTasksUseCase(projectId, showCompleted = showCompleted),
+                viewTypeFlow,
+                collapsedSections,
+            ) { projectWithTasks, viewType, collapsed ->
+                val sections = projectWithTasks.sections.map { section ->
+                    section.copy(isCollapsed = section.id in collapsed)
+                }
+
+                ProjectDetailUiState(
+                    project = projectWithTasks.project,
+                    unsectionedTasks = projectWithTasks.unsectionedTasks,
+                    sections = sections,
+                    viewType = projectWithTasks.project.defaultView.takeIf { viewType == ViewType.LIST && !viewTypeExplicitlySet }
+                        ?: viewType,
+                    isLoading = false,
+                )
+            }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = ProjectDetailUiState(),
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = ProjectDetailUiState(),
-    )
 
     private var viewTypeExplicitlySet = false
 

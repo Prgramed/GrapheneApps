@@ -5,6 +5,7 @@ import com.prgramed.edoist.data.database.dao.SectionDao
 import com.prgramed.edoist.data.database.dao.TaskDao
 import com.prgramed.edoist.data.database.entity.ProjectEntity
 import com.prgramed.edoist.data.database.entity.SectionEntity
+import com.prgramed.edoist.data.sync.DeletionTracker
 import com.prgramed.edoist.domain.model.Project
 import com.prgramed.edoist.domain.model.Section
 import com.prgramed.edoist.domain.model.ViewType
@@ -22,6 +23,7 @@ class ProjectRepositoryImpl @Inject constructor(
     private val projectDao: ProjectDao,
     private val sectionDao: SectionDao,
     private val taskDao: TaskDao,
+    private val deletionTracker: DeletionTracker,
 ) : ProjectRepository {
 
     // ── Mapping ────────────────────────────────────────────────────────────
@@ -62,11 +64,8 @@ class ProjectRepositoryImpl @Inject constructor(
     // ── Flow queries ───────────────────────────────────────────────────────
 
     override fun observeAllActive(): Flow<List<Project>> =
-        projectDao.observeAllActive().map { entities ->
-            entities.map { entity ->
-                val count = taskDao.getActiveTaskCount(entity.id).first()
-                entity.toDomain(activeTaskCount = count)
-            }
+        projectDao.observeAllActiveWithTaskCount().map { results ->
+            results.map { it.project.toDomain(activeTaskCount = it.taskCount) }
         }
 
     override fun observeProjectWithSections(projectId: String): Flow<Project?> =
@@ -144,6 +143,7 @@ class ProjectRepositoryImpl @Inject constructor(
 
     override suspend fun deleteProject(projectId: String) {
         val existing = projectDao.getById(projectId) ?: return
+        deletionTracker.trackProjectDeletion(projectId)
         projectDao.delete(existing)
     }
 

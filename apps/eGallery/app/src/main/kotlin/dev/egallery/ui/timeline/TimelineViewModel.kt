@@ -148,15 +148,24 @@ class TimelineViewModel @Inject constructor(
             }
             .cachedIn(viewModelScope)
 
-    fun syncNow() {
-        viewModelScope.launch(Dispatchers.IO) {
+    private var lastSyncNowMs = 0L
+    private var syncNowJob: kotlinx.coroutines.Job? = null
+
+    fun syncNow(force: Boolean = false) {
+        // Coalesce reentrant calls: if a scan is already in flight, skip.
+        if (syncNowJob?.isActive == true) return
+        // Rate-limit the auto-resume trigger. Explicit pull-to-refresh bypasses.
+        if (!force && System.currentTimeMillis() - lastSyncNowMs < 60_000L) return
+
+        syncNowJob = viewModelScope.launch(Dispatchers.IO) {
             _syncState.value = SyncState.Syncing
             try {
                 deviceMediaScanner.quickScanRecentFiles()
             } catch (e: Exception) {
                 Timber.w(e, "Quick scan failed")
             }
-            _syncState.value = SyncState.Idle(System.currentTimeMillis())
+            lastSyncNowMs = System.currentTimeMillis()
+            _syncState.value = SyncState.Idle(lastSyncNowMs)
             _photoCount.value = mediaRepository.getCount()
         }
     }

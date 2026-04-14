@@ -8,6 +8,8 @@ import com.prgramed.edoist.domain.repository.TaskRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 data class ProjectWithTasks(
@@ -20,19 +22,28 @@ class GetProjectWithTasksUseCase @Inject constructor(
     private val projectRepository: ProjectRepository,
     private val taskRepository: TaskRepository,
 ) {
-    operator fun invoke(projectId: String): Flow<ProjectWithTasks> =
-        combine(
-            projectRepository.observeProjectWithSections(projectId).filterNotNull(),
-            taskRepository.getUnsectionedTasksByProject(projectId),
-        ) { project, unsectionedTasks ->
-            val sectionsWithTasks = project.sections.map { section ->
-                section // Tasks are already populated via the repository
-            }
+    @Suppress("UNCHECKED_CAST")
+    operator fun invoke(projectId: String, showCompleted: Boolean = false): Flow<ProjectWithTasks> =
+        projectRepository.observeProjectWithSections(projectId)
+            .filterNotNull()
+            .flatMapLatest { project ->
+                val unsectionedFlow = taskRepository.getUnsectionedTasksByProject(projectId, includeCompleted = showCompleted)
 
-            ProjectWithTasks(
-                project = project,
-                sections = sectionsWithTasks,
-                unsectionedTasks = unsectionedTasks,
-            )
-        }
+                if (project.sections.isEmpty()) {
+                    unsectionedFlow.map { unsectioned ->
+                        ProjectWithTasks(project, emptyList(), unsectioned)
+                    }
+                } else {
+                    val sectionFlows = project.sections.map { section ->
+                        taskRepository.getTasksBySection(section.id, includeCompleted = showCompleted)
+                            .map { tasks -> section.copy(tasks = tasks) }
+                    }
+
+                    combine(listOf(unsectionedFlow) + sectionFlows) { results ->
+                        val unsectioned = results[0] as List<Task>
+                        val sections = results.drop(1).map { it as Section }
+                        ProjectWithTasks(project, sections, unsectioned)
+                    }
+                }
+            }
 }

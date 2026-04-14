@@ -7,12 +7,18 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.hilt.work.HiltWorker
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 import timber.log.Timber
+import java.util.concurrent.TimeUnit
 
 @HiltWorker
 class SyncWorker @AssistedInject constructor(
@@ -47,5 +53,26 @@ class SyncWorker @AssistedInject constructor(
         private val KEY_WEBDAV_USERNAME = stringPreferencesKey("webdav_username")
         private val KEY_WEBDAV_PASSWORD = stringPreferencesKey("webdav_password")
         private val KEY_LAST_SYNC = longPreferencesKey("last_sync_time")
+
+        /**
+         * Enqueue (or update) a periodic sync job. Safe to call multiple times —
+         * uses UPDATE policy so the interval is re-applied.
+         */
+        fun enqueuePeriodic(context: Context, intervalMinutes: Long) {
+            val interval = intervalMinutes.coerceAtLeast(15L) // WorkManager minimum
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.UNMETERED)
+                .setRequiresBatteryNotLow(true)
+                .build()
+            val request = PeriodicWorkRequestBuilder<SyncWorker>(interval, TimeUnit.MINUTES)
+                .setConstraints(constraints)
+                .build()
+            WorkManager.getInstance(context)
+                .enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
+        }
+
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+        }
     }
 }

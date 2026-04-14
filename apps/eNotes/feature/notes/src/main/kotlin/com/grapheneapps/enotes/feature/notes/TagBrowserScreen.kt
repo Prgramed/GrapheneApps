@@ -32,24 +32,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.grapheneapps.enotes.domain.repository.NoteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 @HiltViewModel
 class TagBrowserViewModel @Inject constructor(
     private val noteRepository: NoteRepository,
 ) : ViewModel() {
-    private val _tags = MutableStateFlow<List<String>>(emptyList())
-    val tags: StateFlow<List<String>> = _tags.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            noteRepository.observeAllTags().collect { _tags.value = it }
-        }
-    }
+    // WhileSubscribed(5s) — Room releases the observer after the screen goes
+    // off-stack instead of holding it for the whole process lifetime.
+    val tags: StateFlow<List<String>> = noteRepository.observeAllTags()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

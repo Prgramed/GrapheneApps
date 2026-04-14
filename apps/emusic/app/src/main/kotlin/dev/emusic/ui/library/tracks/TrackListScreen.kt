@@ -70,7 +70,10 @@ fun TrackListScreen(
     val totalCount by viewModel.trackCount.collectAsStateWithLifecycle()
 
     when {
-        tracks.loadState.refresh is LoadState.Loading -> {
+        // Only show the blocking spinner on the very first load when we have nothing yet.
+        // During sync, Room invalidations re-trigger LoadState.Refresh constantly — if we
+        // showed the spinner on every refresh the list would flicker/blank continuously.
+        tracks.itemCount == 0 && tracks.loadState.refresh is LoadState.Loading -> {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }

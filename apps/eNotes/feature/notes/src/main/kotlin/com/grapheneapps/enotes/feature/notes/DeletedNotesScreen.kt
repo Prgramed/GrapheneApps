@@ -25,8 +25,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -40,9 +45,9 @@ import androidx.lifecycle.viewModelScope
 import com.grapheneapps.enotes.domain.model.Note
 import com.grapheneapps.enotes.domain.repository.NoteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -51,17 +56,17 @@ class DeletedNotesViewModel @Inject constructor(
     private val noteRepository: NoteRepository,
 ) : ViewModel() {
 
-    private val _notes = MutableStateFlow<List<Note>>(emptyList())
-    val notes: StateFlow<List<Note>> = _notes.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            noteRepository.observeDeleted().collect { _notes.value = it }
-        }
-    }
+    // WhileSubscribed(5s) lets Room release the observer shortly after the
+    // screen leaves the back stack.
+    val notes: StateFlow<List<Note>> = noteRepository.observeDeleted()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun restore(id: String) {
         viewModelScope.launch { noteRepository.restore(id) }
+    }
+
+    fun softDelete(id: String) {
+        viewModelScope.launch { noteRepository.softDelete(id) }
     }
 
     fun permanentlyDelete(id: String) {
@@ -78,6 +83,8 @@ fun DeletedNotesScreen(
 ) {
     val notes by viewModel.notes.collectAsStateWithLifecycle()
     var noteToPermDelete by remember { mutableStateOf<Note?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     if (noteToPermDelete != null) {
         AlertDialog(
@@ -88,6 +95,7 @@ fun DeletedNotesScreen(
                 TextButton(onClick = {
                     noteToPermDelete?.let { viewModel.permanentlyDelete(it.id) }
                     noteToPermDelete = null
+                    scope.launch { snackbarHostState.showSnackbar("Note permanently deleted") }
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
@@ -96,18 +104,24 @@ fun DeletedNotesScreen(
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text("Recently Deleted") },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                }
-            },
-        )
-
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Recently Deleted") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { innerPadding ->
         if (notes.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
                     text = "No deleted notes",
                     style = MaterialTheme.typography.bodyLarge,
@@ -115,7 +129,7 @@ fun DeletedNotesScreen(
                 )
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
                 items(notes, key = { it.id }) { note ->
                     Row(
                         modifier = Modifier
@@ -140,7 +154,20 @@ fun DeletedNotesScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        IconButton(onClick = { viewModel.restore(note.id) }) {
+                        IconButton(onClick = {
+                            viewModel.restore(note.id)
+                            scope.launch {
+                                val result = snackbarHostState.showSnackbar(
+                                    message = "Note restored",
+                                    actionLabel = "Undo",
+                                )
+                                if (result == SnackbarResult.ActionPerformed) {
+                                    // Undoing a restore → soft delete it again
+                                    // (we don't have a direct reference but the id is captured)
+                                    viewModel.softDelete(note.id)
+                                }
+                            }
+                        }) {
                             Icon(
                                 Icons.Default.RestoreFromTrash,
                                 contentDescription = "Restore",

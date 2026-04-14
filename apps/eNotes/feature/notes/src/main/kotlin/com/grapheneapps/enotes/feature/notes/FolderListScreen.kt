@@ -44,9 +44,9 @@ import androidx.lifecycle.viewModelScope
 import com.grapheneapps.enotes.domain.model.Folder
 import com.grapheneapps.enotes.domain.repository.FolderRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
@@ -56,14 +56,10 @@ class FolderListViewModel @Inject constructor(
     private val folderRepository: FolderRepository,
 ) : ViewModel() {
 
-    private val _folders = MutableStateFlow<List<Folder>>(emptyList())
-    val folders: StateFlow<List<Folder>> = _folders.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            folderRepository.observeRootFolders().collect { _folders.value = it }
-        }
-    }
+    // WhileSubscribed(5s) so Room disconnects the observer shortly after the
+    // screen goes off-stack, instead of keeping it live for the whole process.
+    val folders: StateFlow<List<Folder>> = folderRepository.observeRootFolders()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun createFolder(name: String) {
         viewModelScope.launch {
@@ -250,7 +246,7 @@ private fun FolderNameDialog(
         text = {
             OutlinedTextField(
                 value = name,
-                onValueChange = { name = it },
+                onValueChange = { if (it.length <= 64) name = it },
                 placeholder = { Text("Folder name") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),

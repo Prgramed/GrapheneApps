@@ -36,7 +36,7 @@ fun AlbumGridScreen(
     val albums = viewModel.albums.collectAsLazyPagingItems()
 
     when {
-        albums.loadState.refresh is LoadState.Loading -> {
+        albums.itemCount == 0 && albums.loadState.refresh is LoadState.Loading -> {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }

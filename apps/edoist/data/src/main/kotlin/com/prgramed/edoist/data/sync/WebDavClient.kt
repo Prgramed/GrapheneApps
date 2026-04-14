@@ -55,25 +55,38 @@ class WebDavClient @Inject constructor(
         }
     }
 
+    data class DownloadResult(
+        val bytes: ByteArray?,
+        val etag: String?,
+        val notModified: Boolean = false,
+    )
+
     suspend fun download(
         url: String,
         username: String,
         password: String,
         path: String,
-    ): ByteArray? = withContext(Dispatchers.IO) {
+        ifNoneMatch: String? = null,
+    ): DownloadResult = withContext(Dispatchers.IO) {
         try {
             val fullUrl = buildUrl(url, path)
-            val request = Request.Builder()
+            val requestBuilder = Request.Builder()
                 .url(fullUrl)
                 .get()
                 .header("Authorization", Credentials.basic(username, password))
-                .build()
-            val response = okHttpClient.newCall(request).execute()
+            if (ifNoneMatch != null) {
+                requestBuilder.header("If-None-Match", ifNoneMatch)
+            }
+            val response = okHttpClient.newCall(requestBuilder.build()).execute()
             response.use { resp ->
-                if (resp.isSuccessful) resp.body?.bytes() else null
+                when {
+                    resp.code == 304 -> DownloadResult(null, ifNoneMatch, notModified = true)
+                    resp.isSuccessful -> DownloadResult(resp.body?.bytes(), resp.header("ETag"))
+                    else -> DownloadResult(null, null)
+                }
             }
         } catch (_: Exception) {
-            null
+            DownloadResult(null, null)
         }
     }
 

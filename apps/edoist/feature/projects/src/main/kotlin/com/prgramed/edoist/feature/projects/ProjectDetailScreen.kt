@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
@@ -99,6 +100,14 @@ fun ProjectDetailScreen(
                 },
             )
         },
+        floatingActionButton = {
+            val projectId = uiState.project?.id
+            if (projectId != null) {
+                FloatingActionButton(onClick = { onAddTask(projectId, null) }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add task")
+                }
+            }
+        },
     ) { padding ->
         when {
             uiState.isLoading -> {
@@ -123,6 +132,7 @@ fun ProjectDetailScreen(
                         },
                         onToggleSection = viewModel::toggleSectionCollapsed,
                         onCreateSection = { name -> viewModel.createSection(name) },
+                        onDeleteSection = { sectionId -> viewModel.deleteSection(sectionId) },
                         onAddTask = { sectionId ->
                             uiState.project?.id?.let { pid -> onAddTask(pid, sectionId) }
                         },
@@ -163,6 +173,7 @@ private fun ListViewContent(
     onCheckedChange: (String, Boolean) -> Unit,
     onToggleSection: (String) -> Unit,
     onCreateSection: (String) -> Unit = {},
+    onDeleteSection: (String) -> Unit = {},
     onAddTask: (sectionId: String) -> Unit = {},
     projectColor: Long? = null,
     modifier: Modifier = Modifier,
@@ -190,6 +201,7 @@ private fun ListViewContent(
                     isCollapsed = section.isCollapsed,
                     onToggle = { onToggleSection(section.id) },
                     onAddTask = { onAddTask(section.id) },
+                    onDelete = { onDeleteSection(section.id) },
                 )
             }
 
@@ -285,22 +297,25 @@ private fun CalendarViewContent(
     onTaskClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val allTasks = unsectionedTasks + sections.flatMap { it.tasks }
-    val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+    val today = remember { Clock.System.todayIn(TimeZone.currentSystemDefault()) }
+    val allTasks = remember(unsectionedTasks, sections) {
+        unsectionedTasks + sections.flatMap { it.tasks }
+    }
 
     // Build date-to-task-count map for the current month
-    val firstDayOfMonth = LocalDate(today.year, today.month, 1)
-    val lastDay = when (today.monthNumber) {
-        1, 3, 5, 7, 8, 10, 12 -> 31
-        4, 6, 9, 11 -> 30
-        2 -> if (today.year % 4 == 0 && (today.year % 100 != 0 || today.year % 400 == 0)) 29 else 28
-        else -> 30
+    val firstDayOfMonth = remember(today) { LocalDate(today.year, today.month, 1) }
+    val lastDay = remember(today) {
+        when (today.monthNumber) {
+            1, 3, 5, 7, 8, 10, 12 -> 31
+            4, 6, 9, 11 -> 30
+            2 -> if (today.year % 4 == 0 && (today.year % 100 != 0 || today.year % 400 == 0)) 29 else 28
+            else -> 30
+        }
     }
-    val lastDayOfMonth = LocalDate(today.year, today.month, lastDay)
 
-    val tasksByDate = allTasks
-        .filter { it.dueDate != null }
-        .groupBy { it.dueDate!! }
+    val tasksByDate = remember(allTasks) {
+        allTasks.filter { it.dueDate != null }.groupBy { it.dueDate!! }
+    }
 
     Column(modifier = modifier.padding(16.dp)) {
         // Month header

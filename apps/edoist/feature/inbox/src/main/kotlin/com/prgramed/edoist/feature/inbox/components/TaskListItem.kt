@@ -20,6 +20,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -160,12 +161,8 @@ private fun DueDateChip(
     date: LocalDate,
     isOverdue: Boolean,
 ) {
-    val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
-    val tomorrow = LocalDate(today.year, today.monthNumber, today.dayOfMonth)
-        .let { d ->
-            val epochDays = d.toEpochDays() + 1
-            LocalDate.fromEpochDays(epochDays)
-        }
+    val today = remember { Clock.System.todayIn(TimeZone.currentSystemDefault()) }
+    val tomorrow = remember(today) { LocalDate.fromEpochDays(today.toEpochDays() + 1) }
 
     val displayText = when (date) {
         today -> "Today"

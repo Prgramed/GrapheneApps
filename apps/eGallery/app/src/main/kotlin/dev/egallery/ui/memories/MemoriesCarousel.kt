@@ -30,8 +30,8 @@ import coil3.compose.AsyncImage
 import dev.egallery.api.dto.ImmichMemory
 
 /**
- * Merges multiple "on_this_day" memories (one per year) into a single combined memory
- * with all assets from all years, like Immich's web UI.
+ * Shows one card per memory (one per year for "on_this_day"), matching Immich's layout.
+ * Sorted newest year first.
  */
 @Composable
 fun MemoriesCarousel(
@@ -42,19 +42,24 @@ fun MemoriesCarousel(
 ) {
     if (memories.isEmpty()) return
 
-    // Group by type and merge assets — "on_this_day" memories become one card
-    val merged = remember(memories) {
-        memories.groupBy { it.type }.map { (type, group) ->
-            val allAssets = group.flatMap { it.assets }
-            val years = group.mapNotNull { if (it.data.year > 0) it.data.year else null }.sorted()
-            ImmichMemory(
-                id = "merged_$type",
-                type = type,
-                data = group.first().data, // Use first year for title
-                assets = allAssets,
-                createdAt = group.first().createdAt,
-            ) to years
-        }
+    // Immich returns multiple on_this_day memory objects per year (different
+    // batches / times of day). Collapse them into one card per year with the
+    // combined asset list, matching Immich's web UI.
+    val grouped = remember(memories) {
+        memories
+            .filter { it.assets.isNotEmpty() }
+            .groupBy { it.data.year }
+            .map { (year, group) ->
+                val first = group.first()
+                ImmichMemory(
+                    id = "year_$year",
+                    type = first.type,
+                    data = first.data, // preserves year for the card title
+                    assets = group.flatMap { it.assets },
+                    createdAt = first.createdAt,
+                )
+            }
+            .sortedByDescending { it.data.year }
     }
 
     LazyRow(
@@ -62,10 +67,9 @@ fun MemoriesCarousel(
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        items(merged, key = { it.first.id }) { (memory, years) ->
+        items(grouped, key = { it.id }) { memory ->
             MemoryCard(
                 memory = memory,
-                years = years,
                 serverUrl = serverUrl,
                 onClick = { onMemoryClick(memory) },
             )
@@ -76,16 +80,16 @@ fun MemoriesCarousel(
 @Composable
 private fun MemoryCard(
     memory: ImmichMemory,
-    years: List<Int>,
     serverUrl: String,
     onClick: () -> Unit,
 ) {
     val coverAssetId = memory.assets.firstOrNull()?.id ?: return
     val currentYear = java.time.Year.now().value
-    val title = "On This Day"
+    val yearsAgo = if (memory.data.year > 0) currentYear - memory.data.year else 0
+    val title = if (memory.data.year > 0) memory.data.year.toString() else "On This Day"
     val subtitle = when {
-        years.size == 1 -> "${currentYear - years.first()} year${if (currentYear - years.first() > 1) "s" else ""} ago"
-        years.size > 1 -> "${years.size} years of memories"
+        yearsAgo == 1 -> "1 year ago"
+        yearsAgo > 1 -> "$yearsAgo years ago"
         else -> ""
     }
 

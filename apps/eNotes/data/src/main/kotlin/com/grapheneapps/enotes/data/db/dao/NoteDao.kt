@@ -70,4 +70,7 @@ interface NoteDao {
 
     @Query("SELECT DISTINCT tags FROM notes WHERE tags != '' AND deletedAt IS NULL")
     fun observeAllTags(): Flow<List<String>>
+
+    @Query("UPDATE notes SET folderId = NULL, syncStatus = 'PENDING_UPLOAD' WHERE folderId = :folderId")
+    suspend fun clearFolder(folderId: String)
 }

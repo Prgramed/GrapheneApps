@@ -40,6 +40,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -51,7 +54,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,6 +90,8 @@ fun NoteListScreen(
     var showSortMenu by remember { mutableStateOf(false) }
     var noteToDelete by remember { mutableStateOf<Note?>(null) }
     var longPressedNote by remember { mutableStateOf<Note?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     // Delete confirmation dialog
     if (noteToDelete != null) {
@@ -94,8 +101,20 @@ fun NoteListScreen(
             text = { Text("\"${noteToDelete?.title?.ifBlank { "Untitled" }}\" will be moved to Recently Deleted.") },
             confirmButton = {
                 TextButton(onClick = {
+                    val deletedId = noteToDelete?.id
                     noteToDelete?.let { viewModel.deleteNote(it.id) }
                     noteToDelete = null
+                    if (deletedId != null) {
+                        scope.launch {
+                            val result = snackbarHostState.showSnackbar(
+                                message = "Note moved to trash",
+                                actionLabel = "Undo",
+                            )
+                            if (result == SnackbarResult.ActionPerformed) {
+                                viewModel.restoreNote(deletedId)
+                            }
+                        }
+                    }
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
@@ -154,6 +173,7 @@ fun NoteListScreen(
                 Icon(Icons.Default.Add, contentDescription = "New note")
             }
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
         when {
             uiState.isLoading -> {
@@ -185,6 +205,8 @@ fun NoteListScreen(
                 }
             }
             else -> {
+                val previews = uiState.previews
+                val todayFormatter = remember { SimpleDateFormat("MMM d", Locale.getDefault()) }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().padding(innerPadding),
                 ) {
@@ -226,6 +248,8 @@ fun NoteListScreen(
                                 Box {
                                     NoteRow(
                                         note = note,
+                                        preview = previews[note.id] ?: "",
+                                        dateFormatter = todayFormatter,
                                         onClick = { onNoteClick(note.id) },
                                         onLongClick = { longPressedNote = note },
                                     )
@@ -265,6 +289,8 @@ fun NoteListScreen(
 @Composable
 private fun NoteRow(
     note: Note,
+    preview: String,
+    dateFormatter: SimpleDateFormat,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -303,10 +329,10 @@ private fun NoteRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (!note.isLocked) {
+                if (!note.isLocked && preview.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = extractPreview(note.bodyJson),
+                        text = preview,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
@@ -316,7 +342,7 @@ private fun NoteRow(
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = formatDate(note.editedAt),
+                    text = formatDate(note.editedAt, dateFormatter),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
@@ -386,13 +412,13 @@ internal fun extractPreview(bodyJson: String): String {
         .ifBlank { "No content" }
 }
 
-private fun formatDate(timestamp: Long): String {
+private fun formatDate(timestamp: Long, formatter: SimpleDateFormat): String {
     val now = System.currentTimeMillis()
     val diff = now - timestamp
     return when {
         diff < 60_000 -> "Just now"
         diff < 3_600_000 -> "${diff / 60_000}m ago"
         diff < 86_400_000 -> "${diff / 3_600_000}h ago"
-        else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(timestamp))
+        else -> formatter.format(Date(timestamp))
     }
 }

@@ -117,56 +117,53 @@ class LibraryRepositoryImpl @Inject constructor(
     }
 
     override suspend fun syncAllTracks(onProgress: (current: Int, total: Int) -> Unit) {
-        // Try search3 first (bulk fetch, much faster than album-by-album)
-        var offset = 0
-        val pageSize = 500
-        var totalFetched = 0
-        var search3Works = true
+        // Album iteration is the only reliable full-library enumeration in Subsonic/Navidrome.
+        // search3(query="") goes through the search index and returns incomplete results, so
+        // we intentionally do NOT use it here. Orphan / non-album tracks are still covered:
+        // Navidrome assigns every song to an album (synthesizing one if the file has no album
+        // tag), and those synthetic albums appear in getAlbumList2 alongside real ones.
+        val albumIds = albumDao.getAllIds()
+        val failedAlbums = mutableListOf<String>()
 
-        while (search3Works) {
+        for ((index, albumId) in albumIds.withIndex()) {
             kotlin.coroutines.coroutineContext.ensureActive()
-            try {
-                val response = api.search3(
-                    query = "",
-                    artistCount = 0,
-                    albumCount = 0,
-                    songCount = pageSize,
-                    songOffset = offset,
-                ).subsonicResponse
-                val songs = response.searchResult3?.song
-                if (songs.isNullOrEmpty()) break
-
-                val tracks = songs.map { it.toDomain().toEntity() }
-                upsertPreservingLocalPath(tracks)
-                totalFetched += tracks.size
-                onProgress(totalFetched, -1) // Total unknown for search3
-                offset += songs.size
-                if (songs.size < pageSize) break
-            } catch (e: Exception) {
-                timber.log.Timber.w(e, "search3 failed at offset $offset")
-                if (totalFetched == 0) search3Works = false // search3 not supported, fall back
-                break
+            var synced = false
+            for (attempt in 1..3) {
+                try {
+                    syncAlbumTracks(albumId)
+                    synced = true
+                    break
+                } catch (e: Exception) {
+                    if (attempt == 3) {
+                        timber.log.Timber.w(e, "Track sync failed for album $albumId (pass 1)")
+                    } else {
+                        kotlinx.coroutines.delay(1000L * attempt)
+                    }
+                }
             }
+            if (!synced) failedAlbums.add(albumId)
+            onProgress(index + 1, albumIds.size)
         }
 
-        // Fallback: album-by-album if search3 didn't work
-        if (!search3Works) {
-            val albumIds = albumDao.getAllIds()
-            for ((index, albumId) in albumIds.withIndex()) {
+        // Second pass: retry albums that failed all 3 attempts, with longer backoff in case
+        // the first pass hit a transient burst (rate limit, temporary network issue).
+        if (failedAlbums.isNotEmpty()) {
+            timber.log.Timber.w("Retrying ${failedAlbums.size} failed albums")
+            for (albumId in failedAlbums.toList()) {
                 kotlin.coroutines.coroutineContext.ensureActive()
                 for (attempt in 1..3) {
                     try {
                         syncAlbumTracks(albumId)
+                        failedAlbums.remove(albumId)
                         break
                     } catch (e: Exception) {
                         if (attempt == 3) {
-                            timber.log.Timber.w(e, "Track sync failed for $albumId")
+                            timber.log.Timber.e(e, "Track sync permanently failed for album $albumId")
                         } else {
-                            kotlinx.coroutines.delay(1000L * attempt)
+                            kotlinx.coroutines.delay(3000L * attempt)
                         }
                     }
                 }
-                onProgress(index + 1, albumIds.size)
             }
         }
 
@@ -182,6 +179,20 @@ class LibraryRepositoryImpl @Inject constructor(
                 )
             }
             artistDao.upsertAll(entities)
+        }
+
+        // Completeness self-check: the sum of per-album trackCount reported by the server
+        // should roughly equal our local track count. A large negative delta means some
+        // albums were skipped or returned fewer tracks than advertised.
+        val expected = albumDao.getTotalTrackCount()
+        val actual = trackDao.count()
+        if (expected > 0 && actual < expected - 5) {
+            timber.log.Timber.w(
+                "Track sync completeness mismatch: local=%d expected=%d (delta=%d, failedAlbums=%d)",
+                actual, expected, expected - actual, failedAlbums.size,
+            )
+        } else {
+            timber.log.Timber.d("Track sync complete: local=%d expected=%d", actual, expected)
         }
     }
 

@@ -9,6 +9,8 @@ data class SyncPayload(
     val sections: List<SectionSyncItem>,
     val labels: List<LabelSyncItem>,
     val lastModifiedMillis: Long,
+    val deletedProjectIds: List<String> = emptyList(),
+    val deletedTaskIds: List<String> = emptyList(),
 ) {
     fun toJson(): String {
         val json = JSONObject()
@@ -82,6 +84,14 @@ data class SyncPayload(
             labelsArray.put(obj)
         }
         json.put("labels", labelsArray)
+
+        val deletedProjectsArray = JSONArray()
+        deletedProjectIds.forEach { deletedProjectsArray.put(it) }
+        json.put("deletedProjectIds", deletedProjectsArray)
+
+        val deletedTasksArray = JSONArray()
+        deletedTaskIds.forEach { deletedTasksArray.put(it) }
+        json.put("deletedTaskIds", deletedTasksArray)
 
         return json.toString(2)
     }
@@ -175,14 +185,29 @@ data class SyncPayload(
                 )
             }
 
+            val deletedProjectIds = mutableListOf<String>()
+            if (root.has("deletedProjectIds")) {
+                val arr = root.getJSONArray("deletedProjectIds")
+                for (i in 0 until arr.length()) deletedProjectIds.add(arr.getString(i))
+            }
+
+            val deletedTaskIds = mutableListOf<String>()
+            if (root.has("deletedTaskIds")) {
+                val arr = root.getJSONArray("deletedTaskIds")
+                for (i in 0 until arr.length()) deletedTaskIds.add(arr.getString(i))
+            }
+
             SyncPayload(
                 tasks = tasks,
                 projects = projects,
                 sections = sections,
                 labels = labels,
                 lastModifiedMillis = lastModifiedMillis,
+                deletedProjectIds = deletedProjectIds,
+                deletedTaskIds = deletedTaskIds,
             )
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.e("SyncPayload", "Failed to parse sync payload", e)
             null
         }
 

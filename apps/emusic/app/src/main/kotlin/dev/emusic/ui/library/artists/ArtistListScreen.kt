@@ -36,7 +36,7 @@ fun ArtistListScreen(
     val artists = viewModel.artists.collectAsLazyPagingItems()
 
     when {
-        artists.loadState.refresh is LoadState.Loading -> {
+        artists.itemCount == 0 && artists.loadState.refresh is LoadState.Loading -> {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }

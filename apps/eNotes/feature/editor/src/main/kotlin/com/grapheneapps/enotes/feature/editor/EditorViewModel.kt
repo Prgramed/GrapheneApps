@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.util.UUID
 import javax.inject.Inject
 
@@ -467,6 +468,29 @@ class EditorViewModel @Inject constructor(
     fun saveNow() {
         saveJob?.cancel()
         viewModelScope.launch { performSave() }
+    }
+
+    /**
+     * Suspend flush — call from lifecycle ON_STOP to guarantee pending edits
+     * are persisted before the app leaves the foreground. Complements onCleared().
+     */
+    suspend fun flushNow() {
+        saveJob?.cancel()
+        performSave()
+    }
+
+    override fun onCleared() {
+        // Guarantee pending edits land on disk even if process is killed.
+        // runBlocking is acceptable here — ViewModel teardown is synchronous
+        // and the save is bounded (no network I/O).
+        if (isDirty) {
+            try {
+                runBlocking { performSave() }
+            } catch (_: Throwable) {
+                // best effort — don't throw from teardown
+            }
+        }
+        super.onCleared()
     }
 
     private fun pushUndo() {

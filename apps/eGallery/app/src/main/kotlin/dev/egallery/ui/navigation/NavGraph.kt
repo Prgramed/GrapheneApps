@@ -45,6 +45,7 @@ import dev.egallery.ui.people.PersonDetailScreen
 import dev.egallery.ui.search.SearchScreen
 import dev.egallery.ui.settings.SettingsScreen
 import dev.egallery.ui.trash.TrashScreen
+import dev.egallery.ui.viewer.ExternalVideoPlayerScreen
 import dev.egallery.ui.viewer.UriViewerScreen
 import dev.egallery.ui.timeline.TimelineScreen
 import dev.egallery.ui.viewer.PhotoViewerScreen
@@ -73,6 +74,7 @@ fun EGalleryNavGraph(
     pickerMode: Boolean = false,
     onPickResult: ((android.net.Uri) -> Unit)? = null,
     startUri: String? = null,
+    startIsVideo: Boolean = false,
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -123,7 +125,11 @@ fun EGalleryNavGraph(
         SharedTransitionLayout {
         NavHost(
             navController = navController,
-            startDestination = if (startUri != null) Routes.uriViewer(startUri) else Routes.TIMELINE,
+            startDestination = when {
+                startUri != null && startIsVideo -> Routes.uriVideoPlayer(startUri)
+                startUri != null -> Routes.uriViewer(startUri)
+                else -> Routes.TIMELINE
+            },
             modifier = Modifier.padding(padding),
             enterTransition = { fadeIn(tween(250)) },
             exitTransition = { fadeOut(tween(200)) },
@@ -240,6 +246,17 @@ fun EGalleryNavGraph(
             ) { backStackEntry ->
                 val uri = backStackEntry.arguments?.getString("uri") ?: ""
                 UriViewerScreen(
+                    uri = android.net.Uri.decode(uri),
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(
+                route = Routes.URI_VIDEO_PLAYER,
+                arguments = listOf(navArgument("uri") { type = NavType.StringType }),
+            ) { backStackEntry ->
+                val uri = backStackEntry.arguments?.getString("uri") ?: ""
+                ExternalVideoPlayerScreen(
                     uri = android.net.Uri.decode(uri),
                     onBack = { navController.popBackStack() },
                 )

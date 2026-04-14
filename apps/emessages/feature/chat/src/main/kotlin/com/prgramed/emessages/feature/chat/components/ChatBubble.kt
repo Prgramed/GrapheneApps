@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
@@ -37,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -162,23 +164,68 @@ fun ChatBubble(
                                 )
                             }
                             attachment.mimeType.startsWith("video/") -> {
+                                val context = androidx.compose.ui.platform.LocalContext.current
+                                var thumbFile by remember(message.id, attachment.uri) {
+                                    mutableStateOf(
+                                        com.prgramed.emessages.data.message.ThumbnailCache
+                                            .getThumbnail(context, message.id),
+                                    )
+                                }
+                                // For videos received before thumbnail caching was implemented,
+                                // generate the thumbnail on-demand in the background the first
+                                // time the bubble is rendered.
+                                androidx.compose.runtime.LaunchedEffect(message.id, attachment.uri) {
+                                    if (thumbFile == null) {
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            com.prgramed.emessages.data.message.ThumbnailCache.cacheVideo(
+                                                context,
+                                                android.net.Uri.parse(attachment.uri),
+                                                message.id,
+                                            )
+                                        }
+                                        thumbFile = com.prgramed.emessages.data.message.ThumbnailCache
+                                            .getThumbnail(context, message.id)
+                                    }
+                                }
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(120.dp)
+                                        .heightIn(max = 200.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.3f))
-                                        .clickable { onAttachmentClick(attachment) }
+                                        .combinedClickable(
+                                            onClick = { onAttachmentClick(attachment) },
+                                            onLongClick = { onAttachmentLongPress(attachment) },
+                                        )
                                         .padding(bottom = if (message.body.isNotBlank()) 4.dp else 0.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Icon(
-                                        Icons.Default.PlayCircle,
-                                        contentDescription = "Play video",
-                                        modifier = Modifier.size(48.dp),
-                                        tint = if (isSent) MaterialTheme.colorScheme.onPrimary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                    if (thumbFile != null) {
+                                        AsyncImage(
+                                            model = thumbFile,
+                                            contentDescription = "Video",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = 200.dp),
+                                            contentScale = ContentScale.Crop,
+                                        )
+                                    }
+                                    // Play icon overlay (always visible — on the thumbnail
+                                    // if we have one, or on the plain background if we don't)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(56.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.Black.copy(alpha = 0.5f)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            Icons.Default.PlayCircle,
+                                            contentDescription = "Play video",
+                                            modifier = Modifier.size(40.dp),
+                                            tint = Color.White,
+                                        )
+                                    }
                                 }
                             }
                             attachment.mimeType.startsWith("audio/") -> {

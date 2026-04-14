@@ -3,8 +3,7 @@ package dev.egallery.util
 import android.content.Context
 import android.content.res.AssetFileDescriptor
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
+import android.media.Image
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaExtractor
@@ -72,21 +71,24 @@ object MemoryVideoEncoder {
         var muxerStarted = false
 
         val bufferInfo = MediaCodec.BufferInfo()
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         var presentationTimeUs = 0L
 
         for ((photoIndex, bitmap) in bitmaps.withIndex()) {
             val scaled = centerCropScale(bitmap, WIDTH, HEIGHT)
-            val yuv = bitmapToNV12(scaled)
+            // Pre-extract ARGB pixels once per photo (shared across all 150 frames)
+            val argb = IntArray(WIDTH * HEIGHT)
+            scaled.getPixels(argb, 0, WIDTH, 0, 0, WIDTH, HEIGHT)
 
             for (f in 0 until FRAMES_PER_PHOTO) {
-                // Feed frame to encoder
                 val inputIndex = codec.dequeueInputBuffer(10_000)
                 if (inputIndex >= 0) {
-                    val inputBuffer = codec.getInputBuffer(inputIndex)!!
-                    inputBuffer.clear()
-                    inputBuffer.put(yuv)
-                    codec.queueInputBuffer(inputIndex, 0, yuv.size, presentationTimeUs, 0)
+                    // Use Image API — handles device-specific YUV layout/stride automatically
+                    val image = codec.getInputImage(inputIndex)
+                    if (image != null) {
+                        fillImageFromArgb(image, argb, WIDTH, HEIGHT)
+                    }
+                    val bufSize = codec.getInputBuffer(inputIndex)?.capacity() ?: 0
+                    codec.queueInputBuffer(inputIndex, 0, bufSize, presentationTimeUs, 0)
                     presentationTimeUs += FRAME_DURATION_US
                 }
 
@@ -111,6 +113,42 @@ object MemoryVideoEncoder {
             muxer.stop()
         }
         muxer.release()
+    }
+
+    /** Write ARGB pixel data into a YUV Image, respecting the codec's actual plane strides */
+    private fun fillImageFromArgb(image: Image, argb: IntArray, w: Int, h: Int) {
+        val yPlane = image.planes[0]
+        val uPlane = image.planes[1]
+        val vPlane = image.planes[2]
+
+        val yBuf = yPlane.buffer
+        val uBuf = uPlane.buffer
+        val vBuf = vPlane.buffer
+
+        val yRowStride = yPlane.rowStride
+        val uvRowStride = uPlane.rowStride
+        val uvPixelStride = uPlane.pixelStride
+
+        for (j in 0 until h) {
+            for (i in 0 until w) {
+                val pixel = argb[j * w + i]
+                val r = (pixel shr 16) and 0xFF
+                val g = (pixel shr 8) and 0xFF
+                val b = pixel and 0xFF
+
+                // BT.601 full-range RGB to YUV
+                val y = ((66 * r + 129 * g + 25 * b + 128) shr 8) + 16
+                yBuf.put(j * yRowStride + i, y.coerceIn(0, 255).toByte())
+
+                if (j % 2 == 0 && i % 2 == 0) {
+                    val u = ((-38 * r - 74 * g + 112 * b + 128) shr 8) + 128
+                    val v = ((112 * r - 94 * g - 18 * b + 128) shr 8) + 128
+                    val uvIndex = (j / 2) * uvRowStride + (i / 2) * uvPixelStride
+                    uBuf.put(uvIndex, u.coerceIn(0, 255).toByte())
+                    vBuf.put(uvIndex, v.coerceIn(0, 255).toByte())
+                }
+            }
+        }
     }
 
     private fun drainOutput(
@@ -167,7 +205,7 @@ object MemoryVideoEncoder {
         val videoFormat = videoExtractor.getTrackFormat(videoTrackSrc)
         val videoTrackDst = muxer.addTrack(videoFormat)
 
-        // Add audio track
+        // Add audio track (must be AAC for MP4 muxer — MP3 silently fails)
         val afd: AssetFileDescriptor = context.resources.openRawResourceFd(audioResId)
         val audioExtractor = MediaExtractor()
         audioExtractor.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
@@ -186,12 +224,11 @@ object MemoryVideoEncoder {
 
         muxer.start()
 
-        // Get video duration
-        var videoDurationUs = 0L
         val buffer = ByteBuffer.allocate(1024 * 1024)
         val info = MediaCodec.BufferInfo()
 
-        // Copy video samples
+        // Copy video samples and track duration
+        var videoDurationUs = 0L
         while (true) {
             val size = videoExtractor.readSampleData(buffer, 0)
             if (size < 0) break
@@ -204,21 +241,30 @@ object MemoryVideoEncoder {
             videoExtractor.advance()
         }
 
-        // Copy audio samples (loop to fill video duration)
-        var audioTimeUs = 0L
-        while (audioTimeUs < videoDurationUs) {
-            val size = audioExtractor.readSampleData(buffer, 0)
-            if (size < 0) {
-                audioExtractor.seekTo(0, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
-                continue
+        // Copy audio samples, looping to fill video duration
+        var audioWriteTimeUs = 0L
+        while (audioWriteTimeUs < videoDurationUs) {
+            audioExtractor.seekTo(0, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+            val loopStartUs = audioWriteTimeUs
+
+            while (true) {
+                val size = audioExtractor.readSampleData(buffer, 0)
+                if (size < 0) break // End of audio file, loop again
+
+                val pts = loopStartUs + audioExtractor.sampleTime
+                if (pts >= videoDurationUs) break // Filled up to video duration
+
+                info.offset = 0
+                info.size = size
+                info.presentationTimeUs = pts
+                info.flags = audioExtractor.sampleFlags
+                muxer.writeSampleData(audioTrackDst, buffer, info)
+                audioWriteTimeUs = pts
+                audioExtractor.advance()
             }
-            info.offset = 0
-            info.size = size
-            info.presentationTimeUs = audioTimeUs
-            info.flags = audioExtractor.sampleFlags
-            muxer.writeSampleData(audioTrackDst, buffer, info)
-            audioTimeUs += (audioExtractor.sampleTime - audioTimeUs).coerceAtLeast(1000)
-            audioExtractor.advance()
+
+            // Advance past the last written sample to prevent overlap on next loop
+            audioWriteTimeUs += 23_000 // ~one AAC frame duration
         }
 
         videoExtractor.release()
@@ -226,40 +272,6 @@ object MemoryVideoEncoder {
         afd.close()
         muxer.stop()
         muxer.release()
-    }
-
-    /** Convert ARGB_8888 bitmap to NV12 (YUV420 semi-planar) byte array */
-    private fun bitmapToNV12(bitmap: Bitmap): ByteArray {
-        val w = bitmap.width
-        val h = bitmap.height
-        val argb = IntArray(w * h)
-        bitmap.getPixels(argb, 0, w, 0, 0, w, h)
-
-        val yuvSize = w * h * 3 / 2
-        val yuv = ByteArray(yuvSize)
-
-        var yIndex = 0
-        var uvIndex = w * h
-
-        for (j in 0 until h) {
-            for (i in 0 until w) {
-                val pixel = argb[j * w + i]
-                val r = (pixel shr 16) and 0xFF
-                val g = (pixel shr 8) and 0xFF
-                val b = pixel and 0xFF
-
-                val y = ((66 * r + 129 * g + 25 * b + 128) shr 8) + 16
-                yuv[yIndex++] = y.coerceIn(0, 255).toByte()
-
-                if (j % 2 == 0 && i % 2 == 0 && uvIndex < yuvSize - 1) {
-                    val u = ((-38 * r - 74 * g + 112 * b + 128) shr 8) + 128
-                    val v = ((112 * r - 94 * g - 18 * b + 128) shr 8) + 128
-                    yuv[uvIndex++] = u.coerceIn(0, 255).toByte()
-                    yuv[uvIndex++] = v.coerceIn(0, 255).toByte()
-                }
-            }
-        }
-        return yuv
     }
 
     private fun centerCropScale(src: Bitmap, targetW: Int, targetH: Int): Bitmap {

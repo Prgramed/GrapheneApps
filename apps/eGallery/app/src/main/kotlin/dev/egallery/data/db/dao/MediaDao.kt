@@ -21,6 +21,11 @@ data class ViewerEntry(
     val mediaType: String,
 )
 
+data class ServerFilenameRef(
+    val filename: String,
+    val nasId: String,
+)
+
 @Dao
 interface MediaDao {
 
@@ -159,6 +164,18 @@ interface MediaDao {
     @Query("DELETE FROM media WHERE nasId IN (:nasIds) AND storageStatus = 'NAS'")
     suspend fun deleteNasOnlyByIds(nasIds: List<String>): Int
 
+    /**
+     * Mark entries as TRASHED (local trash) when they've been trashed/deleted server-side.
+     * Only touches rows that aren't already TRASHED and have a real server nasId; preserves
+     * the user's ability to restore within the 30-day retention window.
+     */
+    @Query("UPDATE media SET storageStatus = 'TRASHED', trashedAt = :trashedAt WHERE nasId IN (:nasIds) AND storageStatus != 'TRASHED'")
+    suspend fun trashByIds(nasIds: List<String>, trashedAt: Long): Int
+
+    /** Restore TRASHED entries whose trashedAt is within a recent window. SYNCED if localPath exists, NAS otherwise. */
+    @Query("UPDATE media SET storageStatus = CASE WHEN localPath IS NOT NULL THEN 'SYNCED' ELSE 'NAS' END, trashedAt = NULL WHERE storageStatus = 'TRASHED' AND trashedAt IS NOT NULL AND trashedAt >= :since")
+    suspend fun restoreRecentlyTrashed(since: Long): Int
+
     @Query("DELETE FROM media WHERE nasId IN (:nasIds)")
     suspend fun deleteByNasIds(nasIds: List<String>): Int
 
@@ -179,6 +196,10 @@ interface MediaDao {
 
     @Query("SELECT DISTINCT localPath FROM media WHERE localPath IS NOT NULL")
     suspend fun getAllLocalPaths(): List<String>
+
+    /** Server-side (NAS) entries keyed by filename — for fast in-memory device-scan dedup. */
+    @Query("SELECT filename, nasId FROM media WHERE length(nasId) > 10 AND nasId NOT LIKE '-%' AND storageStatus != 'TRASHED'")
+    suspend fun getServerFilenames(): List<ServerFilenameRef>
 
     @Query("SELECT * FROM media WHERE localPath LIKE :dirPrefix || '%' AND storageStatus != 'TRASHED' ORDER BY captureDate DESC")
     fun getByLocalDir(dirPrefix: String): Flow<List<MediaEntity>>
@@ -227,6 +248,21 @@ interface MediaDao {
 
     @Query("UPDATE media SET nasHash = :hash WHERE nasId = :nasId")
     suspend fun updateHash(nasId: String, hash: String)
+
+    @Query("UPDATE media SET filename = :filename, nasHash = :hash WHERE nasId = :nasId")
+    suspend fun updateFilenameAndHash(nasId: String, filename: String, hash: String?)
+
+    /** NAS-only entries missing a checksum — candidates for bucket ghost reconciliation. */
+    @Query("SELECT * FROM media WHERE storageStatus = 'NAS' AND (nasHash IS NULL OR nasHash = '')")
+    suspend fun getNasWithoutHash(): List<MediaEntity>
+
+    /** NAS-only entries whose capture date is within the rolling cache window — candidates for auto-download. */
+    @Query("SELECT * FROM media WHERE storageStatus = 'NAS' AND captureDate >= :captureCutoff ORDER BY captureDate DESC")
+    suspend fun getNasOnlyWithin(captureCutoff: Long): List<MediaEntity>
+
+    /** SYNCED entries whose capture date is outside the rolling cache window — candidates for eviction. */
+    @Query("SELECT * FROM media WHERE storageStatus = 'SYNCED' AND localPath IS NOT NULL AND captureDate < :captureCutoff")
+    suspend fun getSyncedOlderThan(captureCutoff: Long): List<MediaEntity>
 
     @Query("UPDATE media SET lat = :lat, lng = :lng WHERE nasId = :nasId")
     suspend fun updateLatLng(nasId: String, lat: Double, lng: Double)

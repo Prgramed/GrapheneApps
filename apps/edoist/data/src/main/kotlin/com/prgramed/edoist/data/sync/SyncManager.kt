@@ -24,6 +24,7 @@ class SyncManager @Inject constructor(
     private val webDavClient: WebDavClient,
     private val database: EDoistDatabase,
     private val userPreferencesDataStore: UserPreferencesDataStore,
+    private val deletionTracker: DeletionTracker,
 ) {
     suspend fun sync(): SyncResult {
         val prefs = userPreferencesDataStore.getPreferences().first()
@@ -39,12 +40,38 @@ class SyncManager @Inject constructor(
             android.util.Log.d("SyncManager", "Syncing to $url/$WEBDAV_PATH as $username")
             val localPayload = buildLocalPayload()
             android.util.Log.d("SyncManager", "Local payload: ${localPayload.tasks.size} tasks, ${localPayload.projects.size} projects")
-            val serverBytes = webDavClient.download(url, username, password, WEBDAV_PATH)
 
-            val mergedPayload = if (serverBytes != null) {
+            // Collect locally-tracked deletions to exclude from merge and propagate to server
+            val localDeletedProjects = deletionTracker.getDeletedProjectIds()
+            val localDeletedTasks = deletionTracker.getDeletedTaskIds()
+
+            // Use stored ETag to skip download if server data unchanged
+            val lastSync = database.syncMetadataDao().get()
+            val downloadResult = webDavClient.download(
+                url = url,
+                username = username,
+                password = password,
+                path = WEBDAV_PATH,
+                ifNoneMatch = lastSync?.serverEtag,
+            )
+
+            val serverBytes = downloadResult.bytes
+            val serverHadData = downloadResult.bytes != null || downloadResult.notModified
+
+            var mergedPayload: SyncPayload = if (serverBytes != null) {
                 val serverPayload = SyncPayload.fromJson(String(serverBytes))
                 if (serverPayload != null) {
-                    mergePayloads(localPayload, serverPayload)
+                    // Union both sides' deletion lists, remove deleted items from merged content
+                    val allDeletedProjects = localDeletedProjects + serverPayload.deletedProjectIds
+                    val allDeletedTasks = localDeletedTasks + serverPayload.deletedTaskIds
+                    mergePayloads(localPayload, serverPayload).let { merged ->
+                        merged.copy(
+                            projects = merged.projects.filter { it.id !in allDeletedProjects },
+                            tasks = merged.tasks.filter { it.id !in allDeletedTasks },
+                            deletedProjectIds = allDeletedProjects.toList(),
+                            deletedTaskIds = allDeletedTasks.toList(),
+                        )
+                    }
                 } else {
                     localPayload
                 }
@@ -52,8 +79,16 @@ class SyncManager @Inject constructor(
                 localPayload
             }
 
+            // Include local-only deletions in the payload so other devices honor them
+            if (localDeletedProjects.isNotEmpty() || localDeletedTasks.isNotEmpty()) {
+                mergedPayload = mergedPayload.copy(
+                    deletedProjectIds = (mergedPayload.deletedProjectIds + localDeletedProjects).distinct(),
+                    deletedTaskIds = (mergedPayload.deletedTaskIds + localDeletedTasks).distinct(),
+                )
+            }
+
             // Always upload the merged payload to keep server in sync
-            val uploaded = if (mergedPayload.tasks.isNotEmpty() || mergedPayload.projects.isNotEmpty() || serverBytes == null) {
+            val uploaded = if (mergedPayload.tasks.isNotEmpty() || mergedPayload.projects.isNotEmpty() || !serverHadData) {
                 webDavClient.upload(
                     url = url,
                     username = username,
@@ -71,17 +106,22 @@ class SyncManager @Inject constructor(
                 applyPayloadLocally(mergedPayload)
             }
 
+            // Clear local deletion records after successful sync — server now has them
+            deletionTracker.clearAfterSync()
+
             database.syncMetadataDao().upsert(
                 SyncMetadataEntity(
                     id = "singleton",
                     lastSyncMillis = System.currentTimeMillis(),
                     lastSyncStatus = "SUCCESS",
                     pendingChangesCount = 0,
+                    serverEtag = downloadResult.etag ?: lastSync?.serverEtag,
                 ),
             )
 
             SyncResult.SUCCESS
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.e("SyncManager", "Sync failed", e)
             try {
                 database.syncMetadataDao().upsert(
                     SyncMetadataEntity(

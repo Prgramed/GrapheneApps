@@ -12,7 +12,7 @@ import java.time.format.DateTimeFormatter
 
 object ImmichPhotoMapper {
 
-    /** Map struct-of-arrays bucket data to domain items */
+    /** Map struct-of-arrays bucket data to domain items (trashed items excluded). */
     fun ImmichTimeBucketData.toDomainList(): List<MediaItem> {
         val items = mutableListOf<MediaItem>()
         for (i in id.indices) {
@@ -49,6 +49,7 @@ object ImmichPhotoMapper {
         }
         return items
     }
+
 
     /** Map single asset (from /api/assets/{id}) to domain */
     fun ImmichAsset.toDomain(): MediaItem? {

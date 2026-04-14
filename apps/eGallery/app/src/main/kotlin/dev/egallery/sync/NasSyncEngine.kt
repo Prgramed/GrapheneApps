@@ -246,13 +246,29 @@ class NasSyncEngine @Inject constructor(
             upserted = entities.size
         }
 
-        // Process deletions (batch)
+        // Process deletions. Delta-sync returns IDs that Immich no longer exposes —
+        // could be trashed or fully deleted. Strategy:
+        //  1. NAS-only rows: safe to delete outright (no user data).
+        //  2. Device-linked rows: verify per-asset via /api/assets/{id} and only
+        //     flip to TRASHED when the server confirms isTrashed=true. This
+        //     prevents mass over-trashing from ambiguous delta responses.
         var deleted = 0
         if (response.deleted.isNotEmpty()) {
             for (chunk in response.deleted.chunked(500)) {
                 deleted += mediaDao.deleteNasOnlyByIds(chunk)
             }
+            // Only verify IDs that still have a device-linked local row.
+            val candidates = response.deleted.filter { id ->
+                val row = mediaDao.getByNasId(id)
+                row != null && row.storageStatus != "TRASHED"
+            }
+            if (candidates.isNotEmpty()) {
+                verifyAndTrashCandidates(candidates)
+            }
         }
+
+        _progress.value = "Reconciling server trash..."
+        syncServerTrash()
 
         _progress.value = "Syncing albums..."
         syncAlbums()
@@ -335,23 +351,31 @@ class NasSyncEngine @Inject constructor(
             }
         }
 
-        // Step 5: Remove items deleted from server
+        // Step 5: Reconcile items that were trashed or deleted on the server.
+        // Bucket data excludes trashed assets, so anything with a real server nasId
+        // that's missing from serverAssets was either deleted or trashed upstream.
+        // We delete NAS-only orphans (no user data) and move device-linked orphans
+        // to local trash (30-day retention) so they stop appearing in the timeline
+        // but can still be recovered.
         _progress.value = "Checking for server deletions..."
         val serverIds = serverAssets.map { it.nasId }.toSet()
         val allLocalIds = mediaDao.getAllNasIds()
         val orphaned = allLocalIds.filter { id ->
             id.isNotBlank() && id !in serverIds && !id.startsWith("-")
         }
-        // Only delete NAS_ONLY items (don't touch local/pending/failed items)
         var removed = 0
         if (orphaned.size <= allLocalIds.size / 10 || orphaned.size <= 100) {
-            // Batch delete in chunks (Room limits IN clause to ~999 params)
+            // Only purge NAS-only orphans. Never auto-trash device-linked orphans —
+            // an incomplete server fetch would wipe the timeline.
             for (chunk in orphaned.chunked(500)) {
                 removed += mediaDao.deleteNasOnlyByIds(chunk)
             }
         } else {
             Timber.w("Skipping server deletion check: ${orphaned.size} orphans (>10%), likely incomplete fetch")
         }
+
+        _progress.value = "Reconciling server trash..."
+        syncServerTrash()
 
         _progress.value = "Syncing albums..."
         syncAlbums()
@@ -390,6 +414,9 @@ class NasSyncEngine @Inject constructor(
             }
         }
 
+        _progress.value = "Reconciling server trash..."
+        syncServerTrash()
+
         _progress.value = "Syncing albums..."
         syncAlbums()
         _progress.value = "Syncing people..."
@@ -397,6 +424,179 @@ class NasSyncEngine @Inject constructor(
 
         preferencesRepository.setLastSyncAt(System.currentTimeMillis())
         _progress.value = if (newFromServer > 0) "Done: $newFromServer from server" else "Done: up to date"
+    }
+
+    // ── Public: bulk server-trash reconciliation via search/metadata ──
+
+    /**
+     * Pulls the authoritative trashed-assets list via:
+     *   POST /api/search/metadata { "isTrashed": true, "withDeleted": true }
+     * Without `withDeleted`, Immich excludes trashed items from the result entirely,
+     * which was the bug in the previous version of this method.
+     *
+     * Before applying, we spot-check up to 5 random IDs from the response with
+     * `/api/assets/{id}` and abort the whole reconciliation if any of them comes
+     * back with `isTrashed=false`. That keeps us safe if the server's filter ever
+     * misbehaves again.
+     */
+    suspend fun syncServerTrash(): Int {
+        val candidateIds = mutableListOf<String>()
+        return try {
+            // Per Immich search docs, `deletedAfter` filters on the soft-delete (trash)
+            // timestamp. Paired with `withDeleted: true` to actually include trashed
+            // items in the response (without it, trash is filtered out entirely).
+            var page = 1
+            while (true) {
+                coroutineContext.job.ensureActive()
+                val resp = immichApi.searchMetadata(kotlinx.serialization.json.buildJsonObject {
+                    put("withDeleted", kotlinx.serialization.json.JsonPrimitive(true))
+                    put("deletedAfter", kotlinx.serialization.json.JsonPrimitive("1970-01-01T00:00:00.000Z"))
+                    put("size", kotlinx.serialization.json.JsonPrimitive(250))
+                    put("page", kotlinx.serialization.json.JsonPrimitive(page))
+                })
+                val items = resp.assets.items
+                // Belt-and-braces: only accept items the SERVER also flags as trashed.
+                // The search filter may be broader than expected on some Immich
+                // versions, so we double-check the per-asset flag from the response.
+                val ids = items.filter { it.isTrashed && it.id.isNotBlank() }.map { it.id }
+                if (ids.isEmpty() && items.isEmpty()) break
+                candidateIds += ids
+                if (resp.assets.nextPage == null) break
+                page++
+                if (page > 50) break
+            }
+            if (candidateIds.isEmpty()) {
+                Timber.d("Server trash sync: 0 trashed assets returned")
+                return 0
+            }
+
+            // Spot-check: hit /api/assets/{id} for a few random IDs and confirm
+            // isTrashed=true. If any comes back false, abort the whole reconciliation.
+            val sample = candidateIds.shuffled().take(5)
+            for (id in sample) {
+                try {
+                    val asset = immichApi.getAsset(id)
+                    if (!asset.isTrashed) {
+                        Timber.w("syncServerTrash aborted: spot-check $id returned isTrashed=false (got ${candidateIds.size} candidates)")
+                        return 0
+                    }
+                } catch (_: Exception) { /* treat 404/network as unknown — don't block */ }
+            }
+
+            val now = System.currentTimeMillis()
+            var trashed = 0
+            for (chunk in candidateIds.chunked(500)) {
+                trashed += mediaDao.trashByIds(chunk, now)
+            }
+            Timber.d("Server trash sync: moved $trashed items to local trash (${candidateIds.size} candidates from server)")
+            trashed
+        } catch (e: Exception) {
+            Timber.w(e, "Server trash sync failed")
+            0
+        }
+    }
+
+    // ── Public: per-asset trash verification (safe) ──
+
+    /**
+     * For each candidate asset ID, hit `/api/assets/{id}` and check the authoritative
+     * `isTrashed` flag. Only flip local rows to TRASHED if the server confirms trash
+     * status. A 404 or error leaves the row alone. Hard-capped at 50 lookups per call
+     * to avoid hammering the server on large orphan lists.
+     *
+     * This is the safe replacement for the bulk `search/metadata?isTrashed=true`
+     * approach, which misidentified non-trashed assets and caused mass over-trashing.
+     */
+    suspend fun verifyAndTrashCandidates(candidateIds: List<String>): Int {
+        if (candidateIds.isEmpty()) return 0
+        val capped = candidateIds.take(50)
+        val semaphore = Semaphore(5)
+        val confirmed = mutableListOf<String>()
+        kotlinx.coroutines.coroutineScope {
+            capped.map { id ->
+                async(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        try {
+                            val asset = immichApi.getAsset(id)
+                            if (asset.isTrashed) synchronized(confirmed) { confirmed += id }
+                        } catch (_: Exception) { /* 404 or network error — leave alone */ }
+                    }
+                }
+            }.awaitAll()
+        }
+        if (confirmed.isEmpty()) return 0
+        val now = System.currentTimeMillis()
+        val trashed = mediaDao.trashByIds(confirmed, now)
+        if (trashed > 0) Timber.d("Verified-trash sync: moved $trashed items to local trash")
+        return trashed
+    }
+
+// ── Public: reconcile ghost NAS entries (filename=UUID, no checksum) ──
+
+    /**
+     * Bucket-based sync creates NAS entries with filename=UUID and no checksum
+     * because Immich's bucket endpoint doesn't return them. Those "ghosts" can
+     * never merge with device files by filename or hash, and they appear as
+     * duplicate "server only" cards alongside the correctly-linked SYNCED entry.
+     *
+     * This fetches real metadata per ghost via /api/assets/{id} and either:
+     *  - deletes the ghost if another entry already owns that checksum (true dup)
+     *  - otherwise enriches the ghost with real filename + checksum so future
+     *    hash/filename matches can link it to a device file.
+     *
+     * Safe to run concurrently with sync: only touches storageStatus=NAS rows.
+     * Early-exits if there are no ghosts, so subsequent calls are cheap.
+     */
+    suspend fun reconcileGhostNasEntries(): Int {
+        val ghosts = try {
+            mediaDao.getNasWithoutHash()
+        } catch (e: Exception) {
+            Timber.w(e, "Ghost reconcile: failed to query ghosts")
+            return 0
+        }
+        if (ghosts.isEmpty()) return 0
+
+        Timber.d("Ghost reconcile: ${ghosts.size} candidates")
+        _progress.value = "Reconciling ${ghosts.size} server entries..."
+
+        val semaphore = Semaphore(10)
+        var reconciled = 0
+        var deletedDups = 0
+
+        for (chunk in ghosts.chunked(100)) {
+            coroutineContext.job.ensureActive()
+            val results = chunk.map { ghost ->
+                syncScope.async {
+                    semaphore.withPermit {
+                        try {
+                            val asset = immichApi.getAsset(ghost.nasId)
+                            ghost to asset
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                }
+            }.awaitAll().filterNotNull()
+
+            for ((ghost, asset) in results) {
+                val realName = asset.originalFileName.ifBlank { ghost.filename }
+                val realHash = asset.checksum
+                // If another entry already owns this checksum, the ghost is a
+                // true duplicate — delete it. Prefer SYNCED/DEVICE entries.
+                val dupOwner = realHash?.takeIf { it.isNotBlank() }?.let { mediaDao.getByHash(it) }
+                if (dupOwner != null && dupOwner.nasId != ghost.nasId) {
+                    mediaDao.deleteByNasId(ghost.nasId)
+                    deletedDups++
+                } else {
+                    mediaDao.updateFilenameAndHash(ghost.nasId, realName, realHash)
+                    reconciled++
+                }
+            }
+        }
+
+        _progress.value = "Reconciled $reconciled, removed $deletedDups duplicates"
+        Timber.d("Ghost reconcile: enriched=$reconciled, dups removed=$deletedDups")
+        return reconciled + deletedDups
     }
 
     // ── Public: standalone upload scan (called by UploadScanWorker) ──

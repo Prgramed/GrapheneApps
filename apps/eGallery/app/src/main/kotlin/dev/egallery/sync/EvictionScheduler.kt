@@ -16,8 +16,13 @@ class EvictionScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     fun scheduleDaily() {
+        // Unmetered + charging to avoid burning mobile data / battery when the worker
+        // auto-downloads NAS-only photos from the last-year window. Eviction alone
+        // doesn't need network, but the combined worker does.
         val constraints = Constraints.Builder()
             .setRequiresBatteryNotLow(true)
+            .setRequiredNetworkType(androidx.work.NetworkType.UNMETERED)
+            .setRequiresCharging(true)
             .build()
 
         val request = PeriodicWorkRequestBuilder<EvictionWorker>(
@@ -28,10 +33,10 @@ class EvictionScheduler @Inject constructor(
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             EvictionWorker.WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.REPLACE,
             request,
         )
-        Timber.d("Scheduled daily eviction worker")
+        Timber.d("Scheduled daily cache maintenance worker (evict + auto-download)")
     }
 
     fun cancel() {

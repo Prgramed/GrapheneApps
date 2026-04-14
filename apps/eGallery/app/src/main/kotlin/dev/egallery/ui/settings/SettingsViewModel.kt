@@ -33,6 +33,7 @@ class SettingsViewModel @Inject constructor(
     private val credentialStore: CredentialStore,
     private val preferencesRepository: AppPreferencesRepository,
     private val syncEngine: NasSyncEngine,
+    private val deviceMediaScanner: dev.egallery.sync.DeviceMediaScanner,
     private val uploadQueueDao: UploadQueueDao,
     private val mediaDao: MediaDao,
     private val immichApi: ImmichPhotoService,
@@ -167,10 +168,26 @@ class SettingsViewModel @Inject constructor(
         if (_isScanning.value) return // Already running
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _isScanning.value = true
-            _scanStatus.value = "Scanning device photos..."
+            _scanStatus.value = "Reconciling server entries..."
             try {
+                // 1. Reconcile bucket-ghost NAS entries (filename=UUID, no checksum).
+                //    Without this, ghost entries can't be hash-matched to device files
+                //    and appear as duplicate "server only" cards.
+                val reconciled = syncEngine.reconcileGhostNasEntries()
+                if (reconciled > 0) _scanStatus.value = "Reconciled $reconciled server entries"
+
+                // 2. Force-rescan MediaStore. Bypasses the scanIfNeeded 6-hour cooldown
+                //    and links device files to existing NAS entries by hash.
+                _scanStatus.value = "Scanning device photos..."
+                deviceMediaScanner.forceRescan()
+
+                // 3. Queue remaining device-only photos for upload.
                 val queued = syncEngine.scanAndQueueUploads()
-                _scanStatus.value = if (queued > 0) "$queued new photos queued for upload" else "No new photos found"
+                _scanStatus.value = when {
+                    queued > 0 -> "$queued new photos queued for upload"
+                    reconciled > 0 -> "Fixed $reconciled duplicate server entries"
+                    else -> "No new photos found"
+                }
             } catch (e: Exception) {
                 _scanStatus.value = "Scan failed: ${e.message?.take(50)}"
                 timber.log.Timber.w(e, "Manual upload scan failed")

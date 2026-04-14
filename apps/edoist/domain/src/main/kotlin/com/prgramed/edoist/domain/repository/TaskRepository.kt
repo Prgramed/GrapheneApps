@@ -11,13 +11,13 @@ interface TaskRepository {
 
     fun getUpcomingTasks(startDate: LocalDate, days: Int): Flow<List<Task>>
 
-    fun getInboxTasks(): Flow<List<Task>>
+    fun getInboxTasks(includeCompleted: Boolean = false): Flow<List<Task>>
 
     fun getTasksByProject(projectId: String): Flow<List<Task>>
 
-    fun getTasksBySection(sectionId: String): Flow<List<Task>>
+    fun getTasksBySection(sectionId: String, includeCompleted: Boolean = false): Flow<List<Task>>
 
-    fun getUnsectionedTasksByProject(projectId: String): Flow<List<Task>>
+    fun getUnsectionedTasksByProject(projectId: String, includeCompleted: Boolean = false): Flow<List<Task>>
 
     fun getTasksByLabel(labelId: String): Flow<List<Task>>
 

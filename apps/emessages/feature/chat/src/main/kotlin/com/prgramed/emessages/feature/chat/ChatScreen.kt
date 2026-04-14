@@ -523,39 +523,114 @@ private suspend fun openMediaExternally(context: Context, attachment: com.prgram
     withContext(Dispatchers.IO) {
         try {
             val sourceUri = Uri.parse(attachment.uri)
-            val inputStream = context.contentResolver.openInputStream(sourceUri) ?: return@withContext
 
-            val ext = when {
-                attachment.mimeType.contains("vcard", ignoreCase = true) -> "vcf"
-                attachment.mimeType.contains("mp4") -> "mp4"
-                attachment.mimeType.contains("3gp") -> "3gp"
-                attachment.mimeType.startsWith("audio/") -> "m4a"
-                attachment.mimeType.startsWith("application/pdf") -> "pdf"
-                else -> "bin"
-            }
-            // Normalize vCard MIME type for intent resolution
-            val mimeType = if (attachment.mimeType.contains("vcard", ignoreCase = true)) {
+            // 1. Copy the MMS part bytes to a throwaway temp file (initial name, we may rename it after sniffing)
+            val scratch = java.io.File(context.cacheDir, "media_scratch_${System.currentTimeMillis()}.bin")
+            context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                scratch.outputStream().use { out -> input.copyTo(out) }
+            } ?: return@withContext
+
+            // 2. Sniff the actual content type from the file header. Some MMS carriers
+            //    mis-tag parts (e.g. application/octet-stream for a real MP4), so we
+            //    trust the bytes over the metadata when we can recognise them.
+            val sniffed = sniffMimeType(scratch)
+
+            // 3. Normalize vCard MIME type for intent resolution (Android historically
+            //    expects text/x-vcard rather than text/vcard for ACTION_VIEW).
+            val providedMime = if (attachment.mimeType.contains("vcard", ignoreCase = true)) {
                 "text/x-vcard"
             } else {
                 attachment.mimeType
             }
-            val tempFile = java.io.File(context.cacheDir, "media_${System.currentTimeMillis()}.$ext")
-            tempFile.outputStream().use { out -> inputStream.copyTo(out) }
-            inputStream.close()
+
+            val finalMime = sniffed ?: providedMime
+
+            // 4. Pick the best file extension for finalMime — first try MimeTypeMap,
+            //    then fall back to a hard-coded table for the handful of types MimeTypeMap
+            //    doesn't ship with on Android.
+            val ext = android.webkit.MimeTypeMap.getSingleton()
+                .getExtensionFromMimeType(finalMime)
+                ?: fallbackExtensionFor(finalMime)
+
+            // 5. Rename the scratch file so downstream players that sniff by extension
+            //    get the right answer (many players prefer extension over Intent MIME type).
+            val tempFile = java.io.File(scratch.parentFile, "${scratch.nameWithoutExtension}.$ext")
+            val finalFile = if (scratch.renameTo(tempFile)) tempFile else scratch
 
             val fileUri = androidx.core.content.FileProvider.getUriForFile(
-                context, "${context.packageName}.provider", tempFile,
+                context, "${context.packageName}.provider", finalFile,
             )
 
             withContext(Dispatchers.Main) {
                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                    setDataAndType(fileUri, mimeType)
+                    setDataAndType(fileUri, finalMime)
                     addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 context.startActivity(android.content.Intent.createChooser(intent, "Open with"))
             }
         } catch (_: Exception) { }
     }
+}
+
+/**
+ * Read the first ~12 bytes of [file] and try to identify the real MIME type from
+ * the magic header. Returns null if we don't recognise the format — caller should
+ * fall back to whatever the MMS provider told us.
+ */
+private fun sniffMimeType(file: java.io.File): String? = try {
+    val header = ByteArray(16)
+    val read = file.inputStream().use { it.read(header) }
+    if (read < 4) null
+    else when {
+        // JPEG: FF D8 FF
+        header[0] == 0xFF.toByte() && header[1] == 0xD8.toByte() && header[2] == 0xFF.toByte() ->
+            "image/jpeg"
+        // PNG: 89 50 4E 47
+        header[0] == 0x89.toByte() && header[1] == 0x50.toByte() && header[2] == 0x4E.toByte() && header[3] == 0x47.toByte() ->
+            "image/png"
+        // GIF: 47 49 46 38
+        header[0] == 0x47.toByte() && header[1] == 0x49.toByte() && header[2] == 0x46.toByte() && header[3] == 0x38.toByte() ->
+            "image/gif"
+        // WebP: RIFF....WEBP
+        read >= 12 && header[0] == 0x52.toByte() && header[1] == 0x49.toByte() && header[2] == 0x46.toByte() &&
+            header[3] == 0x46.toByte() && header[8] == 0x57.toByte() && header[9] == 0x45.toByte() &&
+            header[10] == 0x42.toByte() && header[11] == 0x50.toByte() ->
+            "image/webp"
+        // MP4 / MOV / 3GP: bytes 4..7 == "ftyp"
+        read >= 12 && header[4] == 0x66.toByte() && header[5] == 0x74.toByte() &&
+            header[6] == 0x79.toByte() && header[7] == 0x70.toByte() ->
+            "video/mp4"
+        // WebM / Matroska: 1A 45 DF A3
+        header[0] == 0x1A.toByte() && header[1] == 0x45.toByte() && header[2] == 0xDF.toByte() && header[3] == 0xA3.toByte() ->
+            "video/webm"
+        // PDF: 25 50 44 46
+        header[0] == 0x25.toByte() && header[1] == 0x50.toByte() && header[2] == 0x44.toByte() && header[3] == 0x46.toByte() ->
+            "application/pdf"
+        // OGG: 4F 67 67 53
+        header[0] == 0x4F.toByte() && header[1] == 0x67.toByte() && header[2] == 0x67.toByte() && header[3] == 0x53.toByte() ->
+            "audio/ogg"
+        else -> null
+    }
+} catch (_: Exception) {
+    null
+}
+
+/**
+ * Fallback extension table for MIME types that [android.webkit.MimeTypeMap] doesn't
+ * know about on older Android releases.
+ */
+private fun fallbackExtensionFor(mimeType: String): String = when {
+    mimeType.contains("vcard", ignoreCase = true) -> "vcf"
+    mimeType.contains("mp4") -> "mp4"
+    mimeType.contains("3gp") -> "3gp"
+    mimeType == "video/webm" -> "webm"
+    mimeType.startsWith("audio/") -> "m4a"
+    mimeType == "application/pdf" -> "pdf"
+    mimeType == "image/jpeg" -> "jpg"
+    mimeType == "image/png" -> "png"
+    mimeType == "image/gif" -> "gif"
+    mimeType == "image/webp" -> "webp"
+    else -> "bin"
 }
 
 private sealed class ChatItem {

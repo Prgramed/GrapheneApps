@@ -54,15 +54,28 @@ class SyncEngine @Inject constructor(
                     val note = entity.toDomain()
                     if (note.syncStatus == SyncStatus.PENDING_UPLOAD || note.syncStatus == SyncStatus.LOCAL_ONLY) {
                         val remoteEntry = remoteByName[note.id]
-                        if (remoteEntry != null && note.syncStatus != SyncStatus.LOCAL_ONLY) {
-                            // Both changed — conflict
-                            val conflictNote = note.copy(
-                                id = UUID.randomUUID().toString(),
-                                title = "[Conflict] ${note.title}",
-                                syncStatus = SyncStatus.CONFLICT,
-                            )
-                            noteDao.upsert(conflictNote.toEntity())
-                            conflicts++
+                        if (remoteEntry != null &&
+                            note.syncStatus != SyncStatus.LOCAL_ONLY &&
+                            remoteEntry.etag != null &&
+                            remoteEntry.etag != entity.remoteEtag
+                        ) {
+                            // Both sides changed — download the remote version and save
+                            // it as a new "[Conflict]" note so the user can manually merge.
+                            // Local note is preserved unchanged; the local version continues
+                            // to be the primary and is uploaded below.
+                            val remoteUrl = "$syncUrl/${remoteEntry.name}"
+                            val bytes = webDavClient.get(remoteUrl, username, password)
+                            val remoteNote = bytes?.let { EnoteSerializer.fromJson(String(it)) }
+                            if (remoteNote != null) {
+                                val conflictCopy = remoteNote.copy(
+                                    id = UUID.randomUUID().toString(),
+                                    title = "[Conflict] ${remoteNote.title}",
+                                    syncStatus = SyncStatus.CONFLICT,
+                                    remoteEtag = null,
+                                )
+                                noteDao.upsert(conflictCopy.toEntity())
+                                conflicts++
+                            }
                         }
 
                         val json = EnoteSerializer.toJson(note)

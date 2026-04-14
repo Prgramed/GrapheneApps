@@ -11,4 +11,5 @@ dependencies {
     implementation(projects.apps.enotes.domain)
     implementation(projects.apps.enotes.data)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.timber)
 }

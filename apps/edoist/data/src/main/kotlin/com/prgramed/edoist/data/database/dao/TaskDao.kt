@@ -138,6 +138,18 @@ interface TaskDao {
     @Transaction
     @Query(
         """
+        SELECT t.* FROM tasks t
+        INNER JOIN projects p ON t.project_id = p.id
+        WHERE p.is_inbox = 1
+            AND t.parent_task_id IS NULL
+        ORDER BY t.is_completed ASC, t.sort_order ASC
+        """,
+    )
+    fun getInboxTasksAll(): Flow<List<TaskWithLabels>>
+
+    @Transaction
+    @Query(
+        """
         SELECT * FROM tasks
         WHERE due_date_epoch_day <= :todayEpochDay
             AND is_completed = 0
@@ -188,6 +200,17 @@ interface TaskDao {
     @Query(
         """
         SELECT * FROM tasks
+        WHERE section_id = :sectionId
+            AND parent_task_id IS NULL
+        ORDER BY is_completed ASC, sort_order ASC
+        """,
+    )
+    fun getTasksBySectionAll(sectionId: String): Flow<List<TaskWithLabels>>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM tasks
         WHERE project_id = :projectId
             AND section_id IS NULL
             AND is_completed = 0
@@ -196,6 +219,18 @@ interface TaskDao {
         """,
     )
     fun getUnsectionedTasksByProject(projectId: String): Flow<List<TaskWithLabels>>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE project_id = :projectId
+            AND section_id IS NULL
+            AND parent_task_id IS NULL
+        ORDER BY is_completed ASC, sort_order ASC
+        """,
+    )
+    fun getUnsectionedTasksByProjectAll(projectId: String): Flow<List<TaskWithLabels>>
 
     @Transaction
     @Query(
@@ -273,6 +308,17 @@ interface TaskDao {
         """,
     )
     fun getCompletedTasks(projectId: String, limit: Int = 50): Flow<List<TaskWithLabels>>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE is_completed = 1
+        ORDER BY completed_at_millis DESC
+        LIMIT :limit
+        """,
+    )
+    fun getAllCompletedTasks(limit: Int = 50): Flow<List<TaskWithLabels>>
 
     // ── Queries (suspend) ────────────────────────────────────────────────
 
