@@ -57,9 +57,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.updateNotifications(enabled) }
     }
 
-    fun updateSyncInterval(hours: Int) {
-        viewModelScope.launch { preferencesRepository.updateSyncInterval(hours) }
-        if (hours > 0) SyncWorker.schedule(context, hours)
+    fun updateSyncInterval(minutes: Int) {
+        viewModelScope.launch { preferencesRepository.updateSyncInterval(minutes) }
+        // 0 cancels, anything >0 reschedules (SyncWorker clamps to 15-min minimum).
+        SyncWorker.schedule(context, minutes)
     }
 
     fun updateThemeMode(mode: String) {
@@ -67,6 +68,9 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun syncNow() {
-        viewModelScope.launch(Dispatchers.IO) { syncCoordinator.syncAll() }
+        // Settings "Sync now" kicks off the full sync (including iCal mirror) via
+        // the coordinator's application-lifetime scope — so leaving Settings
+        // mid-sync no longer cancels it.
+        syncCoordinator.launchSync(includeMirror = true)
     }
 }

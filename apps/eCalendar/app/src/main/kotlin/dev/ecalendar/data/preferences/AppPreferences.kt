@@ -12,6 +12,7 @@ data class AppPreferences(
     val firstDayOfWeek: Int = 1, // 1=MON, 7=SUN
     val defaultReminderMins: Int = 15,
     val notificationsEnabled: Boolean = true,
-    val syncIntervalHours: Int = 1,
+    /** Minutes between auto-syncs. 0 = manual only. Floor is 15 (WorkManager minimum). */
+    val syncIntervalMinutes: Int = 60,
     val themeMode: String = "system", // "system", "light", "dark"
 )

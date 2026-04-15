@@ -21,8 +21,10 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
+        // Any schema change MUST ship a Migration. Do NOT re-add
+        // fallbackToDestructiveMigration here — it would silently wipe all
+        // accounts, calendars and local events on upgrade.
         Room.databaseBuilder(context, AppDatabase::class.java, "ecalendar.db")
-            .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
 
     @Provides

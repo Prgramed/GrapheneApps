@@ -19,11 +19,19 @@ interface CalendarDao {
     suspend fun getById(id: Long): CalendarSourceEntity?
 
     @Upsert
-    suspend fun upsert(source: CalendarSourceEntity)
+    suspend fun upsert(source: CalendarSourceEntity): Long
 
     @Query("DELETE FROM calendar_sources WHERE id = :id")
     suspend fun deleteById(id: Long)
 
     @Query("SELECT * FROM calendar_sources WHERE calDavUrl = :url LIMIT 1")
     suspend fun getByUrl(url: String): CalendarSourceEntity?
+
+    /**
+     * First writable + non-mirror remote calendar. Used as a fallback default
+     * when the user's `defaultCalendarSourceId` preference is 0 but they have
+     * already added a CalDAV account.
+     */
+    @Query("SELECT * FROM calendar_sources WHERE isReadOnly = 0 AND isMirror = 0 AND accountId != 0 ORDER BY displayName LIMIT 1")
+    suspend fun getFirstWritable(): CalendarSourceEntity?
 }

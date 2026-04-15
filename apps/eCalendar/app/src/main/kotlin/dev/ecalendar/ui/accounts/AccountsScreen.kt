@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material3.AlertDialog
@@ -53,6 +54,7 @@ fun AccountsScreen(
     viewModel: AccountsViewModel,
     onDismiss: () -> Unit,
     onAddAccount: () -> Unit,
+    onEditAccount: (Long) -> Unit = {},
 ) {
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     var deleteTarget by remember { mutableStateOf<CalendarAccount?>(null) }
@@ -110,6 +112,7 @@ fun AccountsScreen(
                 items(accounts, key = { it.id }) { account ->
                     AccountCard(
                         account = account,
+                        onEdit = { onEditAccount(account.id) },
                         onDelete = { deleteTarget = account },
                     )
                 }
@@ -142,6 +145,7 @@ fun AccountsScreen(
 @Composable
 private fun AccountCard(
     account: CalendarAccount,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Card(
@@ -198,6 +202,13 @@ private fun AccountCard(
                 )
             }
 
+            IconButton(onClick = onEdit) {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = "Edit",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Default.Delete,

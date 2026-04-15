@@ -2,6 +2,11 @@ package dev.ecalendar.caldav
 
 import dev.ecalendar.data.db.dao.CalendarDao
 import dev.ecalendar.data.db.entity.CalendarSourceEntity
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import net.fortuna.ical4j.data.CalendarBuilder
 import net.fortuna.ical4j.model.component.VEvent
 import okhttp3.OkHttpClient
@@ -9,6 +14,7 @@ import okhttp3.Request
 import timber.log.Timber
 import java.io.StringReader
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Fetches an iCal subscription URL and mirrors its events into a Synology CalDAV calendar.
@@ -71,23 +77,45 @@ object ICalSubscriptionSyncer {
             )
         }
 
-        // 4. Build map of new event URLs
-        val newEventUrls = mutableSetOf<String>()
-        var putCount = 0
-        for (vevent in vevents) {
-            try {
-                val uid = vevent.uid?.value ?: UUID.randomUUID().toString()
-                val icsPayload = wrapInVCalendar(vevent)
-                val eventUrl = "${mirrorCalUrl.trimEnd('/')}/${uid}.ics"
-                newEventUrls.add(eventUrl)
-                synoClient.put(eventUrl, icsPayload, etag = null).use { response ->
-                    if (response.isSuccessful || response.code == 201 || response.code == 204) {
-                        putCount++
+        // 4. Push events in parallel (semaphore-capped so we don't hammer the server).
+        //    Sequentially this was the single biggest cost in sync — 300+ events
+        //    at ~200ms/PUT took >60s per subscription.
+        val newEventUrls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        val putCount = AtomicInteger(0)
+        val alreadyExists = AtomicInteger(0)
+        val putFailures = AtomicInteger(0)
+        coroutineScope {
+            val putSemaphore = Semaphore(8)
+            vevents.map { vevent ->
+                async {
+                    putSemaphore.withPermit {
+                        try {
+                            val uid = vevent.uid?.value ?: UUID.randomUUID().toString()
+                            val icsPayload = wrapInVCalendar(vevent)
+                            val eventUrl = "${mirrorCalUrl.trimEnd('/')}/${uid}.ics"
+                            newEventUrls.add(eventUrl)
+                            synoClient.put(eventUrl, icsPayload, etag = null).use { response ->
+                                when {
+                                    response.isSuccessful -> putCount.incrementAndGet()
+                                    // 412 Precondition Failed = "If-None-Match: * but event
+                                    // exists already". Treat as success — the mirror is
+                                    // idempotent, repeat syncs shouldn't churn.
+                                    response.code == 412 -> alreadyExists.incrementAndGet()
+                                    else -> {
+                                        putFailures.incrementAndGet()
+                                        if (putFailures.get() <= 3) {
+                                            Timber.w("iCal mirror PUT ${response.code} for $eventUrl")
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            putFailures.incrementAndGet()
+                            Timber.w(e, "iCal subscription: failed to PUT event")
+                        }
                     }
                 }
-            } catch (e: Exception) {
-                Timber.w(e, "iCal subscription: failed to PUT event")
-            }
+            }.awaitAll()
         }
 
         // 5. Delete events that are no longer in the subscription (diff-based)
@@ -101,20 +129,33 @@ object ICalSubscriptionSyncer {
                 }
             }
         }
-        Timber.d("iCal subscription: mirrored $putCount/${vevents.size} events to $mirrorCalUrl")
+        Timber.d(
+            "iCal mirror: $mirrorCalUrl → new=${putCount.get()}, " +
+                "unchanged=${alreadyExists.get()}, failed=${putFailures.get()} " +
+                "(of ${vevents.size})",
+        )
     }
 
     private suspend fun fetchSubscription(url: String, client: OkHttpClient): String? {
         return try {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                val request = Request.Builder().url(url).get().build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        Timber.w("iCal subscription: GET failed with ${response.code} for $url")
-                        return@withContext null
-                    }
-                    response.body?.string()
+                // Google's iCal endpoint returns 404 for .../basic.ics/ (trailing
+                // slash). If the URL was mis-normalized on save, transparently
+                // retry without the trailing slash before giving up.
+                val attempts = buildList {
+                    add(url)
+                    if (url.endsWith("/")) add(url.trimEnd('/'))
                 }
+                for (attempt in attempts) {
+                    val request = Request.Builder().url(attempt).get().build()
+                    client.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            return@withContext response.body?.string()
+                        }
+                        Timber.w("iCal subscription: GET failed with ${response.code} for $attempt")
+                    }
+                }
+                null
             }
         } catch (e: Exception) {
             Timber.w(e, "iCal subscription: fetch failed for $url")

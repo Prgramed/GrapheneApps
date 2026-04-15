@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.ecalendar.domain.model.AccountType
+import dev.ecalendar.ui.accounts.ZohoRegion
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,12 +57,13 @@ fun AccountSetupScreen(
     val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
     val username by viewModel.username.collectAsStateWithLifecycle()
     val password by viewModel.password.collectAsStateWithLifecycle()
+    val zohoRegion by viewModel.zohoRegion.collectAsStateWithLifecycle()
     val setupState by viewModel.setupState.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Add Account") },
+                title = { Text(if (viewModel.isEditMode) "Edit Account" else "Add Account") },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -73,6 +76,7 @@ fun AccountSetupScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
         ) {
@@ -150,17 +154,37 @@ fun AccountSetupScreen(
                 }
 
                 AccountType.ZOHO -> {
+                    Text(
+                        "Region",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        ZohoRegion.entries.forEach { region ->
+                            FilterChip(
+                                selected = zohoRegion == region,
+                                onClick = { viewModel.setZohoRegion(region) },
+                                label = { Text(region.label) },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = username,
                         onValueChange = { viewModel.setUsername(it) },
                         label = { Text("Zoho email") },
-                        placeholder = { Text("user@zoho.com") },
+                        placeholder = { Text("user@${zohoRegion.host.removePrefix("zoho.")}") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "URL will be auto-constructed from your email",
+                        "CalDAV URL: https://calendar.${zohoRegion.host}/caldav/…",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     )
@@ -168,14 +192,14 @@ fun AccountSetupScreen(
                     OutlinedTextField(
                         value = password,
                         onValueChange = { viewModel.setPassword(it) },
-                        label = { Text("App-specific password") },
+                        label = { Text("Password") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Generate an app-specific password in Zoho Account Security",
+                        "Regular Zoho password. If 2FA is enabled, generate an application password at accounts.zoho.* → Security.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     )
@@ -225,7 +249,7 @@ fun AccountSetupScreen(
                     Spacer(Modifier.width(8.dp))
                     Text("Verifying...")
                 } else {
-                    Text("Verify & Save")
+                    Text(if (viewModel.isEditMode) "Save Changes" else "Verify & Save")
                 }
             }
 

@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.ecalendar.domain.model.CalendarEvent
 import dev.ecalendar.ui.CalendarViewModel
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import dev.ecalendar.sync.SyncState
 import dev.ecalendar.ui.components.CalendarHeader
 import dev.ecalendar.util.ColorPalette
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -105,19 +107,25 @@ fun DayScreen(
             onAccounts = onAccounts,
         )
 
-        HorizontalPager(
-            state = pagerState,
+        PullToRefreshBox(
+            isRefreshing = syncState is SyncState.Syncing,
+            onRefresh = { viewModel.syncNow() },
             modifier = Modifier.fillMaxWidth().weight(1f),
-        ) { page ->
-            val dayOffset = (page - INITIAL_PAGE).toLong()
-            val date = baseDate.plusDays(dayOffset)
-            DayPage(
-                date = date,
-                today = today,
-                viewModel = viewModel,
-                onEventClick = onEventClick,
-                onCreateEvent = onCreateEvent,
-            )
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                val dayOffset = (page - INITIAL_PAGE).toLong()
+                val date = baseDate.plusDays(dayOffset)
+                DayPage(
+                    date = date,
+                    today = today,
+                    viewModel = viewModel,
+                    onEventClick = onEventClick,
+                    onCreateEvent = onCreateEvent,
+                )
+            }
         }
     }
 }

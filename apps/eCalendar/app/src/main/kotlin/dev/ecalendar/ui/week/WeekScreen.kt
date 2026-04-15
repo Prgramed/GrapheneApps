@@ -26,6 +26,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import dev.ecalendar.sync.SyncState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -119,24 +121,30 @@ fun WeekScreen(
         )
 
         // Week pages
-        HorizontalPager(
-            state = pagerState,
+        PullToRefreshBox(
+            isRefreshing = syncState is SyncState.Syncing,
+            onRefresh = { viewModel.syncNow() },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-        ) { page ->
-            val weekOffset = page - INITIAL_PAGE
-            val monday = baseMonday.plusWeeks(weekOffset.toLong())
-            val weekDays = (0L until 7L).map { monday.plusDays(it) }
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                val weekOffset = page - INITIAL_PAGE
+                val monday = baseMonday.plusWeeks(weekOffset.toLong())
+                val weekDays = (0L until 7L).map { monday.plusDays(it) }
 
-            WeekPage(
-                weekDays = weekDays,
-                today = today,
-                activeDate = activeDate,
-                viewModel = viewModel,
-                onEventClick = onEventClick,
-                onCreateEvent = onCreateEvent,
-            )
+                WeekPage(
+                    weekDays = weekDays,
+                    today = today,
+                    activeDate = activeDate,
+                    viewModel = viewModel,
+                    onEventClick = onEventClick,
+                    onCreateEvent = onCreateEvent,
+                )
+            }
         }
     }
 }
@@ -151,79 +159,91 @@ private fun WeekPage(
     onCreateEvent: (Long) -> Unit,
 ) {
     val zone = ZoneId.systemDefault()
-    val rangeStart = weekDays.first().atStartOfDay(zone).toInstant().toEpochMilli()
-    val rangeEnd = weekDays.last().plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-    val events by viewModel.eventsForRange(rangeStart, rangeEnd)
+
+    // Show the selected day's full timeline below the week strip. Tapping a
+    // different day in the strip switches the timeline (without leaving the
+    // week view). Swiping horizontally pages by week (handled by outer pager).
+    val selectedDate = if (activeDate in weekDays) activeDate else weekDays.first()
+
+    val dayStart = selectedDate.atStartOfDay(zone).toInstant().toEpochMilli()
+    val dayEnd = selectedDate.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+    val events by viewModel.eventsForRange(dayStart, dayEnd)
         .collectAsStateWithLifecycle(emptyList())
 
-    // Separate all-day vs timed events
     val allDayEvents = events.filter { it.isAllDay }
     val timedEvents = events.filter { !it.isAllDay }
 
-    // Group timed events by day
-    val eventsByDay = remember(timedEvents) {
-        timedEvents.groupBy { event ->
-            java.time.Instant.ofEpochMilli(event.instanceStart)
-                .atZone(zone).toLocalDate()
-        }
-    }
-
     val density = LocalDensity.current
     val scrollState = rememberScrollState(
-        initial = with(density) { (HOUR_HEIGHT * 8).roundToPx() }, // Start at 8am
+        initial = with(density) { (HOUR_HEIGHT * 8).roundToPx() },
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Day headers
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Spacer(Modifier.width(HOUR_LABEL_WIDTH))
+        // Week pill strip — tap to change selected day
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+        ) {
             weekDays.forEach { date ->
                 val isToday = date == today
+                val isSelected = date == selectedDate
+                val bg = when {
+                    isSelected -> MaterialTheme.colorScheme.primary
+                    isToday -> MaterialTheme.colorScheme.primaryContainer
+                    else -> Color.Transparent
+                }
+                val fg = when {
+                    isSelected -> MaterialTheme.colorScheme.onPrimary
+                    isToday -> MaterialTheme.colorScheme.onPrimaryContainer
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
                 Column(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 2.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(bg)
+                        .clickable { viewModel.navigate(date) }
+                        .padding(vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
                         text = date.dayOfWeek.name.take(3),
-                        fontSize = 11.sp,
-                        color = if (isToday) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        color = fg.copy(alpha = 0.8f),
                     )
                     Text(
                         text = date.dayOfMonth.toString(),
                         fontSize = 16.sp,
-                        fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isToday) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface,
+                        fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
+                        color = fg,
                     )
                 }
             }
         }
+        HorizontalDivider()
 
-        // All-day events strip
+        // All-day strip for the selected day
         if (allDayEvents.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = HOUR_LABEL_WIDTH, end = 2.dp, top = 2.dp, bottom = 2.dp),
-            ) {
-                // Simplified: show all-day event chips
-                allDayEvents.take(3).forEach { event ->
+            Column(modifier = Modifier.padding(start = HOUR_LABEL_WIDTH, end = 8.dp, top = 4.dp)) {
+                allDayEvents.forEach { event ->
                     val isDark = isSystemInDarkTheme()
                     val color = ColorPalette.forTheme(event.colorHex ?: "#4285F4", isDark)
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .padding(1.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(color.copy(alpha = 0.8f))
+                            .fillMaxWidth()
+                            .padding(vertical = 1.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(color.copy(alpha = 0.85f))
                             .clickable { onEventClick(event.uid, event.instanceStart) }
-                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
                     ) {
                         Text(
                             text = event.title,
-                            fontSize = 10.sp,
+                            fontSize = 13.sp,
                             color = Color.White,
+                            fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -233,7 +253,7 @@ private fun WeekPage(
             HorizontalDivider()
         }
 
-        // Time grid
+        // Single-day timeline for the selected day
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -241,21 +261,18 @@ private fun WeekPage(
         ) {
             val totalHeight = HOUR_HEIGHT * 24
 
-            // Hour lines + labels
             Column(modifier = Modifier.height(totalHeight)) {
                 repeat(24) { hour ->
                     Box(modifier = Modifier.height(HOUR_HEIGHT)) {
-                        // Hour label
                         Text(
                             text = "%02d:00".format(hour),
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                             modifier = Modifier
                                 .width(HOUR_LABEL_WIDTH)
-                                .padding(end = 4.dp, top = 0.dp),
+                                .padding(end = 4.dp),
                             textAlign = TextAlign.End,
                         )
-                        // Hour line
                         HorizontalDivider(
                             modifier = Modifier.padding(start = HOUR_LABEL_WIDTH),
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
@@ -264,72 +281,66 @@ private fun WeekPage(
                 }
             }
 
-            // Event blocks per day column
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(totalHeight)
-                    .padding(start = HOUR_LABEL_WIDTH),
+                    .padding(start = HOUR_LABEL_WIDTH, end = 8.dp),
             ) {
-                weekDays.forEach { date ->
-                    val dayEvents = eventsByDay[date] ?: emptyList()
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        dayEvents.forEach { event ->
-                            key(event.uid, event.instanceStart) {
-                            val startMinutes = java.time.Instant.ofEpochMilli(event.instanceStart)
-                                .atZone(zone).toLocalTime().let { it.hour * 60 + it.minute }
-                            val endMinutes = java.time.Instant.ofEpochMilli(event.instanceEnd)
-                                .atZone(zone).toLocalTime().let { it.hour * 60 + it.minute }
-                            val durationMinutes = (endMinutes - startMinutes).coerceAtLeast(15)
+                timedEvents.forEach { event ->
+                    key(event.uid, event.instanceStart) {
+                        val startMinutes = java.time.Instant.ofEpochMilli(event.instanceStart)
+                            .atZone(zone).toLocalTime().let { it.hour * 60 + it.minute }
+                        val endMinutes = java.time.Instant.ofEpochMilli(event.instanceEnd)
+                            .atZone(zone).toLocalTime().let { it.hour * 60 + it.minute }
+                        val durationMinutes = (endMinutes - startMinutes).coerceAtLeast(15)
 
-                            val topOffset = (startMinutes.toFloat() / 60f) * HOUR_HEIGHT.value
-                            val blockHeight = (durationMinutes.toFloat() / 60f) * HOUR_HEIGHT.value
+                        val topOffset = (startMinutes.toFloat() / 60f) * HOUR_HEIGHT.value
+                        val blockHeight = (durationMinutes.toFloat() / 60f) * HOUR_HEIGHT.value
 
-                            val isDark = isSystemInDarkTheme()
-                            val color = ColorPalette.forTheme(event.colorHex ?: "#4285F4", isDark)
+                        val isDark = isSystemInDarkTheme()
+                        val color = ColorPalette.forTheme(event.colorHex ?: "#4285F4", isDark)
 
-                            Box(
-                                modifier = Modifier
-                                    .offset(y = topOffset.dp)
-                                    .height(blockHeight.dp)
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 1.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(color.copy(alpha = 0.85f))
-                                    .clickable { onEventClick(event.uid, event.instanceStart) }
-                                    .padding(horizontal = 4.dp, vertical = 2.dp),
-                            ) {
-                                Column {
-                                    Text(
-                                        text = event.title,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color.White,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    if (blockHeight > 30f) {
-                                        val startTime = java.time.Instant.ofEpochMilli(event.instanceStart)
-                                            .atZone(zone).toLocalTime().format(TIME_FORMAT)
-                                        Text(
-                                            text = startTime,
-                                            fontSize = 9.sp,
-                                            color = Color.White.copy(alpha = 0.7f),
-                                        )
-                                    }
-                                }
-                            }
+                        Box(
+                            modifier = Modifier
+                                .offset(y = topOffset.dp)
+                                .height(blockHeight.dp)
+                                .fillMaxWidth()
+                                .padding(horizontal = 2.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(color.copy(alpha = 0.85f))
+                                .clickable { onEventClick(event.uid, event.instanceStart) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                            Column {
+                                Text(
+                                    text = event.title,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.White,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                val startTime = java.time.Instant.ofEpochMilli(event.instanceStart)
+                                    .atZone(zone).toLocalTime().format(TIME_FORMAT)
+                                val endTime = java.time.Instant.ofEpochMilli(event.instanceEnd)
+                                    .atZone(zone).toLocalTime().format(TIME_FORMAT)
+                                Text(
+                                    text = "$startTime – $endTime",
+                                    fontSize = 10.sp,
+                                    color = Color.White.copy(alpha = 0.7f),
+                                )
                             }
                         }
                     }
                 }
             }
 
-            // Current time line
-            val now = LocalTime.now()
-            val nowMinutes = now.hour * 60 + now.minute
-            val nowOffset = (nowMinutes.toFloat() / 60f) * HOUR_HEIGHT.value
-            if (weekDays.contains(today)) {
+            // Current time line — only on the selected day if it is today
+            if (selectedDate == today) {
+                val now = LocalTime.now()
+                val nowMinutes = now.hour * 60 + now.minute
+                val nowOffset = (nowMinutes.toFloat() / 60f) * HOUR_HEIGHT.value
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -337,17 +348,8 @@ private fun WeekPage(
                         .offset(y = nowOffset.dp)
                         .padding(start = HOUR_LABEL_WIDTH),
                 ) {
-                    drawLine(
-                        color = Color.Red,
-                        start = Offset(0f, 0f),
-                        end = Offset(size.width, 0f),
-                        strokeWidth = 2f,
-                    )
-                    drawCircle(
-                        color = Color.Red,
-                        radius = 4f,
-                        center = Offset(0f, 0f),
-                    )
+                    drawLine(Color.Red, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 2f)
+                    drawCircle(Color.Red, radius = 5f, center = Offset(0f, 0f))
                 }
             }
         }

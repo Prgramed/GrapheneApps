@@ -99,8 +99,8 @@ class CalendarViewModel @Inject constructor(
             }
 
     fun syncNow() {
-        viewModelScope.launch(Dispatchers.IO) {
-            syncCoordinator.syncAll()
-        }
+        // launchSync runs in an application-lifetime scope so the sync survives
+        // navigating away from the screen mid-refresh.
+        syncCoordinator.launchSync(includeMirror = false)
     }
 }

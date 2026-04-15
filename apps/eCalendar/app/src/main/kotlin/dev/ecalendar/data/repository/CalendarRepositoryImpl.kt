@@ -17,8 +17,14 @@ import dev.ecalendar.domain.repository.CalendarRepository
 import dev.ecalendar.ical.ICalGenerator
 import dev.ecalendar.ical.ICalParser
 import dev.ecalendar.ical.RecurrenceExpander
+import dev.ecalendar.sync.OfflineQueueProcessor
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import timber.log.Timber
 import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,7 +35,20 @@ class CalendarRepositoryImpl @Inject constructor(
     private val calendarDao: CalendarDao,
     private val syncQueueDao: SyncQueueDao,
     private val alarmScheduler: EventAlarmScheduler,
+    private val offlineQueueProcessor: OfflineQueueProcessor,
 ) : CalendarRepository {
+
+    // Fire-and-forget drain after create/update/delete so edits push to the
+    // server immediately instead of waiting for the next periodic SyncWorker
+    // tick (every 6h) or a manual "Sync now" tap.
+    private val pushScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private fun kickDrain() {
+        pushScope.launch {
+            try { offlineQueueProcessor.drainQueue() } catch (e: Exception) {
+                Timber.w(e, "Immediate queue drain failed")
+            }
+        }
+    }
 
     override fun observeEventsInRange(start: Long, end: Long): Flow<List<CalendarEvent>> =
         eventDao.getEventsInRange(start, end).map { list -> list.map { it.toDomain() } }
@@ -47,13 +66,32 @@ class CalendarRepositoryImpl @Inject constructor(
         calendarDao.getById(id)?.toDomain()
 
     override suspend fun createEvent(editable: EditableEvent): Long {
+        // Resolve the calendar source. If the caller passed id=0 (local-only
+        // default) but a writable remote calendar exists, use that one —
+        // otherwise every new event saved before the user visits Settings
+        // ends up stuck locally with no way to sync.
+        var resolvedSourceId = editable.calendarSourceId
+        var source = calendarDao.getById(resolvedSourceId)
+        if (source == null) {
+            val writable = calendarDao.getFirstWritable()
+            if (writable != null) {
+                Timber.i("createEvent: no source for id=$resolvedSourceId, falling back to '${writable.displayName}' (id=${writable.id})")
+                resolvedSourceId = writable.id
+                source = writable
+            }
+        }
+
+        val effectiveEditable = if (resolvedSourceId != editable.calendarSourceId) {
+            editable.copy(calendarSourceId = resolvedSourceId)
+        } else editable
+
         // Generate ICS
-        val icsString = ICalGenerator.generateEventIcs(editable)
+        val icsString = ICalGenerator.generateEventIcs(effectiveEditable)
 
         // Parse into EventSeries
         val series = ICalParser.parseEventSeries(
             icsString = icsString,
-            calendarSourceId = editable.calendarSourceId,
+            calendarSourceId = effectiveEditable.calendarSourceId,
             etag = "",
             serverUrl = "",
         ).copy(isLocal = true)
@@ -66,22 +104,22 @@ class CalendarRepositoryImpl @Inject constructor(
         eventDao.upsertSeries(series.toEntity())
         events.forEach { eventDao.upsertEvent(it.toEntity()) }
 
-        // Get calendar URL for sync
-        val source = calendarDao.getById(editable.calendarSourceId)
-
         // Schedule alarms
-        if (editable.alarms.isNotEmpty()) {
+        if (effectiveEditable.alarms.isNotEmpty()) {
             events.forEach { event ->
                 alarmScheduler.scheduleForEvent(
                     uid = event.uid, instanceStart = event.instanceStart,
-                    alarmMins = editable.alarms, title = event.title, location = event.location,
+                    alarmMins = effectiveEditable.alarms, title = event.title, location = event.location,
                 )
             }
         }
 
         // Enqueue for sync (only if calendar source exists)
-        if (source == null) return 0L
-        return syncQueueDao.enqueue(
+        if (source == null) {
+            Timber.w("createEvent: no remote calendar source available — event stays local")
+            return 0L
+        }
+        val queueId = syncQueueDao.enqueue(
             SyncQueueEntity(
                 accountId = source.accountId,
                 calendarUrl = source.calDavUrl,
@@ -90,6 +128,8 @@ class CalendarRepositoryImpl @Inject constructor(
                 icsPayload = icsString,
             ),
         )
+        kickDrain()
+        return queueId
     }
 
     override suspend fun updateEvent(uid: String, editable: EditableEvent, scope: EditScope) {
@@ -144,6 +184,7 @@ class CalendarRepositoryImpl @Inject constructor(
                 icsPayload = icsString,
             ),
         )
+        kickDrain()
     }
 
     override suspend fun deleteEvent(uid: String, scope: EditScope) {
@@ -163,5 +204,6 @@ class CalendarRepositoryImpl @Inject constructor(
                 operation = SyncOp.DELETE.name,
             ),
         )
+        kickDrain()
     }
 }

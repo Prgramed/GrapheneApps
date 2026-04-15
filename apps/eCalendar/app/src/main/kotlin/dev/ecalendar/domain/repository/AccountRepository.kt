@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.Flow
 interface AccountRepository {
     fun observeAccounts(): Flow<List<CalendarAccount>>
     suspend fun addAccount(account: CalendarAccount, password: String): DiscoveryResult
+    /** Update an existing account's fields + password. Re-runs discovery to refresh calendars. */
+    suspend fun updateAccount(account: CalendarAccount, password: String): DiscoveryResult
     suspend fun deleteAccount(id: Long)
     suspend fun getById(id: Long): CalendarAccount?
 }

@@ -68,12 +68,21 @@ class EventEditViewModel @Inject constructor(
                     initialEvent = edited
                 }
             } else {
-                // New event — pre-fill defaults
+                // New event — pre-fill defaults. If no default calendar is set
+                // yet (legacy state), fall back to the first writable remote
+                // calendar so the event is sync-queued instead of trapped local.
                 val startMs = roundToNextHour(prefillStartMillis)
+                val effectiveDefault = if (prefs.defaultCalendarSourceId > 0) {
+                    prefs.defaultCalendarSourceId
+                } else {
+                    calendarRepository.observeCalendars().first()
+                        .firstOrNull { !it.isReadOnly && !it.isMirror }?.id
+                        ?: 0L
+                }
                 val newEvent = EditableEvent(
                     startMillis = startMs,
                     endMillis = startMs + 3_600_000,
-                    calendarSourceId = prefs.defaultCalendarSourceId,
+                    calendarSourceId = effectiveDefault,
                     alarms = listOf(prefs.defaultReminderMins),
                 )
                 _event.value = newEvent

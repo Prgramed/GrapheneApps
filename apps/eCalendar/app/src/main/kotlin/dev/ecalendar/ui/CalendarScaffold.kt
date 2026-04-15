@@ -74,6 +74,21 @@ fun CalendarScaffold(
 ) {
     val navController = rememberNavController()
 
+    // Surface sync errors as a toast — otherwise they're buried in logcat and
+    // the user has no feedback when a sync fails.
+    val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(syncState) {
+        val s = syncState
+        if (s is dev.ecalendar.sync.SyncState.Error) {
+            android.widget.Toast.makeText(
+                context,
+                "Sync failed: ${s.message}",
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
     // Handle incoming ICS intent
     if (pendingIcsContent != null) {
         val icsContent by pendingIcsContent.collectAsStateWithLifecycle()
@@ -157,10 +172,26 @@ fun CalendarScaffold(
                 viewModel = accountsViewModel,
                 onDismiss = { navController.popBackStack() },
                 onAddAccount = { navController.navigate("accounts/setup") },
+                onEditAccount = { accountId -> navController.navigate("accounts/edit/$accountId") },
             )
         }
 
         composable("accounts/setup") {
+            val setupViewModel: AccountSetupViewModel = hiltViewModel()
+            AccountSetupScreen(
+                viewModel = setupViewModel,
+                onDismiss = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            "accounts/edit/{accountId}",
+            arguments = listOf(
+                androidx.navigation.navArgument("accountId") {
+                    type = androidx.navigation.NavType.LongType
+                },
+            ),
+        ) {
             val setupViewModel: AccountSetupViewModel = hiltViewModel()
             AccountSetupScreen(
                 viewModel = setupViewModel,

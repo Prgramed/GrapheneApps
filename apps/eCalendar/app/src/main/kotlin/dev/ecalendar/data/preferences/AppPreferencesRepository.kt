@@ -30,7 +30,9 @@ class AppPreferencesRepository @Inject constructor(
                 firstDayOfWeek = prefs[KEY_FIRST_DAY] ?: 1,
                 defaultReminderMins = prefs[KEY_DEFAULT_REMINDER] ?: 15,
                 notificationsEnabled = prefs[KEY_NOTIFICATIONS] ?: true,
-                syncIntervalHours = prefs[KEY_SYNC_INTERVAL] ?: 1,
+                syncIntervalMinutes = prefs[KEY_SYNC_INTERVAL_MINUTES]
+                    ?: prefs[KEY_SYNC_INTERVAL]?.let { it * 60 } // migrate from legacy hours key
+                    ?: 60,
                 themeMode = prefs[KEY_THEME_MODE] ?: "system",
             )
         }
@@ -63,8 +65,11 @@ class AppPreferencesRepository @Inject constructor(
         dataStore.edit { it[KEY_NOTIFICATIONS] = enabled }
     }
 
-    suspend fun updateSyncInterval(hours: Int) {
-        dataStore.edit { it[KEY_SYNC_INTERVAL] = hours }
+    suspend fun updateSyncInterval(minutes: Int) {
+        dataStore.edit {
+            it[KEY_SYNC_INTERVAL_MINUTES] = minutes
+            it.remove(KEY_SYNC_INTERVAL) // drop legacy hours key once migrated
+        }
     }
 
     suspend fun updateThemeMode(mode: String) {
@@ -79,7 +84,8 @@ class AppPreferencesRepository @Inject constructor(
         private val KEY_FIRST_DAY = intPreferencesKey("first_day_of_week")
         private val KEY_DEFAULT_REMINDER = intPreferencesKey("default_reminder_mins")
         private val KEY_NOTIFICATIONS = booleanPreferencesKey("notifications_enabled")
-        private val KEY_SYNC_INTERVAL = intPreferencesKey("sync_interval_hours")
+        private val KEY_SYNC_INTERVAL = intPreferencesKey("sync_interval_hours") // legacy, read-only for migration
+        private val KEY_SYNC_INTERVAL_MINUTES = intPreferencesKey("sync_interval_minutes")
         private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
     }
 }

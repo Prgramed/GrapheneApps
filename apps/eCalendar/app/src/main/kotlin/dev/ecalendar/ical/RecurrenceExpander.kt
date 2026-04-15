@@ -112,7 +112,14 @@ object RecurrenceExpander {
         // Try DTEND first
         val dtEnd = event.getProperty<DtEnd>(Property.DTEND)
         if (dtEnd != null) {
-            return dtEnd.date.time - dtStart.date.time
+            val raw = dtEnd.date.time - dtStart.date.time
+            val isAllDay = dtStart.date !is DateTime
+            // Defensive: older app versions (and some third-party clients) emit
+            // DTEND == DTSTART for single-day all-day events, which violates
+            // RFC 5545 and makes the instance zero-length → invisible in the
+            // timeline query. Treat any non-positive duration on an all-day
+            // event as one full day.
+            return if (isAllDay && raw <= 0L) 24L * 60 * 60 * 1000 else raw
         }
 
         // Try DURATION — parse the value string directly

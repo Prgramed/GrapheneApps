@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Allow cleartext HTTP so self-hosted CalDAV on a LAN (typical Synology /
+  Nextcloud / self-signed setup without HTTPS on the LAN) works. Public
+  internet hosts still enforce HTTPS via the default base-config.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

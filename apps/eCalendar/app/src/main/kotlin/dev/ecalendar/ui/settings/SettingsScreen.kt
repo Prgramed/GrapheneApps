@@ -63,12 +63,15 @@ private val REMINDER_OPTIONS = listOf(
     1440 to "1 day",
 )
 
+// Values are in minutes. 15 is WorkManager's minimum periodic interval.
 private val SYNC_OPTIONS = listOf(
     0 to "Manual only",
-    1 to "Every hour",
-    2 to "Every 2 hours",
-    6 to "Every 6 hours",
-    24 to "Daily",
+    15 to "Every 15 minutes",
+    30 to "Every 30 minutes",
+    60 to "Every hour",
+    120 to "Every 2 hours",
+    360 to "Every 6 hours",
+    1440 to "Daily",
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -181,7 +184,8 @@ fun SettingsScreen(
             SectionHeader("Sync")
 
             var showSyncPicker by remember { mutableStateOf(false) }
-            val syncLabel = SYNC_OPTIONS.find { it.first == prefs.syncIntervalHours }?.second ?: "Every ${prefs.syncIntervalHours}h"
+            val syncLabel = SYNC_OPTIONS.find { it.first == prefs.syncIntervalMinutes }?.second
+                ?: "Every ${prefs.syncIntervalMinutes} min"
             Box {
                 SettingsRow(
                     label = "Sync interval",
@@ -189,11 +193,11 @@ fun SettingsScreen(
                     onClick = { showSyncPicker = true },
                 )
                 DropdownMenu(expanded = showSyncPicker, onDismissRequest = { showSyncPicker = false }) {
-                    SYNC_OPTIONS.forEach { (hours, label) ->
+                    SYNC_OPTIONS.forEach { (minutes, label) ->
                         DropdownMenuItem(
                             text = { Text(label) },
                             onClick = {
-                                viewModel.updateSyncInterval(hours)
+                                viewModel.updateSyncInterval(minutes)
                                 showSyncPicker = false
                             },
                         )

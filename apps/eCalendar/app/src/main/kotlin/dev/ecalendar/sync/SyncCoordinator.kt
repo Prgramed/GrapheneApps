@@ -12,8 +12,13 @@ import dev.ecalendar.data.db.dao.CalendarDao
 import dev.ecalendar.data.db.dao.EventDao
 import dev.ecalendar.data.db.entity.toDomain
 import dev.ecalendar.domain.model.AccountType
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,18 +54,36 @@ class SyncCoordinator @Inject constructor(
     // Per-account rate limiters for Zoho (persist across syncs within same session)
     private val zohoLimiters = mutableMapOf<Long, ZohoRateLimitInterceptor>()
 
-    suspend fun syncAll() {
+    // Application-lifetime scope for UI-initiated syncs. Using viewModelScope meant a
+    // sync got cancelled as soon as the user left the Settings screen mid-sync; here
+    // the sync survives navigation and finishes in the background.
+    private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var activeSyncJob: Job? = null
+
+    /** Fire-and-forget launch that survives the caller's ViewModel being cleared. */
+    fun launchSync(includeMirror: Boolean = true) {
+        // Coalesce: if a sync is already running, don't start another.
+        if (activeSyncJob?.isActive == true) return
+        activeSyncJob = syncScope.launch {
+            syncAll(includeMirror = includeMirror)
+        }
+    }
+
+    suspend fun syncAll(includeMirror: Boolean = true) {
         _syncState.value = SyncState.Syncing
         var errors = 0
+        val errorMessages = mutableListOf<String>()
 
         try {
             val accounts = accountDao.getEnabled().map { it.toDomain() }
             val icalAccounts = accounts.filter { it.type == AccountType.ICAL_SUBSCRIPTION }
             val caldavAccounts = accounts.filter { it.type != AccountType.ICAL_SUBSCRIPTION }
 
-            // Sync iCal subscriptions first (mirror to Synology before CalDAV sync reads them)
+            // Sync iCal subscriptions first (mirror to Synology before CalDAV sync reads them).
+            // Skipped on fast/pull-to-refresh syncs — the iCal mirror is slow (serial PUTs of
+            // every event) and the background SyncWorker handles it on its own cadence.
             val synoAccount = caldavAccounts.firstOrNull { it.type == AccountType.SYNOLOGY }
-            if (icalAccounts.isNotEmpty() && synoAccount != null) {
+            if (includeMirror && icalAccounts.isNotEmpty() && synoAccount != null) {
                 val synoPw = credentialStore.getPassword(synoAccount.id) ?: ""
                 val synoClient = CalDavClient(synoAccount.baseUrl, synoAccount.username, synoPw, baseOkHttpClient)
 
@@ -72,20 +95,34 @@ class SyncCoordinator @Inject constructor(
                     synoAccount.baseUrl
                 }
 
-                for (ical in icalAccounts) {
-                    try {
-                        ICalSubscriptionSyncer.sync(
-                            subscriptionUrl = ical.baseUrl,
-                            displayName = ical.displayName,
-                            synoAccountId = synoAccount.id,
-                            synoClient = synoClient,
-                            synoCalHomeUrl = synoHomeUrl,
-                            httpClient = baseOkHttpClient,
-                            calendarDao = calendarDao,
-                        )
-                    } catch (e: Exception) {
-                        errors++
-                        Timber.w(e, "iCal subscription sync failed for ${ical.displayName}")
+                // Parallelize iCal subscription syncs — each one downloads a
+                // potentially large ICS and PUTs dozens of events to Synology.
+                // Sequentially this dominates sync time; 3 in flight keeps it
+                // fast without hammering the server.
+                coroutineScope {
+                    val icalSemaphore = Semaphore(3)
+                    icalAccounts.map { ical ->
+                        async {
+                            icalSemaphore.withPermit {
+                                try {
+                                    ICalSubscriptionSyncer.sync(
+                                        subscriptionUrl = ical.baseUrl,
+                                        displayName = ical.displayName,
+                                        synoAccountId = synoAccount.id,
+                                        synoClient = synoClient,
+                                        synoCalHomeUrl = synoHomeUrl,
+                                        httpClient = baseOkHttpClient,
+                                        calendarDao = calendarDao,
+                                    )
+                                } catch (e: Exception) {
+                                    errors++
+                                    synchronized(errorMessages) {
+                                        errorMessages += "${ical.displayName}: ${e.message ?: e.javaClass.simpleName}"
+                                    }
+                                    Timber.w(e, "iCal subscription sync failed for ${ical.displayName}")
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -108,7 +145,10 @@ class SyncCoordinator @Inject constructor(
                                     CalDavSyncEngine.sync(client, source, eventDao, calendarDao)
                                 } catch (e: Exception) {
                                     errors++
-                                    Timber.w(e, "Sync failed for ${source.displayName}")
+                                    synchronized(errorMessages) {
+                                        errorMessages += "${source.displayName}: ${e.message ?: e.javaClass.simpleName}"
+                                    }
+                                    Timber.w(e, "Sync failed for ${source.displayName} (${source.calDavUrl})")
                                 }
                             }
                         }
@@ -139,7 +179,7 @@ class SyncCoordinator @Inject constructor(
             } catch (_: Exception) { }
 
             _syncState.value = if (errors > 0) {
-                SyncState.Error("$errors source(s) failed")
+                SyncState.Error(errorMessages.firstOrNull() ?: "$errors source(s) failed")
             } else {
                 SyncState.LastSyncedAt(System.currentTimeMillis())
             }

@@ -37,14 +37,24 @@ class SyncWorker @AssistedInject constructor(
     companion object {
         const val WORK_NAME = "ecalendar_sync"
 
-        fun schedule(context: Context, intervalHours: Int = 6) {
+        /**
+         * Schedules the periodic sync. Interval is clamped to 15 minutes (WorkManager's
+         * minimum periodic interval). Pass 0 or negative to cancel.
+         */
+        fun schedule(context: Context, intervalMinutes: Int = 60) {
+            if (intervalMinutes <= 0) {
+                WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+                return
+            }
+            val clamped = intervalMinutes.coerceAtLeast(15)
+
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .setRequiresBatteryNotLow(true)
                 .build()
 
             val request = PeriodicWorkRequestBuilder<SyncWorker>(
-                intervalHours.toLong(), TimeUnit.HOURS,
+                clamped.toLong(), TimeUnit.MINUTES,
             )
                 .setConstraints(constraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.MINUTES)

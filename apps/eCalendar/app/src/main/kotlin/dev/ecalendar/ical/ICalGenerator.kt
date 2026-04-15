@@ -26,6 +26,9 @@ import net.fortuna.ical4j.model.DateTime
 import net.fortuna.ical4j.model.Dur
 import java.io.StringReader
 import java.net.URI
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.UUID
 
 object ICalGenerator {
@@ -55,8 +58,9 @@ object ICalGenerator {
         sb.appendLine("DTSTAMP:${formatDateTime(System.currentTimeMillis())}")
 
         if (event.isAllDay) {
-            sb.appendLine("DTSTART;VALUE=DATE:${formatDate(event.startMillis)}")
-            sb.appendLine("DTEND;VALUE=DATE:${formatDate(event.endMillis)}")
+            val (startDate, endDateExclusive) = allDayRange(event.startMillis, event.endMillis)
+            sb.appendLine("DTSTART;VALUE=DATE:${formatLocalDate(startDate)}")
+            sb.appendLine("DTEND;VALUE=DATE:${formatLocalDate(endDateExclusive)}")
         } else {
             sb.appendLine("DTSTART:${formatDateTime(event.startMillis)}")
             sb.appendLine("DTEND:${formatDateTime(event.endMillis)}")
@@ -100,8 +104,11 @@ object ICalGenerator {
         replaceProperty(vevent, DtStamp(DateTime(System.currentTimeMillis())))
 
         if (event.isAllDay) {
-            replaceProperty(vevent, DtStart(net.fortuna.ical4j.model.Date(event.startMillis)))
-            replaceProperty(vevent, DtEnd(net.fortuna.ical4j.model.Date(event.endMillis)))
+            val (startDate, endDateExclusive) = allDayRange(event.startMillis, event.endMillis)
+            // net.fortuna.ical4j.model.Date(yyyymmdd string) is the safest
+            // way to construct a DATE-only value (no time component) per RFC 5545.
+            replaceProperty(vevent, DtStart(net.fortuna.ical4j.model.Date(formatLocalDate(startDate))))
+            replaceProperty(vevent, DtEnd(net.fortuna.ical4j.model.Date(formatLocalDate(endDateExclusive))))
         } else {
             replaceProperty(vevent, DtStart(DateTime(event.startMillis)))
             replaceProperty(vevent, DtEnd(DateTime(event.endMillis)))
@@ -164,6 +171,28 @@ object ICalGenerator {
     private fun formatDate(millis: Long): String {
         val sdf = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
         return sdf.format(java.util.Date(millis))
+    }
+
+    private fun formatLocalDate(date: LocalDate): String =
+        "%04d%02d%02d".format(date.year, date.monthValue, date.dayOfMonth)
+
+    /**
+     * Normalizes an all-day event's raw start/end millis (which may share the
+     * same date, or have drifted) into an RFC 5545-compliant DATE range:
+     *   - DTSTART = start date (inclusive)
+     *   - DTEND   = day AFTER the last day of the event (exclusive)
+     *
+     * Without this, single-day all-day events emit DTEND == DTSTART, which
+     * strict CalDAV servers reject on PUT and which makes the recurrence
+     * expander produce zero-duration instances that never appear in the
+     * timeline's `instanceEnd > :start` query.
+     */
+    private fun allDayRange(startMillis: Long, endMillis: Long): Pair<LocalDate, LocalDate> {
+        val zone = ZoneId.systemDefault()
+        val startDate = LocalDate.ofInstant(Instant.ofEpochMilli(startMillis), zone)
+        val endDateRaw = LocalDate.ofInstant(Instant.ofEpochMilli(endMillis), zone)
+        val lastDay = if (endDateRaw.isAfter(startDate)) endDateRaw else startDate
+        return startDate to lastDay.plusDays(1)
     }
 
     private fun escapeIcal(text: String): String =

@@ -125,14 +125,23 @@ object CalDavSyncEngine {
         eventDao: EventDao,
         calendarDao: CalendarDao,
     ) {
-        // Fetch server CTAG to decide if sync is needed
+        // Fetch server CTAG to decide if sync is needed.
         val serverCtag = fetchCtag(client, source.calDavUrl)
-        if (serverCtag != null && serverCtag == source.ctag) {
+
+        // If we think we're up to date but have zero events for this source
+        // locally, don't trust the ctag match — a previous sync may have
+        // written the ctag without actually pulling events (e.g. REPORT
+        // returned non-XML and was silently dropped). Force a full sync to
+        // recover instead of being stuck empty forever.
+        val localCount = try { eventDao.countSeriesForSource(source.id) } catch (_: Exception) { -1 }
+        val trustCtag = serverCtag != null && serverCtag == source.ctag && localCount > 0
+
+        if (trustCtag) {
             Timber.d("sync: CTAG unchanged for ${source.displayName}, skipping")
             return
         }
 
-        if (source.ctag != null) {
+        if (source.ctag != null && localCount > 0) {
             quickSync(client, source, eventDao, calendarDao, serverCtag)
         } else {
             fullSync(client, source, eventDao, calendarDao, serverCtag)

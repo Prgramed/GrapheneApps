@@ -51,4 +51,7 @@ interface EventDao {
 
     @Query("SELECT * FROM calendar_events WHERE instanceStart > :start AND instanceStart < :end AND isCancelled = 0 ORDER BY instanceStart")
     suspend fun getFutureEvents(start: Long, end: Long): List<CalendarEventEntity>
+
+    @Query("SELECT COUNT(*) FROM event_series WHERE calendarSourceId = :calendarSourceId")
+    suspend fun countSeriesForSource(calendarSourceId: Long): Int
 }

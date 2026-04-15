@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.ecalendar.domain.model.CalendarEvent
 import dev.ecalendar.sync.SyncState
 import dev.ecalendar.ui.CalendarViewModel
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import dev.ecalendar.ui.components.CalendarHeader
 import dev.ecalendar.ui.components.EventChip
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -136,27 +137,33 @@ fun MonthScreen(
         Spacer(Modifier.height(4.dp))
 
         // Month pages
-        HorizontalPager(
-            state = pagerState,
+        PullToRefreshBox(
+            isRefreshing = syncState is SyncState.Syncing,
+            onRefresh = { viewModel.syncNow() },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-        ) { page ->
-            val offset = page - INITIAL_PAGE
-            val month = baseMonth.plusMonths(offset.toLong())
-            MonthGrid(
-                month = month,
-                activeDate = activeDate,
-                today = today,
-                viewModel = viewModel,
-                onDayClick = { date ->
-                    if (date == activeDate) {
-                        onDayClick(date)
-                    } else {
-                        viewModel.navigate(date)
-                    }
-                },
-            )
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                val offset = page - INITIAL_PAGE
+                val month = baseMonth.plusMonths(offset.toLong())
+                MonthGrid(
+                    month = month,
+                    activeDate = activeDate,
+                    today = today,
+                    viewModel = viewModel,
+                    onDayClick = { date ->
+                        if (date == activeDate) {
+                            onDayClick(date)
+                        } else {
+                            viewModel.navigate(date)
+                        }
+                    },
+                )
+            }
         }
     }
 }
