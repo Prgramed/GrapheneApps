@@ -65,7 +65,7 @@ interface ImmichPhotoService {
     @GET("/api/assets/{id}/video/playback")
     suspend fun streamVideo(@Path("id") id: String): ResponseBody
 
-    @DELETE("/api/assets")
+    @retrofit2.http.HTTP(method = "DELETE", path = "/api/assets", hasBody = true)
     suspend fun deleteAssets(@Body body: kotlinx.serialization.json.JsonObject): Unit
 
     // --- Albums ---

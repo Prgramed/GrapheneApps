@@ -113,6 +113,14 @@ class SyncLibraryUseCase @Inject constructor(
                 timber.log.Timber.w(e, "Sync playlists failed")
             }
 
+            emit(SyncProgress(stage = "Syncing starred items…"))
+            try {
+                libraryRepository.syncStarred()
+            } catch (e: Exception) {
+                errors++
+                timber.log.Timber.w(e, "Sync starred failed")
+            }
+
             preferencesRepository.setLastSyncMs(System.currentTimeMillis())
             val statusMsg = if (errors > 0) "Sync completed with $errors errors" else "Library sync complete"
             val done = SyncProgress(stage = statusMsg, done = true)

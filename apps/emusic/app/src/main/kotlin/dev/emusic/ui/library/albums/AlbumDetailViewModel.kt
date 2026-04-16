@@ -161,6 +161,18 @@ class AlbumDetailViewModel @Inject constructor(
         }
     }
 
+    fun toggleAlbumStar() {
+        viewModelScope.launch {
+            val current = _album.value ?: return@launch
+            if (current.starred) {
+                libraryRepository.unstarAlbum(current.id)
+            } else {
+                libraryRepository.starAlbum(current.id)
+            }
+            _album.value = libraryRepository.getAlbum(albumId)
+        }
+    }
+
     fun rateTrack(trackId: String, rating: Int) {
         viewModelScope.launch {
             libraryRepository.setRating(trackId, rating)

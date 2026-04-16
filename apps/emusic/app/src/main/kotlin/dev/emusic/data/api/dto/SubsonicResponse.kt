@@ -31,6 +31,7 @@ data class SubsonicResponse(
     val lyrics: LyricsDto? = null,
     val artistInfo2: ArtistInfoDto? = null,
     val albumInfo: AlbumInfoDto? = null,
+    val playQueue: PlayQueueDto? = null,
 ) {
     val isOk: Boolean get() = status == "ok"
 }
@@ -249,4 +250,15 @@ data class AlbumInfoDto(
     val smallImageUrl: String? = null,
     val mediumImageUrl: String? = null,
     val largeImageUrl: String? = null,
+)
+
+// --- Play Queue ---
+
+@Serializable
+data class PlayQueueDto(
+    val entry: List<TrackDto> = emptyList(),
+    val current: String? = null,
+    val position: Long? = null,
+    val changed: String? = null,
+    val changedBy: String? = null,
 )

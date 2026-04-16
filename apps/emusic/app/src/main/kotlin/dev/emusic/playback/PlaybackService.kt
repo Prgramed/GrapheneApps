@@ -50,6 +50,7 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var browseTree: BrowseTree
     @Inject lateinit var urlBuilder: dev.emusic.data.api.SubsonicUrlBuilder
     @Inject lateinit var trackDaoForBrowse: dev.emusic.data.db.dao.TrackDao
+    @Inject lateinit var subsonicApi: dev.emusic.data.api.SubsonicApiService
 
     private val _radioStreamState = kotlinx.coroutines.flow.MutableStateFlow<RadioStreamState>(RadioStreamState.Idle)
     val radioStreamState: kotlinx.coroutines.flow.StateFlow<RadioStreamState> = _radioStreamState
@@ -159,6 +160,11 @@ class PlaybackService : MediaLibraryService() {
                     castManager.onTrackChanged(castTrack)
                 }
 
+                // Save play queue to server (debounced)
+                if (!queueManager.isLiveStream.value) {
+                    queueManager.saveToServer(subsonicApi, exoPlayer.currentPosition)
+                }
+
                 // Check sleep timer "stop after track"
                 if (sleepTimerManager.checkStopAfterTrack()) return
 
@@ -172,6 +178,10 @@ class PlaybackService : MediaLibraryService() {
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                // Save queue to server on pause
+                if (!isPlaying && !queueManager.isLiveStream.value) {
+                    queueManager.saveToServer(subsonicApi, exoPlayer.currentPosition)
+                }
                 if (isPlaying && queueManager.isLiveStream.value) {
                     radioRetryCount = 0
                     radioNowPlayingBridge.onStreamRecovered()
@@ -265,6 +275,11 @@ class PlaybackService : MediaLibraryService() {
 
         // Widget + auto-stop: event-driven via player listener (added below)
         // widgetJob and autoStopJob managed in onIsPlayingChanged listener
+
+        // Try to restore queue from server if local queue is empty
+        serviceScope.launch {
+            queueManager.restoreFromServer(subsonicApi)
+        }
 
         // Load queue into player — version-based to avoid race conditions
         serviceScope.launch {

@@ -132,6 +132,18 @@ interface SubsonicApiService {
         @Query("rating") rating: Int,
     ): SubsonicResponseWrapper
 
+    // --- Play Queue ---
+
+    @GET("rest/savePlayQueue")
+    suspend fun savePlayQueue(
+        @Query("id") ids: List<String>,
+        @Query("current") current: String,
+        @Query("position") position: Long,
+    ): SubsonicResponseWrapper
+
+    @GET("rest/getPlayQueue")
+    suspend fun getPlayQueue(): SubsonicResponseWrapper
+
     // --- Info ---
 
     @GET("rest/getArtistInfo2")

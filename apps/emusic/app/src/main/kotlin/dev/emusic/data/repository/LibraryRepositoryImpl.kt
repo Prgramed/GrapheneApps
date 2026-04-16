@@ -264,6 +264,45 @@ class LibraryRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun starAlbum(id: String) {
+        albumDao.updateStarred(id, true)
+        try { api.star(albumId = id) } catch (_: Exception) { albumDao.updateStarred(id, false) }
+    }
+
+    override suspend fun unstarAlbum(id: String) {
+        albumDao.updateStarred(id, false)
+        try { api.unstar(albumId = id) } catch (_: Exception) { albumDao.updateStarred(id, true) }
+    }
+
+    override suspend fun starArtist(id: String) {
+        artistDao.updateStarred(id, true)
+        try { api.star(artistId = id) } catch (_: Exception) { artistDao.updateStarred(id, false) }
+    }
+
+    override suspend fun unstarArtist(id: String) {
+        artistDao.updateStarred(id, false)
+        try { api.unstar(artistId = id) } catch (_: Exception) { artistDao.updateStarred(id, true) }
+    }
+
+    override suspend fun syncStarred() {
+        try {
+            val response = api.getStarred2()
+            val starred = response.subsonicResponse.starred2 ?: return
+            for (track in starred.song) {
+                val id = track.id ?: continue
+                trackDao.updateStarred(id, true)
+            }
+            for (album in starred.album) {
+                val id = album.id ?: continue
+                albumDao.updateStarred(id, true)
+            }
+            for (artist in starred.artist) {
+                val id = artist.id ?: continue
+                artistDao.updateStarred(id, true)
+            }
+        } catch (_: Exception) { }
+    }
+
     // --- Rating ---
 
     override suspend fun setRating(id: String, rating: Int) {

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import dev.emusic.data.api.toDomain as dtoToDomain
 import dev.emusic.data.db.dao.TrackDao
 import dev.emusic.data.db.entity.toDomain
 import dev.emusic.domain.model.QueueItem
@@ -196,6 +197,40 @@ class QueueManager @Inject constructor(
     /** True when queue was set by user action (play/shuffle), false when restored from DataStore. */
     @Volatile
     var isUserInitiated: Boolean = false
+
+    /** Save current queue to Navidrome server for cross-device resume. */
+    fun saveToServer(api: dev.emusic.data.api.SubsonicApiService, positionMs: Long) {
+        val tracks = _queue.value
+        val index = _currentIndex.value
+        if (tracks.isEmpty() || index < 0) return
+        val currentTrackId = tracks.getOrNull(index)?.id ?: return
+        val ids = tracks.map { it.id }
+        saveServerJob?.cancel()
+        saveServerJob = scope.launch {
+            delay(5000) // debounce — don't spam server
+            try {
+                api.savePlayQueue(ids, currentTrackId, positionMs)
+            } catch (_: Exception) { }
+        }
+    }
+
+    private var saveServerJob: kotlinx.coroutines.Job? = null
+
+    /** Restore queue from Navidrome server (cold start, empty local queue). */
+    suspend fun restoreFromServer(api: dev.emusic.data.api.SubsonicApiService) {
+        if (_queue.value.isNotEmpty()) return // local queue exists, don't overwrite
+        try {
+            val response = api.getPlayQueue()
+            val pq = response.subsonicResponse.playQueue ?: return
+            val tracks = pq.entry.map { it.dtoToDomain() }
+            if (tracks.isEmpty()) return
+            val currentId = pq.current
+            val index = if (currentId != null) tracks.indexOfFirst { it.id == currentId }.coerceAtLeast(0) else 0
+            restoredPositionMs = pq.position ?: 0L
+            _queue.value = tracks
+            _currentIndex.value = index
+        } catch (_: Exception) { }
+    }
 
     var restoredShuffle: Boolean = false
         private set

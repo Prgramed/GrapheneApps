@@ -36,6 +36,11 @@ interface LibraryRepository {
     // Star (optimistic Room update + API)
     suspend fun starTrack(id: String)
     suspend fun unstarTrack(id: String)
+    suspend fun starAlbum(id: String)
+    suspend fun unstarAlbum(id: String)
+    suspend fun starArtist(id: String)
+    suspend fun unstarArtist(id: String)
+    suspend fun syncStarred()
 
     // Rating
     suspend fun setRating(id: String, rating: Int)

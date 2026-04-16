@@ -39,4 +39,7 @@ interface ArtistDao {
 
     @Query("SELECT * FROM artists ORDER BY name COLLATE NOCASE")
     suspend fun getAllSorted(): List<ArtistEntity>
+
+    @Query("UPDATE artists SET starred = :starred WHERE id = :id")
+    suspend fun updateStarred(id: String, starred: Boolean)
 }
