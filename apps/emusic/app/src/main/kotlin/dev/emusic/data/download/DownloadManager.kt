@@ -2,6 +2,7 @@ package dev.emusic.data.download
 
 import android.content.Context
 import android.os.StatFs
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
@@ -9,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import java.util.concurrent.TimeUnit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.emusic.data.preferences.AppPreferencesRepository
 import dev.emusic.domain.model.DownloadState
@@ -59,6 +61,10 @@ class DownloadManager @Inject constructor(
                 ),
             )
             .setConstraints(constraints)
+            // Exponential backoff (30s, 60s, 120s) so a server outage doesn't
+            // make the worker re-fire immediately on each failure and saturate
+            // the download HTTP client's connection pool.
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .addTag("download")
             .addTag(track.id)
             .addTag("album_${track.albumId}")

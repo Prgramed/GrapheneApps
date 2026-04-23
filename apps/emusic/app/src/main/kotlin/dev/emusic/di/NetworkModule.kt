@@ -20,10 +20,20 @@ import retrofit2.Retrofit
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
+import javax.inject.Qualifier
 import javax.inject.Singleton
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
+
+/**
+ * Marks the dedicated OkHttpClient used by DownloadWorker. Keeps download
+ * traffic off the shared metadata/streaming connection pool so a stuck or
+ * retrying download can't starve other requests.
+ */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class DownloadHttpClient
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -63,8 +73,42 @@ object NetworkModule {
             .hostnameVerifier { _, _ -> true }
             .addInterceptor(authInterceptor)
             .cache(cache)
-            .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
+            // Bumped 5 → 8 so burst metadata + scrobble + queue-save calls
+            // don't fight each other when several screens hit the API at once.
+            .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
             .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
+     * Dedicated client for DownloadWorker. A separate connection pool means a
+     * stuck download (e.g. server unreachable, retries piled up) can't drain
+     * the connection pool used by Subsonic API calls and freeze playback /
+     * playlist UI. Short connect timeout + short keep-alive so failed connects
+     * don't sit on resources.
+     */
+    @Provides
+    @Singleton
+    @DownloadHttpClient
+    fun provideDownloadOkHttpClient(
+        authInterceptor: SubsonicAuthInterceptor,
+    ): OkHttpClient {
+        val trustManager = object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+        }
+        val sslContext = SSLContext.getInstance("TLS").apply {
+            init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
+        }
+        return OkHttpClient.Builder()
+            .sslSocketFactory(sslContext.socketFactory, trustManager)
+            .hostnameVerifier { _, _ -> true }
+            .addInterceptor(authInterceptor)
+            .connectionPool(ConnectionPool(4, 1, TimeUnit.MINUTES))
+            .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()

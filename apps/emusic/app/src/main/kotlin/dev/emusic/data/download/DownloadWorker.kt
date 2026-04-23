@@ -12,6 +12,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import dev.emusic.data.api.SubsonicUrlBuilder
 import dev.emusic.data.db.dao.TrackDao
+import dev.emusic.di.DownloadHttpClient
 import dev.emusic.playback.NotificationHelper
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -22,7 +23,7 @@ import java.io.FileOutputStream
 class DownloadWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
-    private val okHttpClient: OkHttpClient,
+    @DownloadHttpClient private val okHttpClient: OkHttpClient,
     private val trackDao: TrackDao,
     private val urlBuilder: SubsonicUrlBuilder,
 ) : CoroutineWorker(appContext, params) {

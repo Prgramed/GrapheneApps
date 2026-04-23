@@ -151,11 +151,13 @@ class NowPlayingViewModel @Inject constructor(
             }
         }
 
-        // Position polling — only active when playing or casting
+        // Position polling — keep advancing whenever user intent is "play" (even
+        // during brief buffering between tracks), so the UI clock and play/pause
+        // icon don't flicker off during skips.
         viewModelScope.launch {
             while (true) {
                 val mc = controller
-                if (mc != null && (mc.isPlaying || castManager.isCasting)) {
+                if (mc != null && (mc.uiIsPlaying() || castManager.isCasting)) {
                     _uiState.update {
                         it.copy(
                             positionMs = mc.currentPosition,
@@ -177,8 +179,25 @@ class NowPlayingViewModel @Inject constructor(
             val mc = controller ?: return
             _uiState.update {
                 it.copy(
-                    isPlaying = isPlaying,
+                    isPlaying = mc.uiIsPlaying(),
                     positionMs = mc.currentPosition,
+                    durationMs = mc.duration.coerceAtLeast(0),
+                )
+            }
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (castManager.isCasting) return
+            val mc = controller ?: return
+            _uiState.update { it.copy(isPlaying = mc.uiIsPlaying()) }
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (castManager.isCasting) return
+            val mc = controller ?: return
+            _uiState.update {
+                it.copy(
+                    isPlaying = mc.uiIsPlaying(),
                     durationMs = mc.duration.coerceAtLeast(0),
                 )
             }
@@ -214,7 +233,10 @@ class NowPlayingViewModel @Inject constructor(
     private fun syncStateFromPlayer(mc: MediaController) {
         _uiState.update {
             it.copy(
-                isPlaying = mc.isPlaying,
+                // Use playWhenReady-derived state instead of mc.isPlaying so we
+                // don't show the "paused" icon during brief buffering between
+                // tracks when the user just hit next.
+                isPlaying = mc.uiIsPlaying(),
                 positionMs = mc.currentPosition,
                 durationMs = mc.duration.coerceAtLeast(0),
                 shuffleEnabled = mc.shuffleModeEnabled,
@@ -222,6 +244,17 @@ class NowPlayingViewModel @Inject constructor(
             )
         }
     }
+
+    /**
+     * UI play/pause icon should reflect user intent, not moment-to-moment audio
+     * output. Media3's `isPlaying` goes false during buffering between tracks,
+     * which causes the toggle to flip between play/pause during fast skip-next
+     * sequences. `playWhenReady` + non-terminal state is the correct signal.
+     */
+    private fun MediaController.uiIsPlaying(): Boolean =
+        playWhenReady &&
+            playbackState != Player.STATE_ENDED &&
+            playbackState != Player.STATE_IDLE
 
     fun retryRadio() {
         val station = radioNowPlayingBridge.currentStation.value ?: return
