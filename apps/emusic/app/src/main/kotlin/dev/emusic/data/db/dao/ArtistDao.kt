@@ -22,6 +22,9 @@ interface ArtistDao {
     @Query("SELECT * FROM artists ORDER BY name COLLATE NOCASE")
     fun pagingAll(): PagingSource<Int, ArtistEntity>
 
+    @Query("SELECT * FROM artists ORDER BY albumCount DESC, name COLLATE NOCASE")
+    fun pagingByAlbumCount(): PagingSource<Int, ArtistEntity>
+
     @Query("DELETE FROM artists WHERE id = :id")
     suspend fun deleteById(id: String)
 
@@ -42,4 +45,8 @@ interface ArtistDao {
 
     @Query("UPDATE artists SET starred = :starred WHERE id = :id")
     suspend fun updateStarred(id: String, starred: Boolean)
+
+    /** Clear starred flag on artists NOT in the server's starred list (two-way star sync). */
+    @Query("UPDATE artists SET starred = 0 WHERE starred = 1 AND id NOT IN (:serverStarredIds)")
+    suspend fun clearStarredNotIn(serverStarredIds: List<String>): Int
 }

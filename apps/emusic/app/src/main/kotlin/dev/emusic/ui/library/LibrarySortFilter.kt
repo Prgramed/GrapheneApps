@@ -8,6 +8,18 @@ enum class AlbumSort(val label: String) {
     RANDOM("Random"),
 }
 
+enum class ArtistSort(val label: String) {
+    NAME("Name A-Z"),
+    ALBUM_COUNT("Most Albums"),
+}
+
+enum class TrackSort(val label: String) {
+    TITLE("Title A-Z"),
+    ARTIST("Artist"),
+    ALBUM("Album"),
+    DURATION("Duration"),
+}
+
 data class LibraryFilter(
     val genres: Set<String> = emptySet(),
     val decades: Set<String> = emptySet(),

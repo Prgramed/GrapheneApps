@@ -18,11 +18,16 @@ interface LibraryRepository {
     suspend fun syncAlbumTracks(albumId: String)
     suspend fun syncAllTracks(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> })
 
+    /** Returns album IDs where server-reported songCount differs from local track count. */
+    suspend fun findStaleAlbums(): List<String>
+
     // Observe (Room → Domain)
     fun observeArtists(): Flow<PagingData<Artist>>
+    fun observeArtistsSorted(sort: String): Flow<PagingData<Artist>>
     fun observeAlbums(): Flow<PagingData<Album>>
     fun observeAlbumsSorted(sortSql: String, filterWhere: String): Flow<PagingData<Album>>
     fun observeAllTracks(): Flow<PagingData<Track>>
+    fun observeTracksSorted(sort: String): Flow<PagingData<Track>>
     fun observeAlbumsByArtist(artistId: String): Flow<List<Album>>
     fun observeAlbumsByGenre(genre: String): Flow<List<Album>>
     fun observeTracksByAlbum(albumId: String): Flow<List<Track>>

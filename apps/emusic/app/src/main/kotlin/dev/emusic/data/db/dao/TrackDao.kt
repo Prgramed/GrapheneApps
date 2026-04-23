@@ -25,6 +25,15 @@ interface TrackDao {
     @Query("SELECT * FROM tracks ORDER BY title COLLATE NOCASE")
     fun pagingAll(): PagingSource<Int, TrackEntity>
 
+    @Query("SELECT * FROM tracks ORDER BY artist COLLATE NOCASE, title COLLATE NOCASE")
+    fun pagingByArtist(): PagingSource<Int, TrackEntity>
+
+    @Query("SELECT * FROM tracks ORDER BY album COLLATE NOCASE, discNumber, trackNumber")
+    fun pagingByAlbum(): PagingSource<Int, TrackEntity>
+
+    @Query("SELECT * FROM tracks ORDER BY duration DESC")
+    fun pagingByDuration(): PagingSource<Int, TrackEntity>
+
     @Query("SELECT * FROM tracks WHERE starred = 1 ORDER BY title COLLATE NOCASE")
     fun observeStarred(): Flow<List<TrackEntity>>
 
@@ -111,7 +120,24 @@ interface TrackDao {
         AND artistId != ''
     """)
     suspend fun getTrackOnlyArtists(): List<TrackArtistRef>
+
+    /** Delete tracks in an album whose IDs are NOT in the server's response. */
+    @Query("DELETE FROM tracks WHERE albumId = :albumId AND id NOT IN (:keepIds)")
+    suspend fun deleteNotInAlbum(albumId: String, keepIds: List<String>): Int
+
+    /** Count tracks per album — used by incremental sync to detect server-side additions. */
+    @Query("SELECT albumId, COUNT(*) as cnt FROM tracks GROUP BY albumId")
+    suspend fun trackCountsByAlbum(): List<AlbumTrackCount>
+
+    /** Clear starred flag on tracks NOT in the server's starred list (two-way star sync). */
+    @Query("UPDATE tracks SET starred = 0 WHERE starred = 1 AND id NOT IN (:serverStarredIds)")
+    suspend fun clearStarredNotIn(serverStarredIds: List<String>): Int
 }
+
+data class AlbumTrackCount(
+    val albumId: String,
+    val cnt: Int,
+)
 
 data class TrackArtistRef(
     val artistId: String,

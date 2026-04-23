@@ -13,9 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -48,6 +51,8 @@ import dev.emusic.domain.repository.PlaylistRepository
 import dev.emusic.playback.QueueManager
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import javax.inject.Inject
 
 @HiltViewModel
@@ -141,7 +146,20 @@ fun QueueScreen(
         )
     }
 
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    val lazyListState = rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        // Offset by 1 for the header item
+        val fromIndex = from.index - 1
+        val toIndex = to.index - 1
+        if (fromIndex >= 0 && toIndex >= 0) {
+            viewModel.queueManager.moveItem(fromIndex, toIndex)
+        }
+    }
+
+    LazyColumn(
+        state = lazyListState,
+        modifier = Modifier.fillMaxSize(),
+    ) {
         item {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -155,6 +173,9 @@ fun QueueScreen(
                     modifier = Modifier.weight(1f),
                 )
                 if (queue.isNotEmpty()) {
+                    IconButton(onClick = { viewModel.queueManager.clear() }) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = "Clear queue")
+                    }
                     IconButton(onClick = { showSaveDialog = true }) {
                         Icon(Icons.Default.SaveAlt, contentDescription = "Save as playlist")
                     }
@@ -163,53 +184,72 @@ fun QueueScreen(
         }
 
         items(queue.size, key = { queue[it].track.id }) { index ->
-            val item = queue[index]
-            val isCurrentTrack = index == currentIndex
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .combinedClickable(
-                        onClick = { viewModel.playAtIndex(index) },
-                        onLongClick = { contextTrack = item.track },
-                    )
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                AsyncImage(
-                    model = viewModel.getCoverArtUrl(item.track.albumId),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(4.dp)),
-                )
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.track.title,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = if (isCurrentTrack) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isCurrentTrack) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = item.track.artist,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
-                IconButton(
-                    onClick = { viewModel.removeAtIndex(index) },
-                    modifier = Modifier.size(32.dp),
+            ReorderableItem(reorderableState, key = queue[index].track.id) { isDragging ->
+                val item = queue[index]
+                val isCurrentTrack = index == currentIndex
+                val elevation = if (isDragging) 4.dp else 0.dp
+                androidx.compose.material3.Surface(
+                    shadowElevation = elevation,
+                    tonalElevation = if (isDragging) 2.dp else 0.dp,
                 ) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Remove",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .combinedClickable(
+                                onClick = { viewModel.playAtIndex(index) },
+                                onLongClick = { contextTrack = item.track },
+                            )
+                            .padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                    ) {
+                        // Drag handle
+                        Icon(
+                            Icons.Default.DragHandle,
+                            contentDescription = "Reorder",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier
+                                .size(32.dp)
+                                .longPressDraggableHandle()
+                                .padding(4.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        AsyncImage(
+                            model = viewModel.getCoverArtUrl(item.track.albumId),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = item.track.title,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (isCurrentTrack) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isCurrentTrack) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = item.track.artist,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                        IconButton(
+                            onClick = { viewModel.removeAtIndex(index) },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Remove",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
         }

@@ -44,8 +44,14 @@ class LibraryViewModel @Inject constructor(
     private val artistDao: ArtistDao,
 ) : ViewModel() {
 
-    val artists: Flow<PagingData<Artist>> =
-        libraryRepository.observeArtists().cachedIn(viewModelScope)
+    private val _artistSort = MutableStateFlow(ArtistSort.NAME)
+    val artistSort: StateFlow<ArtistSort> = _artistSort.asStateFlow()
+
+    val artists: Flow<PagingData<Artist>> = _artistSort.flatMapLatest { sort ->
+        libraryRepository.observeArtistsSorted(sort.name)
+    }.cachedIn(viewModelScope)
+
+    fun setArtistSort(sort: ArtistSort) { _artistSort.value = sort }
 
     private val _trackCount = MutableStateFlow(0)
     val trackCount: StateFlow<Int> = _trackCount.asStateFlow()
@@ -93,6 +99,10 @@ class LibraryViewModel @Inject constructor(
             whereClauses.add("genre IN ($genreList)")
         }
         if (filter.starredOnly) whereClauses.add("starred = 1")
+        if (filter.downloadedOnly) {
+            // An album is "downloaded" if at least one of its tracks has a localPath.
+            whereClauses.add("id IN (SELECT DISTINCT albumId FROM tracks WHERE localPath IS NOT NULL)")
+        }
         if (filter.decades.isNotEmpty()) {
             val decadeConditions = filter.decades.map { decade ->
                 when (decade) {
@@ -110,8 +120,14 @@ class LibraryViewModel @Inject constructor(
         libraryRepository.observeAlbumsSorted(sortSql, filterWhere)
     }.cachedIn(viewModelScope)
 
-    val tracks: Flow<PagingData<Track>> =
-        libraryRepository.observeAllTracks().cachedIn(viewModelScope)
+    private val _trackSort = MutableStateFlow(TrackSort.TITLE)
+    val trackSort: StateFlow<TrackSort> = _trackSort.asStateFlow()
+
+    val tracks: Flow<PagingData<Track>> = _trackSort.flatMapLatest { sort ->
+        libraryRepository.observeTracksSorted(sort.name)
+    }.cachedIn(viewModelScope)
+
+    fun setTrackSort(sort: TrackSort) { _trackSort.value = sort }
 
     val syncProgress: StateFlow<SyncProgress?> = syncLibraryUseCase.progress
 

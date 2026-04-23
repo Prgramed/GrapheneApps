@@ -103,6 +103,25 @@ class SyncLibraryUseCase @Inject constructor(
                     errors++
                     timber.log.Timber.w(e, "Sync albums incremental failed")
                 }
+
+                // Detect tracks added/removed in existing albums by comparing
+                // the server-reported songCount against local track count per album.
+                // Without this, tracks added to known albums are invisible until
+                // a full resync.
+                emit(SyncProgress(stage = "Checking album freshness…"))
+                try {
+                    val staleAlbumIds = libraryRepository.findStaleAlbums()
+                    if (staleAlbumIds.isNotEmpty()) {
+                        emit(SyncProgress(stage = "${staleAlbumIds.size} albums changed — re-syncing…"))
+                        for (albumId in staleAlbumIds) {
+                            try {
+                                libraryRepository.syncAlbumTracks(albumId)
+                            } catch (_: Exception) { }
+                        }
+                    }
+                } catch (e: Exception) {
+                    timber.log.Timber.w(e, "Album freshness check failed")
+                }
             }
 
             emit(SyncProgress(stage = "Syncing playlists…"))

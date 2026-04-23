@@ -46,6 +46,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -117,9 +119,31 @@ fun AlbumDetailScreen(
     }
 
     val currentAlbum = album ?: return
+    var showFullScreenArt by remember { mutableStateOf(false) }
+
+    if (showFullScreenArt) {
+        Dialog(
+            onDismissRequest = { showFullScreenArt = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable { showFullScreenArt = false },
+                contentAlignment = Alignment.Center,
+            ) {
+                AsyncImage(
+                    model = currentAlbum.coverArtId?.let { viewModel.getCoverArtUrl(it, 1200) },
+                    contentDescription = currentAlbum.name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        // Header: album art
+        // Header: album art — tap to expand full-screen
         item {
             AsyncImage(
                 model = currentAlbum.coverArtId?.let { viewModel.getCoverArtUrl(it) },
@@ -127,7 +151,8 @@ fun AlbumDetailScreen(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(1f),
+                    .aspectRatio(1f)
+                    .clickable { showFullScreenArt = true },
             )
         }
 

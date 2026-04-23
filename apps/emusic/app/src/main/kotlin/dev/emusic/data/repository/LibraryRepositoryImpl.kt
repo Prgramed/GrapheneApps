@@ -114,6 +114,14 @@ class LibraryRepositoryImpl @Inject constructor(
             ?.map { it.toDomain().toEntity() }
             ?: return
         upsertPreservingLocalPath(tracks)
+        // Remove local tracks that are no longer in the server's album response
+        // (e.g. track deleted/moved on Navidrome). Without this, stale tracks
+        // accumulate and show in the UI but fail to play.
+        // Albums typically have <50 tracks, so no need to chunk the IN clause.
+        val serverTrackIds = tracks.map { it.id }
+        if (serverTrackIds.isNotEmpty()) {
+            trackDao.deleteNotInAlbum(albumId, serverTrackIds)
+        }
     }
 
     override suspend fun syncAllTracks(onProgress: (current: Int, total: Int) -> Unit) {
@@ -196,12 +204,34 @@ class LibraryRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun findStaleAlbums(): List<String> {
+        // Compare the server-reported trackCount (stored in albums table) to the
+        // actual local track count per album. Any mismatch means tracks were
+        // added or removed on the server since the last full sync.
+        val serverCounts = albumDao.getAllTrackCounts().associate { it.id to it.trackCount }
+        val localCounts = trackDao.trackCountsByAlbum().associate { it.albumId to it.cnt }
+        return serverCounts.filter { (albumId, expected) ->
+            val actual = localCounts[albumId] ?: 0
+            actual != expected
+        }.keys.toList()
+    }
+
     // --- Observe ---
 
     override fun observeArtists(): Flow<PagingData<Artist>> =
         Pager(config = DEFAULT_PAGING_CONFIG) { artistDao.pagingAll() }
             .flow
             .map { pagingData -> pagingData.map { it.toDomain() } }
+
+    override fun observeArtistsSorted(sort: String): Flow<PagingData<Artist>> {
+        val source = when (sort) {
+            "ALBUM_COUNT" -> { { artistDao.pagingByAlbumCount() } }
+            else -> { { artistDao.pagingAll() } }
+        }
+        return Pager(config = DEFAULT_PAGING_CONFIG, pagingSourceFactory = source)
+            .flow
+            .map { pagingData -> pagingData.map { it.toDomain() } }
+    }
 
     override fun observeAlbums(): Flow<PagingData<Album>> =
         Pager(config = DEFAULT_PAGING_CONFIG) { albumDao.pagingAll() }
@@ -220,6 +250,18 @@ class LibraryRepositoryImpl @Inject constructor(
         Pager(config = DEFAULT_PAGING_CONFIG) { trackDao.pagingAll() }
             .flow
             .map { pagingData -> pagingData.map { it.toDomain() } }
+
+    override fun observeTracksSorted(sort: String): Flow<PagingData<Track>> {
+        val source = when (sort) {
+            "ARTIST" -> { { trackDao.pagingByArtist() } }
+            "ALBUM" -> { { trackDao.pagingByAlbum() } }
+            "DURATION" -> { { trackDao.pagingByDuration() } }
+            else -> { { trackDao.pagingAll() } }
+        }
+        return Pager(config = DEFAULT_PAGING_CONFIG, pagingSourceFactory = source)
+            .flow
+            .map { pagingData -> pagingData.map { it.toDomain() } }
+    }
 
     override fun observeAlbumsByArtist(artistId: String): Flow<List<Album>> =
         albumDao.observeByArtist(artistId).map { list -> list.map { it.toDomain() } }
@@ -288,18 +330,33 @@ class LibraryRepositoryImpl @Inject constructor(
         try {
             val response = api.getStarred2()
             val starred = response.subsonicResponse.starred2 ?: return
+
+            // Mark server-starred items as starred locally
+            val starredTrackIds = mutableListOf<String>()
             for (track in starred.song) {
                 val id = track.id ?: continue
+                starredTrackIds.add(id)
                 trackDao.updateStarred(id, true)
             }
+            val starredAlbumIds = mutableListOf<String>()
             for (album in starred.album) {
                 val id = album.id ?: continue
+                starredAlbumIds.add(id)
                 albumDao.updateStarred(id, true)
             }
+            val starredArtistIds = mutableListOf<String>()
             for (artist in starred.artist) {
                 val id = artist.id ?: continue
+                starredArtistIds.add(id)
                 artistDao.updateStarred(id, true)
             }
+
+            // Two-way: clear starred flag on items NOT in the server's list.
+            // Without this, un-starring in Navidrome web stays starred in the app.
+            // Starred counts are typically small enough (<500) for a single IN clause.
+            trackDao.clearStarredNotIn(starredTrackIds)
+            albumDao.clearStarredNotIn(starredAlbumIds)
+            artistDao.clearStarredNotIn(starredArtistIds)
         } catch (_: Exception) { }
     }
 
@@ -329,6 +386,7 @@ class LibraryRepositoryImpl @Inject constructor(
     private val artistInfoCache = java.util.concurrent.ConcurrentHashMap<String, CachedInfo<ArtistInfo>>()
     private val albumInfoCache = java.util.concurrent.ConcurrentHashMap<String, CachedInfo<AlbumInfo>>()
     private val infoCacheTtl = 60L * 60 * 1000 // 1 hour
+    private val infoCacheMaxSize = 200 // prevent unbounded memory growth
 
     override suspend fun getArtistInfo(id: String): ArtistInfo? {
         val cached = artistInfoCache[id]
@@ -337,7 +395,10 @@ class LibraryRepositoryImpl @Inject constructor(
         }
         return try {
             val info = api.getArtistInfo2(id).subsonicResponse.artistInfo2?.toDomain()
-            if (info != null) artistInfoCache[id] = CachedInfo(info, System.currentTimeMillis())
+            if (info != null) {
+                if (artistInfoCache.size >= infoCacheMaxSize) artistInfoCache.clear()
+                artistInfoCache[id] = CachedInfo(info, System.currentTimeMillis())
+            }
             info
         } catch (_: Exception) {
             cached?.data // Return stale cache on error
@@ -351,7 +412,10 @@ class LibraryRepositoryImpl @Inject constructor(
         }
         return try {
             val info = api.getAlbumInfo2(id).subsonicResponse.albumInfo?.toDomain()
-            if (info != null) albumInfoCache[id] = CachedInfo(info, System.currentTimeMillis())
+            if (info != null) {
+                if (albumInfoCache.size >= infoCacheMaxSize) albumInfoCache.clear()
+                albumInfoCache[id] = CachedInfo(info, System.currentTimeMillis())
+            }
             info
         } catch (_: Exception) {
             cached?.data

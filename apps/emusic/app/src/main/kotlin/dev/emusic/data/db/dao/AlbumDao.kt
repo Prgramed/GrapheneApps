@@ -80,4 +80,17 @@ interface AlbumDao {
 
     @Query("SELECT * FROM albums WHERE pinned = 1 ORDER BY name COLLATE NOCASE")
     fun observePinned(): Flow<List<AlbumEntity>>
+
+    /** Clear starred flag on albums NOT in the server's starred list (two-way star sync). */
+    @Query("UPDATE albums SET starred = 0 WHERE starred = 1 AND id NOT IN (:serverStarredIds)")
+    suspend fun clearStarredNotIn(serverStarredIds: List<String>): Int
+
+    /** All albums with their server-reported trackCount, for freshness comparison. */
+    @Query("SELECT id, trackCount FROM albums")
+    suspend fun getAllTrackCounts(): List<AlbumTrackCountEntry>
 }
+
+data class AlbumTrackCountEntry(
+    val id: String,
+    val trackCount: Int,
+)

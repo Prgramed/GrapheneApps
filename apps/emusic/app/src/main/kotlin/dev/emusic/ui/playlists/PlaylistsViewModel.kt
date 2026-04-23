@@ -84,21 +84,38 @@ class PlaylistsViewModel @Inject constructor(
     fun getCoverArtUrl(id: String): String =
         libraryRepository.getCoverArtUrl(id)
 
+    // Error feedback — bare catch-alls in CRUD silently swallowed failures.
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+    fun clearError() { _error.value = null }
+
     fun createPlaylist(name: String) {
         viewModelScope.launch {
-            try { playlistRepository.createPlaylist(name) } catch (_: Exception) { }
+            try {
+                playlistRepository.createPlaylist(name)
+            } catch (e: Exception) {
+                _error.value = "Failed to create playlist: ${e.message?.take(80)}"
+            }
         }
     }
 
     fun renamePlaylist(id: String, name: String) {
         viewModelScope.launch {
-            try { playlistRepository.renamePlaylist(id, name) } catch (_: Exception) { }
+            try {
+                playlistRepository.renamePlaylist(id, name)
+            } catch (e: Exception) {
+                _error.value = "Failed to rename: ${e.message?.take(80)}"
+            }
         }
     }
 
     fun deletePlaylist(id: String) {
         viewModelScope.launch {
-            try { playlistRepository.deletePlaylist(id) } catch (_: Exception) { }
+            try {
+                playlistRepository.deletePlaylist(id)
+            } catch (e: Exception) {
+                _error.value = "Failed to delete: ${e.message?.take(80)}"
+            }
         }
     }
 }
