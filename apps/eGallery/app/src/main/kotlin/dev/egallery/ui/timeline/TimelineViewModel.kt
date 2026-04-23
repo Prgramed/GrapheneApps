@@ -91,7 +91,17 @@ class TimelineViewModel @Inject constructor(
     fun fetchMemories() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val fresh = immichApi.getMemories().filter { it.assets.isNotEmpty() }
+                val now = java.time.Instant.now()
+                val fresh = immichApi.getMemories()
+                    .filter { it.assets.isNotEmpty() }
+                    .filter { it.deletedAt == null }
+                    .filter { memory ->
+                        // Only include memories in their visibility window.
+                        // If showAt/hideAt missing, include (old Immich versions).
+                        val show = memory.showAt?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
+                        val hide = memory.hideAt?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
+                        (show == null || !now.isBefore(show)) && (hide == null || now.isBefore(hide))
+                    }
                 _memories.value = fresh
                 // Cache for next launch
                 memoriesPrefs.edit().putString("memories",

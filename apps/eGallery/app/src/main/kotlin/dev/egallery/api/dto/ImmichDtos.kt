@@ -139,6 +139,11 @@ data class ImmichMemory(
     val data: ImmichMemoryData = ImmichMemoryData(),
     val assets: List<ImmichAsset> = emptyList(),
     val createdAt: String = "",
+    val memoryAt: String = "", // ISO 8601 — date the memory pertains to
+    val showAt: String? = null, // ISO 8601 — start of visibility window
+    val hideAt: String? = null, // ISO 8601 — end of visibility window
+    val isSaved: Boolean = false,
+    val deletedAt: String? = null,
 )
 
 @Serializable

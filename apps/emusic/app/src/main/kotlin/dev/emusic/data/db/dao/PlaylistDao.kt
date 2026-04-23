@@ -35,6 +35,18 @@ interface PlaylistDao {
     @Query("SELECT playlistId FROM playlist_tracks WHERE trackId = :trackId")
     suspend fun getPlaylistIdsContainingTrack(trackId: String): List<String>
 
+    @Query("SELECT trackId FROM playlist_tracks WHERE playlistId = :playlistId")
+    suspend fun getTrackIdsForPlaylist(playlistId: String): List<String>
+
+    @Query("""
+        SELECT EXISTS(
+            SELECT 1 FROM playlist_tracks pt
+            INNER JOIN playlists p ON p.id = pt.playlistId
+            WHERE pt.trackId = :trackId AND p.pinned = 1
+        )
+    """)
+    suspend fun isTrackInAnyPinnedPlaylist(trackId: String): Boolean
+
     @Query("DELETE FROM playlists WHERE id = :id")
     suspend fun deleteById(id: String)
 

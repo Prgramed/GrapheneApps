@@ -7,6 +7,7 @@ import dev.emusic.data.db.dao.TrackDao
 import dev.emusic.data.db.entity.PlaylistTrackCrossRef
 import dev.emusic.data.db.entity.toDomain
 import dev.emusic.data.db.entity.toEntity
+import dev.emusic.data.download.OrphanCleanupHelper
 import dev.emusic.domain.model.Playlist
 import dev.emusic.domain.model.Track
 import dev.emusic.domain.repository.PlaylistRepository
@@ -22,6 +23,7 @@ class PlaylistRepositoryImpl @Inject constructor(
     private val api: SubsonicApiService,
     private val playlistDao: PlaylistDao,
     private val trackDao: TrackDao,
+    private val orphanCleanup: OrphanCleanupHelper,
 ) : PlaylistRepository {
 
     private val syncMutex = Mutex()
@@ -54,6 +56,10 @@ class PlaylistRepositoryImpl @Inject constructor(
         val response = api.getPlaylist(playlistId).subsonicResponse
         val trackDtos = response.playlist?.entry ?: return
 
+        // Snapshot existing membership BEFORE mutating the join table so we can
+        // compute which tracks were removed by this sync.
+        val oldTrackIds = playlistDao.getTrackIdsForPlaylist(playlistId).toSet()
+
         // Ensure tracks exist in the tracks table (JOIN requires them)
         // Use INSERT IGNORE so existing tracks (with localPath, etc.) are never overwritten
         val trackEntities = trackDtos.map { it.toDomain().toEntity() }
@@ -68,6 +74,12 @@ class PlaylistRepositoryImpl @Inject constructor(
         }
         playlistDao.replacePlaylistTracks(playlistId, refs)
         playlistDao.updateTrackCount(playlistId, refs.size)
+
+        // Clean up downloaded files for tracks that were removed from this playlist
+        // and are no longer needed by any other pinned playlist/album.
+        val newTrackIds = refs.map { it.trackId }.toSet()
+        val removed = oldTrackIds - newTrackIds
+        orphanCleanup.cleanupIfOrphaned(removed)
     }
 
     override fun observePlaylists(): Flow<List<Playlist>> =

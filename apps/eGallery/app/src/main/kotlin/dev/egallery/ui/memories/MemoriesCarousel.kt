@@ -42,23 +42,11 @@ fun MemoriesCarousel(
 ) {
     if (memories.isEmpty()) return
 
-    // Immich returns multiple on_this_day memory objects per year (different
-    // batches / times of day). Collapse them into one card per year with the
-    // combined asset list, matching Immich's web UI.
+    // Immich already curates each memory as a distinct card (web UI matches this).
+    // Don't merge by year — it produces bloated cards with hundreds of photos.
     val grouped = remember(memories) {
         memories
             .filter { it.assets.isNotEmpty() }
-            .groupBy { it.data.year }
-            .map { (year, group) ->
-                val first = group.first()
-                ImmichMemory(
-                    id = "year_$year",
-                    type = first.type,
-                    data = first.data, // preserves year for the card title
-                    assets = group.flatMap { it.assets },
-                    createdAt = first.createdAt,
-                )
-            }
             .sortedByDescending { it.data.year }
     }
 
