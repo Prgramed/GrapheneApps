@@ -77,9 +77,9 @@ class SyncLibraryUseCase @Inject constructor(
 
                 emit(SyncProgress(stage = "Syncing tracks…"))
                 try {
-                    libraryRepository.syncAllTracks { current, total ->
-                        val stageText = if (total > 0) "Syncing tracks… $current/$total" else "Syncing tracks… $current fetched"
-                        val p = SyncProgress(stage = stageText, current = current, total = total.coerceAtLeast(0))
+                    libraryRepository.syncAllTracks { currentAlbum, totalAlbums ->
+                        val stageText = "Syncing album $currentAlbum of $totalAlbums…"
+                        val p = SyncProgress(stage = stageText, current = currentAlbum, total = totalAlbums.coerceAtLeast(0))
                         _progress.value = p
                         trySend(p)
                     }

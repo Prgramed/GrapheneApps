@@ -124,7 +124,7 @@ class LibraryRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun syncAllTracks(onProgress: (current: Int, total: Int) -> Unit) {
+    override suspend fun syncAllTracks(onProgress: (currentAlbum: Int, totalAlbums: Int) -> Unit) {
         // Album iteration is the only reliable full-library enumeration in Subsonic/Navidrome.
         // search3(query="") goes through the search index and returns incomplete results, so
         // we intentionally do NOT use it here. Orphan / non-album tracks are still covered:
