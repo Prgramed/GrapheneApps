@@ -116,6 +116,9 @@ fun CalendarScaffold(
                 onAccounts = {
                     navController.navigate("settings")
                 },
+                onSearch = {
+                    navController.navigate("search")
+                },
             )
         }
 
@@ -154,6 +157,15 @@ fun CalendarScaffold(
             EventEditScreen(
                 viewModel = editViewModel,
                 onDismiss = { navController.popBackStack() },
+            )
+        }
+
+        composable("search") {
+            dev.ecalendar.ui.search.SearchScreen(
+                onEventClick = { uid, instanceStart ->
+                    navController.navigate("event/detail/$uid/$instanceStart")
+                },
+                onBack = { navController.popBackStack() },
             )
         }
 
@@ -271,12 +283,25 @@ private fun CalendarHome(
     onCreateEvent: (Long) -> Unit,
     onEventClick: (String, Long) -> Unit,
     onAccounts: () -> Unit,
+    onSearch: () -> Unit = {},
 ) {
     val activeView by viewModel.activeView.collectAsStateWithLifecycle()
     val activeDate by viewModel.activeDate.collectAsStateWithLifecycle()
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
+    val allCalendars by viewModel.calendars.collectAsStateWithLifecycle()
+    val visibleCalendarIds by viewModel.visibleCalendars.collectAsStateWithLifecycle()
     val zone = ZoneId.systemDefault()
     var isFabVisible by remember { mutableStateOf(true) }
+    var showCalendarPicker by remember { mutableStateOf(false) }
+
+    if (showCalendarPicker) {
+        dev.ecalendar.ui.components.CalendarPickerSheet(
+            calendars = allCalendars,
+            visibleIds = visibleCalendarIds,
+            onToggle = { id, visible -> viewModel.toggleCalendarVisibility(id, visible) },
+            onDismiss = { showCalendarPicker = false },
+        )
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -326,6 +351,8 @@ private fun CalendarHome(
                     },
                     onEventClick = onEventClick,
                     onAccounts = onAccounts,
+                    onCalendarFilter = { showCalendarPicker = true },
+                    onSearch = onSearch,
                 )
 
                 CalendarView.WEEK -> WeekScreen(

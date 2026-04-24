@@ -54,4 +54,7 @@ interface EventDao {
 
     @Query("SELECT COUNT(*) FROM event_series WHERE calendarSourceId = :calendarSourceId")
     suspend fun countSeriesForSource(calendarSourceId: Long): Int
+
+    @Query("SELECT * FROM calendar_events WHERE (title LIKE '%' || :query || '%' OR location LIKE '%' || :query || '%') AND isCancelled = 0 ORDER BY instanceStart DESC LIMIT 50")
+    fun searchEvents(query: String): Flow<List<CalendarEventEntity>>
 }

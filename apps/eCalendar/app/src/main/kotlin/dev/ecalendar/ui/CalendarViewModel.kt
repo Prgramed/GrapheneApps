@@ -31,6 +31,7 @@ class CalendarViewModel @Inject constructor(
     private val calendarRepository: CalendarRepository,
     private val preferencesRepository: AppPreferencesRepository,
     private val syncCoordinator: SyncCoordinator,
+    private val calendarDao: dev.ecalendar.data.db.dao.CalendarDao,
     networkMonitor: NetworkMonitor,
 ) : ViewModel() {
 
@@ -99,8 +100,12 @@ class CalendarViewModel @Inject constructor(
             }
 
     fun syncNow() {
-        // launchSync runs in an application-lifetime scope so the sync survives
-        // navigating away from the screen mid-refresh.
         syncCoordinator.launchSync(includeMirror = false)
+    }
+
+    fun toggleCalendarVisibility(calendarId: Long, visible: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            calendarDao.updateVisibility(calendarId, visible)
+        }
     }
 }

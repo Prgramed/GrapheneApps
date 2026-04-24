@@ -40,7 +40,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.ecalendar.domain.model.CalendarEvent
 import dev.ecalendar.ui.CalendarViewModel
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.ui.input.pointer.pointerInput
 import dev.ecalendar.sync.SyncState
 import dev.ecalendar.ui.components.CalendarHeader
 import dev.ecalendar.util.ColorPalette
@@ -185,11 +187,19 @@ private fun DayPage(
             HorizontalDivider()
         }
 
-        // Time grid
+        // Time grid — tap empty slot to create event at that hour
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState),
+                .verticalScroll(scrollState)
+                .pointerInput(date) {
+                    detectTapGestures { offset ->
+                        val hour = (offset.y / HOUR_HEIGHT.toPx()).toInt().coerceIn(0, 23)
+                        val startMillis = date.atTime(java.time.LocalTime.of(hour, 0))
+                            .atZone(zone).toInstant().toEpochMilli()
+                        onCreateEvent(startMillis)
+                    }
+                },
         ) {
             val totalHeight = HOUR_HEIGHT * 24
 

@@ -48,6 +48,73 @@ object ICalParser {
     }
 
     /**
+     * Parses VEvent fields from raw ICS into values suitable for EditableEvent.
+     * Used when editing an existing event so the form pre-fills with the current values
+     * instead of showing blank fields (the bug at EventEditViewModel line 66 TODO).
+     */
+    fun parseEditableFields(icsString: String): EditableFields {
+        val builder = CalendarBuilder()
+        val calendar = builder.build(StringReader(icsString))
+        val event = calendar.getComponents<VEvent>(Component.VEVENT).firstOrNull()
+            ?: return EditableFields()
+
+        val dtStart = event.getProperty<net.fortuna.ical4j.model.property.DtStart>(Property.DTSTART)
+        val dtEnd = event.getProperty<net.fortuna.ical4j.model.property.DtEnd>(Property.DTEND)
+        val isAllDay = dtStart != null && dtStart.date !is net.fortuna.ical4j.model.DateTime
+
+        val startMillis = dtStart?.let {
+            val tzId = it.getParameter<net.fortuna.ical4j.model.parameter.TzId>("TZID")?.value
+            dev.ecalendar.util.TimeZoneHelper.toLocalMillis(it.date, tzId)
+        } ?: System.currentTimeMillis()
+
+        val endMillis = dtEnd?.let {
+            val tzId = it.getParameter<net.fortuna.ical4j.model.parameter.TzId>("TZID")?.value
+            dev.ecalendar.util.TimeZoneHelper.toLocalMillis(it.date, tzId)
+        } ?: (startMillis + 3_600_000)
+
+        val rrule = event.getProperty<net.fortuna.ical4j.model.property.RRule>(Property.RRULE)?.value
+
+        val alarms = event.getComponents<VAlarm>(Component.VALARM).mapNotNull { alarm ->
+            val trigger = alarm.trigger ?: return@mapNotNull null
+            parseDurationToMinutes(trigger.value ?: return@mapNotNull null)
+        }
+
+        val travelTime = event.getProperty<net.fortuna.ical4j.model.property.XProperty>("X-APPLE-TRAVEL-DURATION")
+            ?.value?.let { Regex("PT(\\d+)M").find(it)?.groupValues?.get(1)?.toIntOrNull() }
+
+        val attendees = event.getProperties<net.fortuna.ical4j.model.property.Attendee>(Property.ATTENDEE)
+            .mapNotNull { it.calAddress?.toString()?.removePrefix("mailto:")?.trim() }
+
+        return EditableFields(
+            title = event.summary?.value ?: "",
+            location = event.location?.value,
+            notes = event.description?.value,
+            url = event.getProperty<net.fortuna.ical4j.model.property.Url>(Property.URL)?.value,
+            startMillis = startMillis,
+            endMillis = endMillis,
+            isAllDay = isAllDay,
+            rruleString = rrule,
+            alarms = alarms,
+            attendees = attendees,
+            travelTimeMins = travelTime,
+        )
+    }
+
+    data class EditableFields(
+        val title: String = "",
+        val location: String? = null,
+        val notes: String? = null,
+        val url: String? = null,
+        val startMillis: Long = System.currentTimeMillis(),
+        val endMillis: Long = System.currentTimeMillis() + 3_600_000,
+        val isAllDay: Boolean = false,
+        val rruleString: String? = null,
+        val alarms: List<Int> = emptyList(),
+        val attendees: List<String> = emptyList(),
+        val travelTimeMins: Int? = null,
+    )
+
+    /**
      * Extracts attendee email addresses from an ICS string.
      */
     fun parseAttendees(icsString: String): List<String> {

@@ -55,15 +55,26 @@ class EventEditViewModel @Inject constructor(
             val prefs = preferencesRepository.preferencesFlow.first()
 
             if (editUid != null) {
-                // Editing existing event
+                // Editing existing event — parse ICS fields so the form pre-fills
                 val series = calendarRepository.getEventSeries(editUid)
                 if (series != null) {
+                    val fields = dev.ecalendar.ical.ICalParser.parseEditableFields(series.rawIcs)
                     val edited = EditableEvent(
                         uid = series.uid,
                         calendarSourceId = series.calendarSourceId,
                         originalIcs = series.rawIcs,
+                        title = fields.title,
+                        location = fields.location,
+                        notes = fields.notes,
+                        url = fields.url,
+                        startMillis = fields.startMillis,
+                        endMillis = fields.endMillis,
+                        isAllDay = fields.isAllDay,
+                        rruleString = fields.rruleString,
+                        alarms = fields.alarms,
+                        attendees = fields.attendees,
+                        travelTimeMins = fields.travelTimeMins,
                     )
-                    // TODO: parse ICS fields into EditableEvent when ICalParser supports it
                     _event.value = edited
                     initialEvent = edited
                 }

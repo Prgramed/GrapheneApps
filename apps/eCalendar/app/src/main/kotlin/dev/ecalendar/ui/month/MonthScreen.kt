@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,6 +46,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -74,6 +77,8 @@ fun MonthScreen(
     onDayClick: (LocalDate) -> Unit = {},
     onEventClick: (String, Long) -> Unit = { _, _ -> },
     onAccounts: (() -> Unit)? = null,
+    onCalendarFilter: (() -> Unit)? = null,
+    onSearch: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val activeDate by viewModel.activeDate.collectAsStateWithLifecycle()
@@ -139,6 +144,20 @@ fun MonthScreen(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
+                if (onSearch != null) {
+                    Button(onClick = { onSearch() }, modifier = Modifier.size(32.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                        Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(16.dp))
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
+                if (onCalendarFilter != null) {
+                    Button(onClick = { onCalendarFilter() }, modifier = Modifier.size(32.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                        Icon(Icons.Default.FilterList, contentDescription = "Calendars", modifier = Modifier.size(16.dp))
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
                 if (onAccounts != null) {
                     Button(onClick = { onAccounts() }, modifier = Modifier.size(32.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
@@ -277,16 +296,39 @@ private fun MonthGrid(
                                 else Modifier,
                             )
                             if (dayEvents.isNotEmpty()) {
-                                Spacer(Modifier.height(2.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    dayEvents.take(3).forEach { _ ->
-                                        Box(
-                                            Modifier
-                                                .size(4.dp)
-                                                .clip(CircleShape)
-                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
-                                        )
-                                    }
+                                Spacer(Modifier.height(1.dp))
+                                val isDark = isSystemInDarkTheme()
+                                dayEvents.take(2).forEach { event ->
+                                    val eventColor = ColorPalette.forTheme(
+                                        event.colorHex ?: "#4285F4", isDark,
+                                    )
+                                    Text(
+                                        text = event.title,
+                                        fontSize = 8.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .drawBehind {
+                                                drawRect(
+                                                    eventColor,
+                                                    size = androidx.compose.ui.geometry.Size(
+                                                        2.dp.toPx(), size.height,
+                                                    ),
+                                                )
+                                            }
+                                            .padding(start = 4.dp),
+                                    )
+                                }
+                                if (dayEvents.size > 2) {
+                                    Text(
+                                        "+${dayEvents.size - 2}",
+                                        fontSize = 7.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                            alpha = alpha * 0.7f,
+                                        ),
+                                    )
                                 }
                             }
                         }

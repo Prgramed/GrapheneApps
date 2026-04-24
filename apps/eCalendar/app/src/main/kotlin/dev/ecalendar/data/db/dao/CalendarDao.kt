@@ -34,4 +34,7 @@ interface CalendarDao {
      */
     @Query("SELECT * FROM calendar_sources WHERE isReadOnly = 0 AND isMirror = 0 AND accountId != 0 ORDER BY displayName LIMIT 1")
     suspend fun getFirstWritable(): CalendarSourceEntity?
+
+    @Query("UPDATE calendar_sources SET isVisible = :visible WHERE id = :id")
+    suspend fun updateVisibility(id: Long, visible: Boolean)
 }
