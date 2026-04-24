@@ -68,9 +68,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun syncNow() {
-        // Settings "Sync now" kicks off the full sync (including iCal mirror) via
-        // the coordinator's application-lifetime scope — so leaving Settings
-        // mid-sync no longer cancels it.
-        syncCoordinator.launchSync(includeMirror = true)
+        // Skip the iCal mirror — it takes 20+ seconds per calendar on Synology
+        // (PROPFIND to enumerate existing events). The background SyncWorker
+        // handles mirroring on its own cadence. Settings "Sync now" is just a
+        // fast CalDAV delta refresh.
+        syncCoordinator.launchSync(includeMirror = false)
     }
 }
