@@ -123,7 +123,7 @@ object ICalSubscriptionSyncer {
         for (href in existingHrefs) {
             if (href !in newEventUrls) {
                 try {
-                    synoClient.delete(href, etag = "*")
+                    synoClient.delete(href, etag = "*").close() // MUST close — was leaking connections
                 } catch (e: Exception) {
                     Timber.w(e, "iCal subscription: failed to delete $href")
                 }

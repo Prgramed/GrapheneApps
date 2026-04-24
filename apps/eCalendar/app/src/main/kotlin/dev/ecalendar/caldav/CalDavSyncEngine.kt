@@ -160,9 +160,9 @@ object CalDavSyncEngine {
                   <d:prop><cs:getctag/></d:prop>
                 </d:propfind>
             """.trimIndent()
-            val response = client.propfind(calUrl, 0, body)
-            val xml = response.body?.string()
-            response.close()
+            val xml = client.propfind(calUrl, 0, body).use { response ->
+                response.body?.string()
+            }
             if (xml == null) return null
             // Parse getctag from response
             val parser = Xml.newPullParser()
