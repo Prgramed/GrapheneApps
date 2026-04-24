@@ -171,32 +171,29 @@ fun MonthScreen(
 
         Spacer(Modifier.height(4.dp))
 
-        // Month pages
-        PullToRefreshBox(
-            isRefreshing = syncState is SyncState.Syncing,
-            onRefresh = { viewModel.syncNow() },
+        // Month pages — no PullToRefreshBox here because the month grid isn't
+        // scrollable, and PullToRefreshBox on non-scrollable content eats touch
+        // events (some date cells become non-clickable). Sync is available via
+        // Day/Week/Agenda views or Settings.
+        HorizontalPager(
+            state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-        ) {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize(),
-            ) { page ->
-                val offset = page - INITIAL_PAGE
-                val month = baseMonth.plusMonths(offset.toLong())
-                MonthGrid(
-                    month = month,
-                    activeDate = activeDate,
-                    today = today,
-                    viewModel = viewModel,
-                    onDayClick = { date, events ->
-                        viewModel.navigate(date)
-                        popupDate = date
-                        popupEvents = events
-                    },
-                )
-            }
+        ) { page ->
+            val offset = page - INITIAL_PAGE
+            val month = baseMonth.plusMonths(offset.toLong())
+            MonthGrid(
+                month = month,
+                activeDate = activeDate,
+                today = today,
+                viewModel = viewModel,
+                onDayClick = { date, events ->
+                    viewModel.navigate(date)
+                    popupDate = date
+                    popupEvents = events
+                },
+            )
         }
     }
 }
@@ -276,7 +273,6 @@ private fun DayCell(
 
     Column(
         modifier = modifier
-            .aspectRatio(0.85f)
             .clip(RoundedCornerShape(6.dp))
             .background(
                 when {
