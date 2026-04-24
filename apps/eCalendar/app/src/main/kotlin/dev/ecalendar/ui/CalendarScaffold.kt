@@ -325,6 +325,7 @@ private fun CalendarHome(
                         viewModel.navigate(date)
                         viewModel.setView(CalendarView.DAY)
                     },
+                    onEventClick = onEventClick,
                     onAccounts = onAccounts,
                 )
 
