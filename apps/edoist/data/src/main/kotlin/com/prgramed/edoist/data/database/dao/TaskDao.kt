@@ -357,4 +357,21 @@ interface TaskDao {
 
     @Query("SELECT COALESCE(MAX(sort_order), 0) FROM tasks WHERE project_id = :projectId")
     suspend fun getMaxSortOrder(projectId: String): Int
+
+    /** Subtask counts per parent task — (done, total) for rendering "2/5" in list items. */
+    @Query("""
+        SELECT parent_task_id as parentId,
+               COUNT(*) as total,
+               SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) as done
+        FROM tasks
+        WHERE parent_task_id IS NOT NULL
+        GROUP BY parent_task_id
+    """)
+    fun getSubtaskCounts(): Flow<List<SubtaskCount>>
 }
+
+data class SubtaskCount(
+    val parentId: String,
+    val total: Int,
+    val done: Int,
+)

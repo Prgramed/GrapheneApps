@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.datetime.LocalDate
 import javax.inject.Inject
 
 @HiltViewModel
@@ -42,6 +43,12 @@ class TodayViewModel @Inject constructor(
     fun uncompleteTask(taskId: String) {
         viewModelScope.launch {
             taskRepository.uncompleteTask(taskId)
+        }
+    }
+
+    fun rescheduleTask(taskId: String, newDate: LocalDate) {
+        viewModelScope.launch {
+            taskRepository.rescheduleTask(taskId, newDate)
         }
     }
 }

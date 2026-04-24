@@ -139,6 +139,20 @@ class TaskDetailViewModel @Inject constructor(
         _uiState.update { it.copy(recurrenceRule = recurrenceRule) }
     }
 
+    fun onNaturalDateParsed(input: String) {
+        val parsed = parseNaturalDateUseCase(input)
+        _uiState.update {
+            it.copy(
+                dueDate = parsed.date ?: it.dueDate,
+                dueTime = parsed.time ?: it.dueTime,
+                recurrenceRule = parsed.recurrenceRule ?: it.recurrenceRule,
+                title = if (parsed.remainingText.isNotBlank() && it.title.isBlank()) {
+                    parsed.remainingText
+                } else it.title,
+            )
+        }
+    }
+
     fun onLabelToggled(labelId: String) {
         _uiState.update { state ->
             val newIds = if (labelId in state.selectedLabelIds) {

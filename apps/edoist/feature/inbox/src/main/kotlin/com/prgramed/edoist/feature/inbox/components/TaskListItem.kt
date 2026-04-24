@@ -50,6 +50,8 @@ fun TaskListItem(
     onClick: () -> Unit,
     showProject: Boolean = false,
     projectColor: Long? = null,
+    subtaskDone: Int = 0,
+    subtaskTotal: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val priorityBorderColor = if (task.priority != Priority.P4 && !task.isCompleted) {
@@ -96,7 +98,8 @@ fun TaskListItem(
             )
 
             val hasChips = task.dueDate != null || task.labels.isNotEmpty() ||
-                (showProject && task.projectId.isNotBlank())
+                (showProject && task.projectId.isNotBlank()) ||
+                subtaskTotal > 0
 
             if (hasChips) {
                 Row(
@@ -112,6 +115,18 @@ fun TaskListItem(
                         LabelChip(
                             name = label.name,
                             color = Color(label.color),
+                        )
+                    }
+
+                    if (subtaskTotal > 0) {
+                        Text(
+                            text = "$subtaskDone/$subtaskTotal",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (subtaskDone == subtaskTotal) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     }
 

@@ -27,9 +27,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import com.prgramed.edoist.feature.inbox.components.RescheduleBottomSheet
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -49,6 +52,17 @@ fun TodayScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var rescheduleTaskId by remember { mutableStateOf<String?>(null) }
+
+    rescheduleTaskId?.let { taskId ->
+        RescheduleBottomSheet(
+            onDismiss = { rescheduleTaskId = null },
+            onDateSelected = { date ->
+                viewModel.rescheduleTask(taskId, date)
+                rescheduleTaskId = null
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -144,7 +158,7 @@ fun TodayScreen(
                                         }
                                     }
                                 },
-                                onSchedule = { onTaskClick(task.id) },
+                                onSchedule = { rescheduleTaskId = task.id },
                                 showProject = true,
                             )
                         }
