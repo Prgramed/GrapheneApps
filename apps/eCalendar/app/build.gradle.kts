@@ -71,4 +71,8 @@ dependencies {
 
     // Logging
     implementation(libs.timber)
+
+    // Widget (Glance)
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
 }

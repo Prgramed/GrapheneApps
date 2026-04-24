@@ -30,4 +30,20 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun calendarDao(): CalendarDao
     abstract fun accountDao(): AccountDao
     abstract fun syncQueueDao(): SyncQueueDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: AppDatabase? = null
+
+        /** For widget use — Hilt-managed code should NOT use this. */
+        fun getInstance(context: android.content.Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: androidx.room.Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "ecalendar.db",
+                ).build().also { INSTANCE = it }
+            }
+        }
+    }
 }

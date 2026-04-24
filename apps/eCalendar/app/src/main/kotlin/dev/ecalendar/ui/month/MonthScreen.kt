@@ -205,8 +205,7 @@ fun MonthScreen(
                 }
             }
 
-            // Month grid — using fillMaxHeight (NOT fillMaxSize or aspectRatio)
-            // to match the working Button layout exactly
+            // Month grid (65% of remaining space)
             MonthGrid(
                 month = YearMonth.from(activeDate),
                 activeDate = activeDate,
@@ -217,7 +216,16 @@ fun MonthScreen(
                     popupDate = date
                     popupEvents = events
                 },
-                modifier = Modifier.fillMaxWidth().weight(1f),
+                modifier = Modifier.fillMaxWidth().weight(0.65f),
+            )
+
+            // Mini-agenda for selected day (35% of remaining space)
+            HorizontalDivider()
+            MiniAgenda(
+                date = activeDate,
+                viewModel = viewModel,
+                onEventClick = onEventClick,
+                modifier = Modifier.fillMaxWidth().weight(0.35f),
             )
         }
     }
@@ -331,6 +339,102 @@ private fun MonthGrid(
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniAgenda(
+    date: LocalDate,
+    viewModel: CalendarViewModel,
+    onEventClick: (String, Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val zone = remember { ZoneId.systemDefault() }
+    val dayStart = date.atStartOfDay(zone).toInstant().toEpochMilli()
+    val dayEnd = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+    val events by viewModel.eventsForRange(dayStart, dayEnd)
+        .collectAsStateWithLifecycle(emptyList())
+    val isDark = isSystemInDarkTheme()
+    val timeFormat = remember { java.time.format.DateTimeFormatter.ofPattern("HH:mm") }
+
+    val today = remember { LocalDate.now() }
+    val tomorrow = remember(today) { today.plusDays(1) }
+    val dateLabel = when (date) {
+        today -> "Today"
+        tomorrow -> "Tomorrow"
+        else -> {
+            val dow = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
+            val month = date.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())
+            "$dow, $month ${date.dayOfMonth}"
+        }
+    }
+
+    Column(modifier = modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Text(
+            dateLabel,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (date == today) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(4.dp))
+        if (events.isEmpty()) {
+            Text(
+                "No events",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
+        } else {
+            androidx.compose.foundation.lazy.LazyColumn {
+                items(events.size, key = { "${events[it].uid}_${events[it].instanceStart}" }) { idx ->
+                    val event = events[idx]
+                    val color = ColorPalette.forTheme(event.colorHex ?: "#4285F4", isDark)
+                    androidx.compose.material3.Surface(
+                        onClick = { onEventClick(event.uid, event.instanceStart) },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color.Transparent,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp),
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(color),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            if (!event.isAllDay) {
+                                Text(
+                                    java.time.Instant.ofEpochMilli(event.instanceStart)
+                                        .atZone(zone).toLocalTime().format(timeFormat),
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.width(36.dp),
+                                )
+                            } else {
+                                Text(
+                                    "all day",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.width(36.dp),
+                                )
+                            }
+                            Text(
+                                event.title,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
                         }
                     }
                 }
