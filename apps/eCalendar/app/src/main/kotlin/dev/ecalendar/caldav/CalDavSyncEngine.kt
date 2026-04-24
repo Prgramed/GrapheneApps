@@ -125,23 +125,23 @@ object CalDavSyncEngine {
         eventDao: EventDao,
         calendarDao: CalendarDao,
     ) {
+        // Skip mirror-only calendars — they're managed by ICalSubscriptionSyncer
+        // and should never be synced back as CalDAV sources (wrong URL path, 403s).
+        if (source.isMirror) return
+
         // Fetch server CTAG to decide if sync is needed.
         val serverCtag = fetchCtag(client, source.calDavUrl)
 
-        // If we think we're up to date but have zero events for this source
-        // locally, don't trust the ctag match — a previous sync may have
-        // written the ctag without actually pulling events (e.g. REPORT
-        // returned non-XML and was silently dropped). Force a full sync to
-        // recover instead of being stuck empty forever.
-        val localCount = try { eventDao.countSeriesForSource(source.id) } catch (_: Exception) { -1 }
-        val trustCtag = serverCtag != null && serverCtag == source.ctag && localCount > 0
-
-        if (trustCtag) {
+        // Trust the CTAG match if we already have a stored CTAG (meaning a
+        // previous sync ran successfully). Empty calendars (localCount=0) are
+        // fine — the CTAG itself proves we already fetched and found nothing.
+        // Only distrust if we've NEVER synced this source (ctag == null).
+        if (serverCtag != null && serverCtag == source.ctag) {
             Timber.d("sync: CTAG unchanged for ${source.displayName}, skipping")
             return
         }
 
-        if (source.ctag != null && localCount > 0) {
+        if (source.ctag != null) {
             quickSync(client, source, eventDao, calendarDao, serverCtag)
         } else {
             fullSync(client, source, eventDao, calendarDao, serverCtag)
