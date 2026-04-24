@@ -64,8 +64,8 @@ private data class WidgetEvent(
 private fun WidgetContent(events: List<WidgetEvent>) {
     val zone = ZoneId.systemDefault()
     val today = LocalDate.now()
-    val dateFormat = DateTimeFormatter.ofPattern("EEE HH:mm", Locale.getDefault())
-    val dateFormatAllDay = DateTimeFormatter.ofPattern("EEE", Locale.getDefault())
+    val dateFormat = DateTimeFormatter.ofPattern("EEE d · HH:mm", Locale.getDefault())
+    val dateFormatAllDay = DateTimeFormatter.ofPattern("EEE d", Locale.getDefault())
 
     Column(
         modifier = GlanceModifier
@@ -109,7 +109,7 @@ private fun WidgetContent(events: List<WidgetEvent>) {
                             fontSize = 11.sp,
                             color = GlanceTheme.colors.onSurfaceVariant,
                         ),
-                        modifier = GlanceModifier.width(52.dp),
+                        modifier = GlanceModifier.width(72.dp),
                     )
                     Text(
                         text = event.title,
