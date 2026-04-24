@@ -131,11 +131,20 @@ class PlaybackService : MediaLibraryService() {
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                val index = exoPlayer.currentMediaItemIndex
-                // Only update index if media item belongs to current queue (ignore stale callbacks)
+                // Look up the transitioning media item BY ITS ID in the queue,
+                // not by ExoPlayer's currentMediaItemIndex. During rapid skip
+                // sequences, the index counter may have advanced past the callback's
+                // media item, causing a mediaId mismatch that silently dropped the
+                // index update — which is the root cause of "loses current track".
+                val mid = mediaItem?.mediaId
                 val currentQueue = queueManager.queue.value
-                if (index in currentQueue.indices && mediaItem?.mediaId == currentQueue[index].track.id) {
-                    queueManager.setCurrentIndex(index)
+                val matchIndex = if (mid != null) {
+                    currentQueue.indexOfFirst { it.track.id == mid }
+                } else {
+                    -1
+                }
+                if (matchIndex >= 0) {
+                    queueManager.setCurrentIndex(matchIndex)
                 }
 
                 // Fire heads-up on skip or auto-advance, not on first play
@@ -247,6 +256,9 @@ class PlaybackService : MediaLibraryService() {
                         if (exoPlayer.hasNextMediaItem()) {
                             exoPlayer.seekToNextMediaItem()
                             exoPlayer.prepare()
+                            exoPlayer.play()
+                        } else {
+                            exoPlayer.pause()
                         }
                     }
                     // Network error — pause gracefully
@@ -294,7 +306,11 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
         }
-        // Index-only seek for same-queue track switches (e.g. click different track in same album)
+        // Index-only seek for same-queue track switches (e.g. click different track in same album).
+        // Guard: only seek if ExoPlayer's current index disagrees AND the change wasn't
+        // driven by ExoPlayer itself (onMediaItemTransition already moved there). Without
+        // this guard, rapid skip-next creates a feedback loop: transition callback →
+        // setCurrentIndex → observer fires → redundant seekTo → another transition callback.
         serviceScope.launch {
             var prevIndex = queueManager.currentIndex.value
             var prevVersion = queueManager.queueVersion.value
@@ -306,9 +322,12 @@ class PlaybackService : MediaLibraryService() {
                     if (!queueManager.isLiveStream.value &&
                         newIndex in 0 until exoPlayer.mediaItemCount &&
                         exoPlayer.currentMediaItemIndex != newIndex) {
+                        // ExoPlayer is at a DIFFERENT index — this is a user-initiated
+                        // jump (e.g. tapping a specific track in the queue list).
                         exoPlayer.seekTo(newIndex, 0)
                         exoPlayer.play()
                     }
+                    // else: ExoPlayer already at newIndex (transition-driven update) — no-op
                 } else {
                     prevIndex = newIndex
                     prevVersion = currentVersion
@@ -416,8 +435,11 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
-        // Persist final position
-        player?.let { queueManager.persistPositionMs(it.currentPosition) }
+        // onTaskRemoved already persisted position if app was swiped away.
+        // Only persist here if player is still alive (direct stopSelf path).
+        if (player?.isPlaying == true || player?.playWhenReady == true) {
+            player?.let { queueManager.persistPositionMs(it.currentPosition) }
+        }
         equalizerManager.release()
         batteryAwareQualityManager.release()
         serviceScope.cancel()

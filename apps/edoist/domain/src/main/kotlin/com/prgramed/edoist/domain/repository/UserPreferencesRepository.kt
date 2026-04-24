@@ -12,6 +12,8 @@ data class EDoistPreferences(
     val defaultSortOrder: SortOrder = SortOrder.MANUAL,
     val showCompletedTasks: Boolean = false,
     val dynamicColor: Boolean = true,
+    /** 0 = System, 1 = Light, 2 = Dark */
+    val themeMode: Int = 0,
 )
 
 interface UserPreferencesRepository {
@@ -29,4 +31,6 @@ interface UserPreferencesRepository {
     suspend fun updateShowCompletedTasks(show: Boolean)
 
     suspend fun updateDynamicColor(enabled: Boolean)
+
+    suspend fun updateThemeMode(mode: Int)
 }

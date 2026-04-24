@@ -1,5 +1,7 @@
 package com.prgramed.edoist.feature.inbox.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,14 +23,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.prgramed.edoist.domain.model.Priority
 import com.prgramed.edoist.domain.model.Task
+import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -43,9 +52,22 @@ fun TaskListItem(
     projectColor: Long? = null,
     modifier: Modifier = Modifier,
 ) {
+    val priorityBorderColor = if (task.priority != Priority.P4 && !task.isCompleted) {
+        Color(task.priority.colorArgb)
+    } else null
+
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .drawBehind {
+                // 4dp colored left border for P1/P2/P3 — instantly scannable priority
+                if (priorityBorderColor != null) {
+                    drawRect(
+                        color = priorityBorderColor,
+                        size = Size(4.dp.toPx(), size.height),
+                    )
+                }
+            }
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top,
@@ -128,14 +150,29 @@ private fun PriorityCheckbox(
     val borderColor = if (projectColor != null) Color(projectColor)
         else Color(priority.colorArgb)
 
+    val scale = remember { Animatable(1f) }
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+
     IconButton(
-        onClick = { onCheckedChange(!isCompleted) },
+        onClick = {
+            if (!isCompleted) {
+                // Bounce + haptic on complete for satisfying feedback
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                scope.launch {
+                    scale.animateTo(1.3f, spring(dampingRatio = 0.3f, stiffness = 600f))
+                    scale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 400f))
+                }
+            }
+            onCheckedChange(!isCompleted)
+        },
         modifier = Modifier.size(24.dp),
     ) {
         if (isCompleted) {
             Box(
                 modifier = Modifier
                     .size(22.dp)
+                    .scale(scale.value)
                     .border(2.dp, borderColor, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
@@ -150,6 +187,7 @@ private fun PriorityCheckbox(
             Box(
                 modifier = Modifier
                     .size(22.dp)
+                    .scale(scale.value)
                     .border(2.dp, borderColor, CircleShape),
             )
         }

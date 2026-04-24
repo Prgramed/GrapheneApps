@@ -9,5 +9,6 @@ data class SettingsUiState(
     val lastSyncMillis: Long? = null,
     val showCompletedTasks: Boolean = false,
     val dynamicColor: Boolean = true,
+    val themeMode: Int = 0,
     val isSyncing: Boolean = false,
 )

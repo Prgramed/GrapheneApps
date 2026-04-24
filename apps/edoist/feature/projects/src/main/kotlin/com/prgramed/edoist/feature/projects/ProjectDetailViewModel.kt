@@ -27,7 +27,7 @@ class ProjectDetailViewModel @Inject constructor(
     userPreferencesRepository: UserPreferencesRepository,
 ) : ViewModel() {
 
-    private val projectId: String = checkNotNull(savedStateHandle["projectId"])
+    val projectId: String = checkNotNull(savedStateHandle["projectId"])
     private val viewTypeFlow = MutableStateFlow(ViewType.LIST)
     private val collapsedSections = MutableStateFlow<Set<String>>(emptySet())
 

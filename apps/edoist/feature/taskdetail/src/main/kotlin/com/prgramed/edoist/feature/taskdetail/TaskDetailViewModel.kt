@@ -35,6 +35,8 @@ class TaskDetailViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val taskId: String? = savedStateHandle["taskId"]
+    private val navProjectId: String? = savedStateHandle["projectId"]
+    private val navSectionId: String? = savedStateHandle["sectionId"]
     private val _uiState = MutableStateFlow(TaskDetailUiState(isNewTask = taskId == null))
     val uiState = _uiState.asStateFlow()
 
@@ -55,8 +57,14 @@ class TaskDetailViewModel @Inject constructor(
                     availableProjects = projects,
                     availableLabels = labels,
                     projectId = state.projectId.ifEmpty {
-                        projects.find { it.isInbox }?.id ?: projects.firstOrNull()?.id ?: ""
+                        // Use the project from navigation (e.g. tapping "+" inside a project).
+                        // Falls back to first non-Inbox project instead of defaulting to Inbox.
+                        navProjectId
+                            ?: projects.firstOrNull { !it.isInbox }?.id
+                            ?: projects.firstOrNull()?.id
+                            ?: ""
                     },
+                    sectionId = state.sectionId ?: navSectionId,
                 )
             }
 

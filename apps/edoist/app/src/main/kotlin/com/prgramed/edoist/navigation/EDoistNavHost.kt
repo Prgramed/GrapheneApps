@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,13 +32,18 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.compose.runtime.collectAsState
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.prgramed.edoist.feature.inbox.InboxScreen
+import com.prgramed.edoist.feature.inbox.QuickAddViewModel
+import com.prgramed.edoist.feature.inbox.components.QuickAddBottomSheet
 import com.prgramed.edoist.feature.projects.ProjectDetailScreen
 import com.prgramed.edoist.feature.projects.ProjectListScreen
 import com.prgramed.edoist.feature.search.SearchScreen
 import com.prgramed.edoist.feature.settings.SettingsScreen
 import com.prgramed.edoist.feature.taskdetail.TaskDetailScreen
 import com.prgramed.edoist.feature.today.TodayScreen
+import com.prgramed.edoist.feature.today.UpcomingScreen
 
 private val FabRed = Color(0xFFDC4C3E)
 
@@ -49,13 +55,13 @@ private data class NavItem(
 
 private val navItems = listOf(
     NavItem(EDoistDestinations.TODAY, "Today", Icons.Default.CalendarToday),
-    NavItem(EDoistDestinations.INBOX, "Inbox", Icons.Default.MoveToInbox),
+    NavItem(EDoistDestinations.UPCOMING, "Upcoming", Icons.Default.DateRange),
     NavItem(EDoistDestinations.PROJECTS, "Browse", Icons.Default.Menu),
 )
 
 private val bottomBarRoutes = setOf(
     EDoistDestinations.TODAY,
-    EDoistDestinations.INBOX,
+    EDoistDestinations.UPCOMING,
     EDoistDestinations.PROJECTS,
 )
 
@@ -66,6 +72,20 @@ fun EDoistNavHost(modifier: Modifier = Modifier) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val showBottomBar = currentDestination?.route in bottomBarRoutes
+    var showQuickAdd by remember { mutableStateOf(false) }
+    val quickAddVm: QuickAddViewModel = hiltViewModel()
+    val quickAddProjects by quickAddVm.projects.collectAsState()
+
+    if (showQuickAdd) {
+        QuickAddBottomSheet(
+            onDismiss = { showQuickAdd = false },
+            onTaskCreated = { title, projectId, priority, dueDate ->
+                quickAddVm.createTask(title, projectId, priority, dueDate)
+                showQuickAdd = false
+            },
+            projects = quickAddProjects.filter { !it.isInbox },
+        )
+    }
 
     Scaffold(
         modifier = modifier,
@@ -99,7 +119,7 @@ fun EDoistNavHost(modifier: Modifier = Modifier) {
         floatingActionButton = {
             if (showBottomBar) {
                 FloatingActionButton(
-                    onClick = { navController.navigate(EDoistDestinations.taskNew()) },
+                    onClick = { showQuickAdd = true },
                     containerColor = FabRed,
                     contentColor = Color.White,
                 ) {
@@ -110,11 +130,18 @@ fun EDoistNavHost(modifier: Modifier = Modifier) {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = EDoistDestinations.INBOX,
+            startDestination = EDoistDestinations.TODAY,
             modifier = Modifier.padding(innerPadding),
         ) {
             composable(EDoistDestinations.TODAY) {
                 TodayScreen(
+                    onTaskClick = { taskId ->
+                        navController.navigate(EDoistDestinations.taskDetail(taskId))
+                    },
+                )
+            }
+            composable(EDoistDestinations.UPCOMING) {
+                UpcomingScreen(
                     onTaskClick = { taskId ->
                         navController.navigate(EDoistDestinations.taskDetail(taskId))
                     },

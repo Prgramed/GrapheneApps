@@ -70,7 +70,7 @@ class QueueManager @Inject constructor(
         _queue.value = tracks
         _currentIndex.value = startIndex.coerceIn(0, (tracks.size - 1).coerceAtLeast(0))
         _queueVersion.value++
-        persistQueue()
+        persistQueue(immediate = true)
     }
 
     fun addToQueue(track: Track) {
@@ -163,11 +163,13 @@ class QueueManager @Inject constructor(
 
     private var persistJob: Job? = null
 
-    private fun persistQueue() {
-        // Debounce — batch rapid queue changes into single write
+    private fun persistQueue(immediate: Boolean = false) {
+        // Debounce — batch rapid index changes (e.g. skip-next) into single write.
+        // When `immediate` is true (new play session), write without delay so a
+        // crash right after starting a new queue doesn't lose the entire session.
         persistJob?.cancel()
         persistJob = scope.launch {
-            delay(500)
+            if (!immediate) delay(200)
             dataStore.edit { prefs ->
                 val ids = _queue.value.joinToString(",") { it.id }
                 prefs[QUEUE_IDS_KEY] = ids
@@ -192,6 +194,12 @@ class QueueManager @Inject constructor(
         restoredRepeat = prefs[REPEAT_KEY] ?: 0
         _queue.value = tracks
         _currentIndex.value = index.coerceIn(0, (tracks.size - 1).coerceAtLeast(0))
+        // Bump version so PlaybackService's observer fires loadQueueIntoPlayer
+        // with the restored queue. Without this, the service's initial
+        // loadQueueIntoPlayer() races with this coroutine and may see an
+        // empty queue — leaving ExoPlayer with 0 media items, so play/next
+        // buttons do nothing after a cold restart.
+        _queueVersion.value++
     }
 
     /** True when queue was set by user action (play/shuffle), false when restored from DataStore. */

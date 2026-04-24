@@ -133,13 +133,28 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        Button(
-            onClick = { viewModel.save() },
-            enabled = serverUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank() &&
-                syncProgress == null,
+        val isDirty by viewModel.isDirty.collectAsStateWithLifecycle()
+        val fieldsOk = serverUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank()
+
+        // Save + Quick Sync — two distinct buttons
+        Row(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Save & Sync Library")
+            Button(
+                onClick = { viewModel.saveConnection() },
+                enabled = isDirty && fieldsOk && syncProgress == null,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Save")
+            }
+            OutlinedButton(
+                onClick = { viewModel.quickSync() },
+                enabled = fieldsOk && syncProgress == null,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Quick Sync")
+            }
         }
 
         // Sync progress

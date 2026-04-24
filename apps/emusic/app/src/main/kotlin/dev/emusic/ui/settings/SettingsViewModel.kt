@@ -9,9 +9,12 @@ import dev.emusic.data.preferences.CredentialStore
 import dev.emusic.domain.usecase.SyncLibraryUseCase
 import dev.emusic.domain.usecase.SyncProgress
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -49,6 +52,16 @@ class SettingsViewModel @Inject constructor(
 
     val syncProgress: StateFlow<SyncProgress?> = syncLibraryUseCase.progress
 
+    // Dirty state: tracks whether URL/user/pass differ from what's saved.
+    // Save button is enabled only when dirty; Quick Sync doesn't save.
+    @Volatile private var savedServerUrl = ""
+    @Volatile private var savedUsername = ""
+    @Volatile private var savedPassword = ""
+
+    val isDirty: StateFlow<Boolean> = combine(serverUrl, username, password) { url, user, pass ->
+        url.trim() != savedServerUrl || user.trim() != savedUsername || pass != savedPassword
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     init {
         viewModelScope.launch {
             val prefs = preferencesRepository.preferencesFlow.first()
@@ -65,6 +78,10 @@ class SettingsViewModel @Inject constructor(
             headsUpEnabled.value = prefs.headsUpNotificationsEnabled
             crossfadeDuration.value = prefs.crossfadeDurationMs
             gaplessPlayback.value = prefs.gaplessPlayback
+            // Snapshot saved values so isDirty starts as false
+            savedServerUrl = prefs.serverUrl
+            savedUsername = prefs.username
+            savedPassword = credentialStore.password
         }
     }
 
@@ -74,7 +91,7 @@ class SettingsViewModel @Inject constructor(
             _errorMessage.value = null
             try {
                 // Temporarily save to make the interceptor pick up credentials
-                saveCredentials()
+                persistCredentials()
                 val response = apiService.ping().subsonicResponse
                 if (response.isOk) {
                     _connectionStatus.value = ConnectionStatus.SUCCESS
@@ -89,9 +106,19 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun save() {
+    /** Save changed credentials. Updates the dirty-state snapshots so isDirty flips to false. */
+    fun saveConnection() {
+        viewModelScope.launch {
+            persistCredentials()
+            savedServerUrl = serverUrl.value.trim()
+            savedUsername = username.value.trim()
+            savedPassword = password.value
+        }
+    }
+
+    /** Incremental sync from the last sync point. Does NOT save credentials. */
+    fun quickSync() {
         syncLibraryUseCase.activeJob = viewModelScope.launch {
-            saveCredentials()
             syncLibraryUseCase().collect { }
         }
     }
@@ -156,7 +183,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.updateGaplessPlayback(enabled) }
     }
 
-    private suspend fun saveCredentials() {
+    private suspend fun persistCredentials() {
         preferencesRepository.updateServerUrl(serverUrl.value.trim())
         preferencesRepository.updateUsername(username.value.trim())
         credentialStore.password = password.value

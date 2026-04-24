@@ -101,11 +101,11 @@ fun ProjectDetailScreen(
             )
         },
         floatingActionButton = {
-            val projectId = uiState.project?.id
-            if (projectId != null) {
-                FloatingActionButton(onClick = { onAddTask(projectId, null) }) {
-                    Icon(Icons.Default.Add, contentDescription = "Add task")
-                }
+            // Use the nav-arg projectId (always available immediately) instead of
+            // uiState.project?.id (which is null during loading). This prevents
+            // the FAB from disappearing while the project data loads from Room.
+            FloatingActionButton(onClick = { onAddTask(viewModel.projectId, null) }) {
+                Icon(Icons.Default.Add, contentDescription = "Add task")
             }
         },
     ) { padding ->

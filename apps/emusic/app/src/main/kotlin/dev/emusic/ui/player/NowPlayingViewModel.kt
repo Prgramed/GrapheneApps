@@ -207,8 +207,16 @@ class NowPlayingViewModel @Inject constructor(
             controller?.let { mc ->
                 syncStateFromPlayer(mc)
             }
-            // Force-read current track so UI updates immediately on skip
-            val track = queueManager.currentTrack.value
+            // Find the track by the transitioning media item's ID, not by
+            // QueueManager.currentTrack.value — during rapid skips, the
+            // QueueManager index may not have been updated yet when this
+            // callback fires, causing the UI to briefly show a stale track.
+            val mid = mediaItem?.mediaId
+            val track = if (mid != null) {
+                queueManager.queue.value.firstOrNull { it.track.id == mid }?.track
+            } else {
+                queueManager.currentTrack.value
+            }
             if (track != null && track.id != _uiState.value.track?.id) {
                 _uiState.update {
                     it.copy(
@@ -386,11 +394,17 @@ class NowPlayingViewModel @Inject constructor(
 
     fun skipNext() {
         // Skip always goes through local player — track change listener forwards to cast
-        controller?.seekToNextMediaItem()
+        controller?.let { mc ->
+            if (mc.playbackState == Player.STATE_IDLE) mc.prepare()
+            mc.seekToNextMediaItem()
+        }
     }
 
     fun skipPrevious() {
-        controller?.seekToPreviousMediaItem()
+        controller?.let { mc ->
+            if (mc.playbackState == Player.STATE_IDLE) mc.prepare()
+            mc.seekToPreviousMediaItem()
+        }
     }
 
     fun seekTo(positionMs: Long) {

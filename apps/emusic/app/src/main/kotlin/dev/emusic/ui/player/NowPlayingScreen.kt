@@ -1,5 +1,6 @@
 package dev.emusic.ui.player
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
@@ -680,6 +681,7 @@ private fun MusicNowPlayingLayout(
                     style = MaterialTheme.typography.headlineSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.basicMarquee(),
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -688,7 +690,9 @@ private fun MusicNowPlayingLayout(
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.clickable { onArtistNameClick() },
+                    modifier = Modifier
+                        .basicMarquee()
+                        .clickable { onArtistNameClick() },
                 )
             }
         }

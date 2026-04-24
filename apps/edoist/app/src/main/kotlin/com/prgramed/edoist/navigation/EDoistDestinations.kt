@@ -3,6 +3,7 @@ package com.prgramed.edoist.navigation
 object EDoistDestinations {
     const val TODAY = "today"
     const val INBOX = "inbox"
+    const val UPCOMING = "upcoming"
     const val SEARCH = "search"
     const val PROJECTS = "projects"
     const val PROJECT_DETAIL = "project/{projectId}"

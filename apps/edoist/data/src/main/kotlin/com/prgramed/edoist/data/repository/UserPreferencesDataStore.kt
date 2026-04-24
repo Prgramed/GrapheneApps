@@ -28,6 +28,7 @@ class UserPreferencesDataStore @Inject constructor(
         val DEFAULT_SORT_ORDER = stringPreferencesKey("default_sort_order")
         val SHOW_COMPLETED_TASKS = booleanPreferencesKey("show_completed_tasks")
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val THEME_MODE = intPreferencesKey("theme_mode")
     }
 
     override fun getPreferences(): Flow<EDoistPreferences> = dataStore.data.map { prefs ->
@@ -42,6 +43,7 @@ class UserPreferencesDataStore @Inject constructor(
                 ?: SortOrder.MANUAL,
             showCompletedTasks = prefs[Keys.SHOW_COMPLETED_TASKS] ?: false,
             dynamicColor = prefs[Keys.DYNAMIC_COLOR] ?: true,
+            themeMode = prefs[Keys.THEME_MODE] ?: 0,
         )
     }
 
@@ -71,5 +73,9 @@ class UserPreferencesDataStore @Inject constructor(
 
     override suspend fun updateDynamicColor(enabled: Boolean) {
         dataStore.edit { it[Keys.DYNAMIC_COLOR] = enabled }
+    }
+
+    override suspend fun updateThemeMode(mode: Int) {
+        dataStore.edit { it[Keys.THEME_MODE] = mode }
     }
 }

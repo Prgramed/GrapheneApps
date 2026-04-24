@@ -19,11 +19,18 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -40,6 +47,8 @@ fun TodayScreen(
     viewModel: TodayViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -47,6 +56,7 @@ fun TodayScreen(
                 title = { Text(text = "Today") },
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         when {
             uiState.isLoading -> {
@@ -106,12 +116,34 @@ fun TodayScreen(
                                 onCheckedChange = { checked ->
                                     if (checked) {
                                         viewModel.completeTask(task.id)
+                                        scope.launch {
+                                            val result = snackbarHostState.showSnackbar(
+                                                message = "Task completed",
+                                                actionLabel = "Undo",
+                                                duration = SnackbarDuration.Short,
+                                            )
+                                            if (result == SnackbarResult.ActionPerformed) {
+                                                viewModel.uncompleteTask(task.id)
+                                            }
+                                        }
                                     } else {
                                         viewModel.uncompleteTask(task.id)
                                     }
                                 },
                                 onClick = { onTaskClick(task.id) },
-                                onComplete = { viewModel.completeTask(task.id) },
+                                onComplete = {
+                                    viewModel.completeTask(task.id)
+                                    scope.launch {
+                                        val result = snackbarHostState.showSnackbar(
+                                            message = "Task completed",
+                                            actionLabel = "Undo",
+                                            duration = SnackbarDuration.Short,
+                                        )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            viewModel.uncompleteTask(task.id)
+                                        }
+                                    }
+                                },
                                 onSchedule = { onTaskClick(task.id) },
                                 showProject = true,
                             )

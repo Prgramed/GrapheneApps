@@ -4,7 +4,10 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -237,6 +240,44 @@ fun SettingsScreen(
                         checked = uiState.dynamicColor,
                         onCheckedChange = viewModel::onDynamicColorToggled,
                     )
+                },
+            )
+
+            ListItem(
+                headlineContent = { Text("Theme") },
+                supportingContent = {
+                    Text(
+                        when (uiState.themeMode) {
+                            1 -> "Light"
+                            2 -> "Dark"
+                            else -> "System default"
+                        },
+                    )
+                },
+                trailingContent = {
+                    var expanded by remember { mutableStateOf(false) }
+                    Box {
+                        TextButton(onClick = { expanded = true }) {
+                            Text(
+                                when (uiState.themeMode) {
+                                    1 -> "Light"
+                                    2 -> "Dark"
+                                    else -> "System"
+                                },
+                            )
+                        }
+                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            listOf(0 to "System", 1 to "Light", 2 to "Dark").forEach { (mode, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        viewModel.onThemeModeChanged(mode)
+                                        expanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
                 },
             )
 

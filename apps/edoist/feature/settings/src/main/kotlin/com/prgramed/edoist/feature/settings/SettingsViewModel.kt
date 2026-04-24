@@ -44,6 +44,7 @@ class SettingsViewModel @Inject constructor(
             syncIntervalMinutes = prefs.syncIntervalMinutes,
             showCompletedTasks = prefs.showCompletedTasks,
             dynamicColor = prefs.dynamicColor,
+            themeMode = prefs.themeMode,
             isSyncing = syncing,
         )
     }.stateIn(
@@ -76,6 +77,12 @@ class SettingsViewModel @Inject constructor(
     fun onDynamicColorToggled(enabled: Boolean) {
         viewModelScope.launch {
             userPreferencesRepository.updateDynamicColor(enabled)
+        }
+    }
+
+    fun onThemeModeChanged(mode: Int) {
+        viewModelScope.launch {
+            userPreferencesRepository.updateThemeMode(mode)
         }
     }
 
