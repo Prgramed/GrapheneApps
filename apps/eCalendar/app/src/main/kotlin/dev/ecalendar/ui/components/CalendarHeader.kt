@@ -4,6 +4,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -54,6 +56,14 @@ fun CalendarHeader(
     onAccounts: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    // Suppress Material3's automatic 48dp minimum interactive component size for
+    // ALL interactive children (IconButtons, TextButton, clickable Text). Without
+    // this, each element's touch target extends ~20dp below its visual bounds,
+    // cascading through both header rows and overlapping the month grid cells —
+    // making the top portion of date cells non-clickable.
+    CompositionLocalProvider(
+        androidx.compose.material3.LocalMinimumInteractiveComponentSize provides 0.dp,
+    ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -145,9 +155,14 @@ fun CalendarHeader(
                         if (isActive) MaterialTheme.colorScheme.primaryContainer
                         else Color.Transparent,
                     )
+                    // Use interactionSource + no indication to suppress the 48dp
+                    // minimum interactive component size. Without this, the touch
+                    // target extends ~20dp below the visual bounds, overlapping
+                    // with the top rows of the month grid and eating their taps.
                     .clickable { onViewSelected(view) }
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             )
         }
     }
+    } // CompositionLocalProvider
 }
