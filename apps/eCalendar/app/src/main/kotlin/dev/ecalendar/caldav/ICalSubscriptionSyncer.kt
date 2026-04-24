@@ -23,6 +23,17 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 object ICalSubscriptionSyncer {
 
+    // Cache of ics-body SHA-256 per subscription URL. If the feed hasn't
+    // changed since last sync, skip the entire mirror (no PROPFIND, no PUTs).
+    // The Synology PROPFIND/REPORT for existing events takes 20+ seconds per
+    // calendar — this eliminates it on steady-state syncs.
+    private val feedHashCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private fun sha256(data: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        return digest.digest(data.toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+
     /**
      * Syncs an iCal subscription to a mirror calendar on Synology.
      *
@@ -44,10 +55,22 @@ object ICalSubscriptionSyncer {
         // 1. Fetch the full .ics file
         val icsBody = fetchSubscription(subscriptionUrl, httpClient) ?: return
 
+        // 1b. Check if feed content changed since last sync. If identical,
+        //     skip the entire mirror (PROPFIND + PUTs + deletes) — that path
+        //     takes 20+ seconds per calendar on Synology even when nothing
+        //     needs to be written.
+        val feedHash = sha256(icsBody)
+        val lastHash = feedHashCache[subscriptionUrl]
+        if (feedHash == lastHash) {
+            Timber.d("iCal subscription: feed unchanged, skipping mirror for $subscriptionUrl")
+            return
+        }
+
         // 2. Parse all VEVENTs
         val vevents = parseVEvents(icsBody)
         if (vevents.isEmpty()) {
             Timber.d("iCal subscription: no events found at $subscriptionUrl")
+            feedHashCache[subscriptionUrl] = feedHash // cache even if empty
             return
         }
         Timber.d("iCal subscription: parsed ${vevents.size} events from $subscriptionUrl")
@@ -150,6 +173,8 @@ object ICalSubscriptionSyncer {
                 "skipped=${skipped.get()}, failed=${putFailures.get()} " +
                 "(of ${vevents.size})",
         )
+        // Cache the feed hash so next sync skips the mirror if unchanged.
+        feedHashCache[subscriptionUrl] = feedHash
     }
 
     private suspend fun fetchSubscription(url: String, client: OkHttpClient): String? {
