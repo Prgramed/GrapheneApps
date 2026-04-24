@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -127,11 +128,9 @@ fun MonthScreen(
         androidx.compose.material3.LocalMinimumInteractiveComponentSize provides 0.dp,
     ) {
         Column(modifier = modifier.fillMaxSize()) {
-            // ── Compact inline header (no shared CalendarHeader) ──
+            // Inline header
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -141,129 +140,66 @@ fun MonthScreen(
                     modifier = Modifier.weight(1f),
                 )
                 if (onAccounts != null) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .clickable { onAccounts() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(18.dp))
+                    Button(onClick = { onAccounts() }, modifier = Modifier.size(32.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(16.dp))
                     }
                     Spacer(Modifier.width(4.dp))
                 }
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .clickable {
-                            val prev = YearMonth.from(activeDate).minusMonths(1)
-                            viewModel.navigate(prev.atDay(1))
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous")
+                Button(onClick = { viewModel.navigate(YearMonth.from(activeDate).minusMonths(1).atDay(1)) },
+                    modifier = Modifier.size(32.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Prev", modifier = Modifier.size(18.dp))
                 }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { viewModel.goToToday() }
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("Today", style = MaterialTheme.typography.labelMedium)
-                }
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .clickable {
-                            val next = YearMonth.from(activeDate).plusMonths(1)
-                            viewModel.navigate(next.atDay(1))
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next")
+                TextButton(onClick = { viewModel.goToToday() }) { Text("Today", fontSize = 12.sp) }
+                Button(onClick = { viewModel.navigate(YearMonth.from(activeDate).plusMonths(1).atDay(1)) },
+                    modifier = Modifier.size(32.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next", modifier = Modifier.size(18.dp))
                 }
             }
 
             // View switcher
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 CalendarView.entries.forEach { view ->
                     val isActive = view == activeView
-                    Text(
-                        text = when (view) {
-                            CalendarView.MONTH -> "M"
-                            CalendarView.WEEK -> "W"
-                            CalendarView.DAY -> "D"
-                            CalendarView.AGENDA -> "A"
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isActive) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (isActive) MaterialTheme.colorScheme.primaryContainer
-                                else Color.Transparent,
-                            )
-                            .clickable { viewModel.setView(view) }
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                    )
+                    TextButton(onClick = { viewModel.setView(view) },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
+                        Text(
+                            text = when (view) { CalendarView.MONTH -> "M"; CalendarView.WEEK -> "W"; CalendarView.DAY -> "D"; CalendarView.AGENDA -> "A" },
+                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
-
-            Spacer(Modifier.height(4.dp))
 
             // Day-of-week labels
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-            ) {
-                listOf(
-                    DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
-                    DayOfWeek.THURSDAY, DayOfWeek.FRIDAY, DayOfWeek.SATURDAY, DayOfWeek.SUNDAY,
-                ).forEach { dow ->
-                    Text(
-                        text = dow.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+                listOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
+                    DayOfWeek.THURSDAY, DayOfWeek.FRIDAY, DayOfWeek.SATURDAY, DayOfWeek.SUNDAY).forEach { dow ->
+                    Text(dow.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f),
-                    )
+                        textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
                 }
             }
 
-            Spacer(Modifier.height(2.dp))
-
-            // ── Month grid pages ──
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            ) { page ->
-                val offset = page - INITIAL_PAGE
-                val month = baseMonth.plusMonths(offset.toLong())
-                MonthGrid(
-                    month = month,
-                    activeDate = activeDate,
-                    today = today,
-                    viewModel = viewModel,
-                    onDayClick = { date, events ->
-                        viewModel.navigate(date)
-                        popupDate = date
-                        popupEvents = events
-                    },
-                )
-            }
+            // Month grid — using fillMaxHeight (NOT fillMaxSize or aspectRatio)
+            // to match the working Button layout exactly
+            MonthGrid(
+                month = YearMonth.from(activeDate),
+                activeDate = activeDate,
+                today = today,
+                viewModel = viewModel,
+                onDayClick = { date, events ->
+                    viewModel.navigate(date)
+                    popupDate = date
+                    popupEvents = events
+                },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
         }
     }
 }
@@ -275,6 +211,7 @@ private fun MonthGrid(
     today: LocalDate,
     viewModel: CalendarViewModel,
     onDayClick: (LocalDate, List<CalendarEvent>) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val firstOfMonth = month.atDay(1)
     val daysBeforeMonth = (firstOfMonth.dayOfWeek.value - DayOfWeek.MONDAY.value + 7) % 7
@@ -291,7 +228,7 @@ private fun MonthGrid(
         events.groupBy { java.time.Instant.ofEpochMilli(it.instanceStart).atZone(zone).toLocalDate() }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize()) {
         for (week in 0 until 6) {
             Row(
                 modifier = Modifier
@@ -306,63 +243,50 @@ private fun MonthGrid(
                     val isSelected = date == activeDate
                     val dayEvents = eventsByDay[date] ?: emptyList()
 
-                    // Each cell: square aspect ratio, fully clickable
-                    Box(
+                    androidx.compose.material3.Surface(
+                        onClick = { onDayClick(date, dayEvents) },
                         modifier = Modifier
                             .weight(1f)
-                            .aspectRatio(1f)
-                            .padding(1.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                when {
-                                    isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                    else -> Color.Transparent
-                                },
-                            )
-                            .clickable { onDayClick(date, dayEvents) },
-                        contentAlignment = Alignment.TopCenter,
+                            .fillMaxHeight()
+                            .padding(1.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        color = when {
+                            isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                            else -> Color.Transparent
+                        },
                     ) {
                         val alpha = if (isCurrentMonth) 1f else 0.35f
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .padding(top = 2.dp)
-                                    .size(22.dp)
-                                    .then(
-                                        if (isToday) Modifier
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primary)
-                                        else Modifier,
-                                    ),
-                            ) {
-                                Text(
-                                    text = date.dayOfMonth.toString(),
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Light,
-                                    color = when {
-                                        isToday -> MaterialTheme.colorScheme.onPrimary
-                                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
-                                    },
-                                )
-                            }
-                            val visibleEvents = dayEvents.take(3)
-                            if (visibleEvents.isNotEmpty()) {
-                                Spacer(Modifier.height(1.dp))
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                    modifier = Modifier.padding(horizontal = 2.dp),
-                                ) {
-                                    visibleEvents.forEach { event ->
-                                        EventChip(event = event, isCompact = true)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.fillMaxSize().padding(top = 4.dp),
+                        ) {
+                            Text(
+                                text = date.dayOfMonth.toString(),
+                                fontSize = 13.sp,
+                                fontWeight = if (isToday) FontWeight.Bold else FontWeight.Light,
+                                textAlign = TextAlign.Center,
+                                color = when {
+                                    isToday -> MaterialTheme.colorScheme.onPrimary
+                                    else -> MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
+                                },
+                                modifier = if (isToday) Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
+                                    .padding(2.dp)
+                                else Modifier,
+                            )
+                            if (dayEvents.isNotEmpty()) {
+                                Spacer(Modifier.height(2.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    dayEvents.take(3).forEach { _ ->
+                                        Box(
+                                            Modifier
+                                                .size(4.dp)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
+                                        )
                                     }
-                                }
-                                if (dayEvents.size > 3) {
-                                    Text(
-                                        text = "+${dayEvents.size - 3}",
-                                        fontSize = 7.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
-                                    )
                                 }
                             }
                         }

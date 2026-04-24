@@ -300,7 +300,6 @@ private fun CalendarHome(
         },
     ) { innerPadding ->
         Column(modifier = Modifier.padding(innerPadding)) {
-            // Offline banner
             AnimatedVisibility(visible = !isOnline) {
                 Text(
                     text = "Working offline \u2014 changes will sync when connected",
@@ -317,7 +316,7 @@ private fun CalendarHome(
                 targetState = activeView,
                 modifier = Modifier.weight(1f),
                 label = "view-switch",
-        ) { view ->
+            ) { view ->
             when (view) {
                 CalendarView.MONTH -> MonthScreen(
                     viewModel = viewModel,
@@ -353,5 +352,5 @@ private fun CalendarHome(
             }
         }
         } // Column
-    }
+    } // Scaffold
 }
