@@ -36,6 +36,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -131,22 +134,26 @@ fun MonthScreen(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        CalendarHeader(
-            activeDate = activeDate,
-            activeView = activeView,
-            syncState = syncState,
-            onPrevious = {
-                val prev = YearMonth.from(activeDate).minusMonths(1)
-                viewModel.navigate(prev.atDay(1))
-            },
-            onNext = {
-                val next = YearMonth.from(activeDate).plusMonths(1)
-                viewModel.navigate(next.atDay(1))
-            },
-            onToday = { viewModel.goToToday() },
-            onViewSelected = { viewModel.setView(it) },
-            onAccounts = onAccounts,
-        )
+        // clipToBounds on the header Column prevents the view-switcher's 48dp
+        // minimum touch targets from leaking downward into the month grid cells.
+        Column(modifier = Modifier.clipToBounds()) {
+            CalendarHeader(
+                activeDate = activeDate,
+                activeView = activeView,
+                syncState = syncState,
+                onPrevious = {
+                    val prev = YearMonth.from(activeDate).minusMonths(1)
+                    viewModel.navigate(prev.atDay(1))
+                },
+                onNext = {
+                    val next = YearMonth.from(activeDate).plusMonths(1)
+                    viewModel.navigate(next.atDay(1))
+                },
+                onToday = { viewModel.goToToday() },
+                onViewSelected = { viewModel.setView(it) },
+                onAccounts = onAccounts,
+            )
+        }
 
         // Day-of-week labels
         Row(
@@ -271,8 +278,9 @@ private fun DayCell(
 ) {
     val alpha = if (isCurrentMonth) 1f else 0.4f
 
-    Column(
+    Box(
         modifier = modifier
+            .fillMaxSize()
             .clip(RoundedCornerShape(6.dp))
             .background(
                 when {
@@ -282,6 +290,9 @@ private fun DayCell(
             )
             .clickable(onClick = onClick)
             .padding(2.dp),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+    Column(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Day number
@@ -328,6 +339,7 @@ private fun DayCell(
             }
         }
     }
+    } // Box
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
