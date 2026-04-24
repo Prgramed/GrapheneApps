@@ -77,53 +77,69 @@ object ICalSubscriptionSyncer {
             )
         }
 
-        // 4. Push events in parallel (semaphore-capped so we don't hammer the server).
-        //    Sequentially this was the single biggest cost in sync — 300+ events
-        //    at ~200ms/PUT took >60s per subscription.
+        // 4. Fetch existing event hrefs from the mirror BEFORE pushing — so we
+        //    only PUT genuinely new events instead of re-PUTting all 884 events
+        //    on every sync (each returning 412 already-exists). This drops sync
+        //    from ~60s to ~2s when nothing changed.
+        val existingHrefs = fetchExistingEventHrefs(synoClient, mirrorCalUrl).toSet()
+
         val newEventUrls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
         val putCount = AtomicInteger(0)
-        val alreadyExists = AtomicInteger(0)
+        val skipped = AtomicInteger(0)
         val putFailures = AtomicInteger(0)
-        coroutineScope {
-            val putSemaphore = Semaphore(8)
-            vevents.map { vevent ->
-                async {
-                    putSemaphore.withPermit {
-                        try {
-                            val uid = vevent.uid?.value ?: UUID.randomUUID().toString()
-                            val icsPayload = wrapInVCalendar(vevent)
-                            val eventUrl = "${mirrorCalUrl.trimEnd('/')}/${uid}.ics"
-                            newEventUrls.add(eventUrl)
-                            synoClient.put(eventUrl, icsPayload, etag = null).use { response ->
-                                when {
-                                    response.isSuccessful -> putCount.incrementAndGet()
-                                    // 412 Precondition Failed = "If-None-Match: * but event
-                                    // exists already". Treat as success — the mirror is
-                                    // idempotent, repeat syncs shouldn't churn.
-                                    response.code == 412 -> alreadyExists.incrementAndGet()
-                                    else -> {
-                                        putFailures.incrementAndGet()
-                                        if (putFailures.get() <= 3) {
-                                            Timber.w("iCal mirror PUT ${response.code} for $eventUrl")
+
+        // Build the full list of expected URLs for diff-based deletion later.
+        val allExpectedUrls = vevents.map { vevent ->
+            val uid = vevent.uid?.value ?: UUID.randomUUID().toString()
+            "${mirrorCalUrl.trimEnd('/')}/${uid}.ics"
+        }.toSet()
+        newEventUrls.addAll(allExpectedUrls)
+
+        // Only PUT events whose URL is NOT already on the server.
+        val toPush = vevents.filter { vevent ->
+            val uid = vevent.uid?.value ?: return@filter true
+            val eventUrl = "${mirrorCalUrl.trimEnd('/')}/${uid}.ics"
+            eventUrl !in existingHrefs
+        }
+
+        if (toPush.isNotEmpty()) {
+            coroutineScope {
+                val putSemaphore = Semaphore(8)
+                toPush.map { vevent ->
+                    async {
+                        putSemaphore.withPermit {
+                            try {
+                                val uid = vevent.uid?.value ?: UUID.randomUUID().toString()
+                                val icsPayload = wrapInVCalendar(vevent)
+                                val eventUrl = "${mirrorCalUrl.trimEnd('/')}/${uid}.ics"
+                                synoClient.put(eventUrl, icsPayload, etag = null).use { response ->
+                                    when {
+                                        response.isSuccessful -> putCount.incrementAndGet()
+                                        response.code == 412 -> skipped.incrementAndGet()
+                                        else -> {
+                                            putFailures.incrementAndGet()
+                                            if (putFailures.get() <= 3) {
+                                                Timber.w("iCal mirror PUT ${response.code} for $eventUrl")
+                                            }
                                         }
                                     }
                                 }
+                            } catch (e: Exception) {
+                                putFailures.incrementAndGet()
+                                Timber.w(e, "iCal subscription: failed to PUT event")
                             }
-                        } catch (e: Exception) {
-                            putFailures.incrementAndGet()
-                            Timber.w(e, "iCal subscription: failed to PUT event")
                         }
                     }
-                }
-            }.awaitAll()
+                }.awaitAll()
+            }
         }
+        skipped.addAndGet(vevents.size - toPush.size) // count pre-filtered as skipped
 
         // 5. Delete events that are no longer in the subscription (diff-based)
-        val existingHrefs = fetchExistingEventHrefs(synoClient, mirrorCalUrl)
         for (href in existingHrefs) {
             if (href !in newEventUrls) {
                 try {
-                    synoClient.delete(href, etag = "*").close() // MUST close — was leaking connections
+                    synoClient.delete(href, etag = "*").close()
                 } catch (e: Exception) {
                     Timber.w(e, "iCal subscription: failed to delete $href")
                 }
@@ -131,7 +147,7 @@ object ICalSubscriptionSyncer {
         }
         Timber.d(
             "iCal mirror: $mirrorCalUrl → new=${putCount.get()}, " +
-                "unchanged=${alreadyExists.get()}, failed=${putFailures.get()} " +
+                "skipped=${skipped.get()}, failed=${putFailures.get()} " +
                 "(of ${vevents.size})",
         )
     }
